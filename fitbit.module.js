@@ -8,7 +8,7 @@ export const manifest = {
   name: "Fitbit",
   version: "1.0.0",
   permissions: ["storage", "identity"],
-  actions: ["refreshAllData"],
+  actions: ["refreshAllData", "fitbitAuth", "handleAuthCallback"],
   state: {
     reads: [],
     writes: ["sleep.lastNight.hours", "sleep.lastNight.quality", "activity.today.calories", "heart.current.bpm", "ui.notify.queue"]
@@ -104,6 +104,9 @@ export async function startOAuthFlow(state) {
   }
 }
 
+// Alias for the action system
+export const fitbitAuth = startOAuthFlow;
+
 export async function handleAuthCallback(state, { code, state: authState }) {
   try {
     // Verify state matches
@@ -166,7 +169,7 @@ async function exchangeCodeForToken(code) {
 
 export async function refreshAllData(state) {
   if (!accessToken) {
-    await appendNotification(state || globalState, {
+    await appendNotification(state, {
       type: 'error',
       module: 'fitbit',
       message: 'Fitbit not authorized - please complete setup'

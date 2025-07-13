@@ -1,4 +1,6 @@
-// ui-module.js - UI overlay system for displaying module content
+/**
+ * UI Module - Provides sidebar, notifications, and modals for other modules
+ */
 
 export const manifest = {
   name: 'UI Overlay',
@@ -8,12 +10,7 @@ export const manifest = {
   actions: ['show', 'hide', 'toggle', 'notify', 'modal']
 };
 
-let stateChannel = null;
-
 export async function initialize(state, config) {
-  // Get the state channel from initialization
-  stateChannel = state.channel || new BroadcastChannel('cognition-state');
-  
   // Store config for content scripts to read
   const uiConfig = {
     position: config.position || 'right',
@@ -163,18 +160,17 @@ function contentScriptCode() {
       this.channel = channel;
       
       channel.onmessage = (event) => {
-        const { type, path, value } = event.data;
-        if (type !== 'STATE_UPDATE') return;
+        const { key, value } = event.data;
         
-        // Simple path-based routing
+        // Simple key-based routing
         const handlers = {
           'ui.visible': () => value ? this.show() : this.hide(),
           'ui.content': () => this.updateContent(value),
-          'ui.notify': () => this.addNotification(value),
+          'ui.notify.queue': () => this.processNotificationQueue(value),
           'ui.modal': () => this.showModal(value)
         };
         
-        const handler = handlers[path];
+        const handler = handlers[key];
         if (handler) handler();
       };
     },
@@ -199,8 +195,7 @@ function contentScriptCode() {
       // UI-specific actions handled locally
       if (action === 'ui.hide') {
         this.channel.postMessage({
-          type: 'STATE_UPDATE',
-          path: 'ui.visible',
+          key: 'ui.visible',
           value: false
         });
         return;
@@ -211,15 +206,11 @@ function contentScriptCode() {
         return;
       }
       
-      // All other actions go to state for modules to handle
-      this.channel.postMessage({
-        type: 'STATE_UPDATE',
-        path: 'ui.action.request',
-        value: {
-          action,
-          params: params ? JSON.parse(params) : {},
-          timestamp: Date.now()
-        }
+      // All other actions go to background script via runtime message
+      chrome.runtime.sendMessage({
+        type: 'EXECUTE_ACTION',
+        action: action,
+        params: params ? JSON.parse(params) : {}
       });
     },
     
@@ -252,6 +243,21 @@ function contentScriptCode() {
     
     updateContent(html) {
       this.elements.content.innerHTML = html || '<div class="cog-empty">No content</div>';
+    },
+    
+    processNotificationQueue(queue) {
+      if (!queue || queue.length === 0) return;
+      
+      // Process each notification in the queue
+      queue.forEach(notification => {
+        this.addNotification(notification);
+      });
+      
+      // Clear the queue after processing
+      this.channel.postMessage({
+        key: 'ui.notify.queue',
+        value: []
+      });
     },
     
     addNotification(data) {
@@ -309,50 +315,35 @@ function contentScriptCode() {
 }
 
 // UI Module Actions (exportable for voice commands)
-export async function show() {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.visible',
-    value: true
-  });
+export async function show(state) {
+  await state.write('ui.visible', true);
   return { success: true };
 }
 
-export async function hide() {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.visible',
-    value: false
-  });
+export async function hide(state) {
+  await state.write('ui.visible', false);
   return { success: true };
 }
 
-export async function toggle() {
-  const { state } = await chrome.storage.local.get(['state']);
-  const visible = state?.['ui.visible'] || false;
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.visible',
-    value: !visible
-  });
+export async function toggle(state) {
+  const visible = await state.read('ui.visible') || false;
+  await state.write('ui.visible', !visible);
   return { visible: !visible };
 }
 
-export async function notify(params) {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.notify',
-    value: params
+export async function notify(state, params) {
+  const queue = await state.read('ui.notify.queue') || [];
+  queue.push({
+    ...params,
+    timestamp: Date.now(),
+    id: `ui_${Date.now()}`
   });
+  await state.write('ui.notify.queue', queue);
   return { success: true };
 }
 
-export async function modal(params) {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.modal',
-    value: params
-  });
+export async function modal(state, params) {
+  await state.write('ui.modal', params);
   return { success: true };
 }
 

@@ -16,81 +16,6 @@ const moduleRegistry = {
 // Global state store instance
 let globalState = null;
 
-// Initialize the extension
-chrome.runtime.onInstalled.addListener(async () => {
-  console.log('[Background] Extension installed, initializing...');
-  await initializeExtension();
-});
-
-// Also initialize on service worker startup
-initializeExtension();
-
-async function initializeExtension() {
-  try {
-    // Create the global state store
-    globalState = new StateStore();
-    
-    // Initialize the startup module first
-    await startupModule.initialize(globalState, {});
-    
-    // Register all modules with the startup module
-    for (const [name, module] of Object.entries(moduleRegistry)) {
-      if (name !== 'startup') {
-        registerModule(name, module);
-      }
-    }
-    
-    // Get enabled modules from storage
-    const { enabledModules = ['fitbit', 'ui'] } = await chrome.storage.sync.get('enabledModules');
-    
-    // Initialize enabled modules
-    for (const moduleName of enabledModules) {
-      if (moduleRegistry[moduleName]) {
-        console.log(`[Background] Initializing module: ${moduleName}`);
-        const config = await getModuleConfig(moduleName);
-        await moduleRegistry[moduleName].initialize(globalState, config);
-      }
-    }
-    
-    console.log('[Background] Extension initialized successfully');
-  } catch (error) {
-    console.error('[Background] Failed to initialize:', error);
-  }
-}
-
-// Register a module's actions with the startup module
-function registerModule(name, module) {
-  const exports = Object.getOwnPropertyNames(module);
-  
-  for (const exportName of exports) {
-    if (exportName === 'initialize' || exportName === 'manifest' || exportName === 'tests' || exportName === 'default') {
-      continue;
-    }
-    
-    const fn = module[exportName];
-    if (typeof fn === 'function') {
-      const actionName = `${name}.${exportName}`;
-      
-      // Register with the global action system
-      if (globalState?.actions) {
-        globalState.actions.register(actionName, async (params) => {
-          return await fn(globalState, params);
-        }, {
-          module: name,
-          description: `${name} ${exportName}`
-        });
-      }
-    }
-  }
-}
-
-// Get module configuration from storage
-async function getModuleConfig(moduleName) {
-  const key = `modules.${moduleName}`;
-  const stored = await chrome.storage.sync.get(key);
-  return stored[key] || {};
-}
-
 // StateStore implementation that all modules will use
 class StateStore {
   constructor() {
@@ -205,12 +130,89 @@ class StateStore {
   }
 }
 
-// Handle extension icon click - toggle UI
-chrome.action.onClicked.addListener(async () => {
-  if (globalState?.actions) {
-    await globalState.actions.execute('ui.toggle');
+// Register a module's actions with the startup module
+function registerModule(name, module) {
+  const exports = Object.getOwnPropertyNames(module);
+  
+  for (const exportName of exports) {
+    if (exportName === 'initialize' || exportName === 'manifest' || exportName === 'tests' || exportName === 'default') {
+      continue;
+    }
+    
+    const fn = module[exportName];
+    if (typeof fn === 'function') {
+      const actionName = `${name}.${exportName}`;
+      
+      // Register with the global action system
+      if (globalState?.actions) {
+        globalState.actions.register(actionName, async (params) => {
+          return await fn(globalState, params);
+        }, {
+          module: name,
+          description: `${name} ${exportName}`
+        });
+      }
+    }
   }
+}
+
+// Get module configuration from storage
+async function getModuleConfig(moduleName) {
+  const key = `modules.${moduleName}`;
+  const stored = await chrome.storage.sync.get(key);
+  return stored[key] || {};
+}
+
+async function initializeExtension() {
+  try {
+    // Create the global state store
+    globalState = new StateStore();
+    
+    // Initialize the startup module first
+    await startupModule.initialize(globalState, {});
+    
+    // Register all modules with the startup module
+    for (const [name, module] of Object.entries(moduleRegistry)) {
+      if (name !== 'startup') {
+        registerModule(name, module);
+      }
+    }
+    
+    // Get enabled modules from storage
+    const { enabledModules = ['fitbit', 'ui'] } = await chrome.storage.sync.get('enabledModules');
+    
+    // Initialize enabled modules
+    for (const moduleName of enabledModules) {
+      if (moduleRegistry[moduleName]) {
+        console.log(`[Background] Initializing module: ${moduleName}`);
+        const config = await getModuleConfig(moduleName);
+        await moduleRegistry[moduleName].initialize(globalState, config);
+      }
+    }
+    
+    console.log('[Background] Extension initialized successfully');
+  } catch (error) {
+    console.error('[Background] Failed to initialize:', error);
+  }
+}
+
+// Initialize the extension
+chrome.runtime.onInstalled.addListener(async () => {
+  console.log('[Background] Extension installed, initializing...');
+  await initializeExtension();
 });
+
+// Also initialize on service worker startup
+initializeExtension();
+
+// Handle extension icon click - toggle UI
+if (chrome.action) {
+  chrome.action.onClicked.addListener(async () => {
+    if (globalState?.actions) {
+      await globalState.actions.execute('ui.toggle');
+    }
+  });
+}
 
 // Listen for OAuth redirects (for Fitbit)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -242,6 +244,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Export for debugging
-global.cognitionState = globalState;
-global.cognitionModules = moduleRegistry;
+// Export for debugging (only in development)
+if (globalThis.chrome?.runtime?.id) {
+  globalThis.cognitionState = globalState;
+  globalThis.cognitionModules = moduleRegistry;
+}
