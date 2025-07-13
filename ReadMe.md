@@ -1,72 +1,86 @@
-## Big STuff
-Throughout this documentation, I am referring to the entity made up by persistant memory, state, and infernece as `Cognition`.
-## Quick Start
-### 1. Install Your First Build (2 minutes)
-1. Visit [voicebrain.ai/marketplace](https://voicebrain.ai/marketplace)
-2. Select modules:
-   - ✓ Audio Capture (required)
-   - ✓ Transcription (required)
-   - ✓ LLM Service (required)
-   - ✓ Any others you want
-3. Click "Build My Extension"
-4. Install the downloaded .crx file
-### 2. First Voice Command
-1. Click the Cognition icon in your browser
-2. Say: "Start listening"
-3. Say: "What can you do?"
-4. Watch your personalized AI respond based on your modules
-### 3. Explore Your Capabilities
-Each module adds new abilities. With the starter pack:
-- **Navigation**: "Go to my email", "Switch to the GitHub tab"
-- **Knowledge**: "Remember this idea", "What did I say about Project X?"
-- **Tasks**: "Add a task to review the proposal"
-## Core Concepts
-### Modules: Your Building Blocks
-Each module is a single capability that does one thing well. Like apps on your phone, you choose which ones to install. Modules can:
-- Listen to your voice
-- Control your browser  
-- Store your knowledge
-- Connect to services
-- Create custom UI
-### Your Second Brain
-The knowledge graph stores information the way you think - as a network of connected ideas. Unlike folders, it grows with you and helps the AI understand YOUR context.
-### Zero Friction Philosophy
-No switching apps. No copy-paste. No remembering commands. Just speak naturally and your AI figures out which modules to use.
-## Key Features
-🎯 **Modular by Design** - Only install what you need  
-🧠 **Knowledge Graph** - Your permanent, searchable memory  
-🔧 **Hackable** - Every module is open source and < 500 lines  
-🚀 **Fast** - Runs locally in your browser  
-🔒 **Private** - You control where your data lives  
-📱 **Cross-Device** - Works on desktop and tablets  
-## Documentation
-- [Architecture Overview](./ARCHITECTURE.md) - How the system works
-- [Module Development](./MODULES.md) - Build your own modules  
-- [Build & Deploy](./BUILD-AND-DEPLOY.md) - Compilation and distribution
-- [Design Decisions](./DECISIONS.md) - Why we built it this way
-- [Module Catalog](./MODULE-CATALOG.md) - Available modules
-## Getting Started as a Developer
+# Cognition Extension
+## Vision
+Imagine an AI assistant that truly extends your mind - not another app to switch to, but an ambient intelligence that listens, remembers, and acts on your behalf while you work. `Cognition` runs continuously in your browser, built from simple pieces of code (modules) you choose based on your needs, creating a personalized AI that grows with you.
+
+Speak naturally. `Cognition` maintains context across everything - your browser tabs, your calendar, your files. It remembers your projects, your people, your ideas. Unlike traditional assistants, you build `Cognition` from modules that match your workflow, creating an AI that's uniquely yours.
+
+## Key Principles
+🎯 **Modular by Design** - Install only the capabilities you need  
+🧠 **Continuous Context** - Maintains state across all your work  
+🔧 **Open** - Every module is readable, modifiable, and under 500 lines  
+🚀 **Ambient** - Runs in the background, activated by voice or events  
+🔒 **Private** - Your data stays yours, stored where you choose  
+
+## Getting Started (For Developers)
+
+### Prerequisites
+- Chrome browser
+- Node.js 18+
+- Basic JavaScript knowledge
+
+### Build Your First Extension
 ```bash
-# Clone the repo
-git clone https://github.com/voicebrain/voice-brain-assistant
-# Install dev tools
+# Clone the repository
+git clone https://github.com/voicebrain/cognition-extension
+cd cognition-extension
+
+# Install dependencies
 npm install
-# Create your first module
-npm run create-module my-awesome-module
-# Test it
-npm test modules/my-awesome-module.js
-# Submit to marketplace
-npm run submit modules/my-awesome-module.js
+
+# Build with default modules
+npm run build
+
+# The extension is now in build/
 ```
-## Community
-- **Discord**: [discord.gg/voicebrain](https://discord.gg/voicebrain) - Get help, share modules
-- **Modules**: [github.com/voicebrain/modules](https://github.com/voicebrain/modules) - Community modules
-- **Ideas**: [github.com/voicebrain/ideas](https://github.com/voicebrain/ideas) - Request features
+
+### Install in Chrome
+1. Open `chrome://extensions`
+2. Enable "Developer mode" (top right)
+3. Click "Load unpacked"
+4. Select the `build/` folder
+
+### First Run
+1. Click the Cognition icon in your toolbar
+2. Grant microphone permissions when asked
+3. Say "Hello" - Cognition should respond
+
+## Documentation
+
+Start here, then explore based on your interests:
+
+1. **[Architecture Overview](./Architecture.md)** - Understand how Cognition works
+2. **[Modules](./Modules.md)** - Learn about the modular system
+3. **[Module Developer Guide](./Module%20Developer%20Guide.md)** - Build your own modules
+4. **[State](./State.md)** - How modules share real-time context
+5. **[Knowledge](./Knowledge.md)** - Persistent memory system
+6. **[Design Decisions](./Decisions.md)** - Why we built it this way
+
+### Additional Resources
+- **[Future Vision - Marketplace](./Future%20Vision%20-%20Marketplace.md)** - Where we're heading
+- **[Chrome OS Notes](./Chrome%20OS.md)** - Why Chrome OS is the ideal platform
+- **[UI Overlay](./UI%20Overlay.md)** - How modules create UI
+
+## Project Status
+
+⚠️ **Early Development** - This is a proof of concept. Expect breaking changes.
+
+Current focus:
+- [ ] Core module system
+- [ ] Basic voice input/output
+- [ ] State management via BroadcastChannel
+- [ ] Simple LLM integration
+- [ ] First 3-5 modules
+
+## Contributing
+
+We're not ready for contributions yet, but star the repo to follow progress!
+
 ## Philosophy
-We believe AI assistants should:
-1. **Amplify** what you can do, not replace you
-2. **Adapt** to your workflow, not force you into theirs
-3. **Compose** from simple pieces you understand
-4. **Respect** your privacy and data ownership
+
+Traditional assistants make you adapt to them. Cognition adapts to you.
+
+We believe AI should amplify human capability, not replace it. By making the system modular and transparent, you remain in control while gaining superpowers.
+
 ## License
+
 MIT - Build whatever you want with it
