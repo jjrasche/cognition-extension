@@ -1,0 +1,12 @@
+{
+  "name": "cognition-extension",
+  "version": "0.0.1",
+  "description": "AI assistant Chrome extension built from modular components",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "node scripts/build.js --watch",
+    "test": "node scripts/test-modules.js"
+  },
+  "devDependencies": {},
+  "type": "module"
+}

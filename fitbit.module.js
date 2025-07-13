@@ -64,37 +64,66 @@ export async function initialize(state, config) {
 }
 
 
-
 export async function startOAuthFlow(state) {
   try {
+    // Generate random state for CSRF protection
+    const authState = Math.random().toString(36).substring(7);
+    await chrome.storage.sync.set({ fitbitAuthState: authState });
+    
     const authUrl = `https://www.fitbit.com/oauth2/authorize?` +
       `client_id=${CLIENT_ID}&` +
       `response_type=code&` +
       `scope=activity%20heartrate%20sleep&` +
-      `redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+      `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
+      `state=${authState}`;
     
-    // Use Chrome's identity API for OAuth
-    const responseUrl = await chrome.identity.launchWebAuthFlow({
+    // Open auth window
+    const authWindow = await chrome.windows.create({
       url: authUrl,
-      interactive: true
+      type: 'popup',
+      width: 500,
+      height: 750
     });
     
-    // Extract code from response URL
-    const urlParams = new URLSearchParams(responseUrl.split('?')[1]);
-    const code = urlParams.get('code');
+    await appendNotification(state, {
+      type: 'info',
+      module: 'fitbit',
+      message: 'Please authorize Fitbit in the popup window'
+    });
     
-    if (!code) {
-      throw new Error('Authorization failed - no code received');
+    return { success: true, message: 'Authorization window opened' };
+    
+  } catch (error) {
+    await appendNotification(state, {
+      type: 'error',
+      module: 'fitbit',
+      message: `Failed to start authorization: ${error.message}`
+    });
+    
+    return { success: false, error: error.message };
+  }
+}
+
+export async function handleAuthCallback(state, { code, state: authState }) {
+  try {
+    // Verify state matches
+    const stored = await chrome.storage.sync.get(['fitbitAuthState']);
+    if (authState !== stored.fitbitAuthState) {
+      throw new Error('Invalid state parameter');
     }
     
     // Exchange code for token
     await exchangeCodeForToken(code);
     
+    // Notify success
     await appendNotification(state, {
       type: 'success',
       module: 'fitbit',
       message: 'Fitbit connected successfully!'
     });
+    
+    // Start initial data fetch
+    await refreshAllData(state);
     
     return { success: true, message: 'Authorization complete' };
     
@@ -102,7 +131,7 @@ export async function startOAuthFlow(state) {
     await appendNotification(state, {
       type: 'error',
       module: 'fitbit',
-      message: `Fitbit authorization failed: ${error.message}`
+      message: `Authorization failed: ${error.message}`
     });
     
     return { success: false, error: error.message };
