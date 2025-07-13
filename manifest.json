@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Cognition Extension",
+  "version": "0.0.1",
+  "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}
