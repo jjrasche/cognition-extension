@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Cognition Extension",
+  "version": "0.0.1",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "identity",
+    "windows"
+  ],
+  "host_permissions": [
+    "https://api.fitbit.com/*",
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Toggle Cognition UI"
+  },
+  "web_accessible_resources": [{
+    "resources": ["*.js"],
+    "matches": ["<all_urls>"]
+  }]
+}
