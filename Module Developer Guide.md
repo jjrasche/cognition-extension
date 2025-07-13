@@ -141,7 +141,7 @@ state.watch('ui.notify.queue', async (queue) => {
 - ❌ Module variables - Lost on restart
 - ❌ Timers/intervals - Cancelled on restart
 
-### Handling OAuth Properly
+## Handling OAuth Properly
 
 ```javascript
 export async function initialize(state, config) {
@@ -167,6 +167,23 @@ async function saveTokens(tokens) {
 }
 ```
 
+## Action Handling Documentation
+You're right that we should document the action pattern. Here's what modules need to know:
+
+```javascript
+// In your HTML content
+<button data-action="fitbit.refresh" data-params='{"force":true}'>Refresh</button>
+
+// The UI captures clicks and writes to state:
+// ui.action.request = {action: "fitbit.refresh", params: {force: true}}
+
+// Your module watches for its actions:
+state.watch('ui.action.request', (request) => {
+  if (request.action.startsWith('fitbit.')) {
+    // Handle your action
+  }
+});
+```
 ## Real-World Example: OAuth Flow
 
 Here's how the Fitbit module handles actual OAuth:
