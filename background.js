@@ -304,26 +304,52 @@ chrome.webNavigation.onBeforeNavigate.addListener(
   }
 );
 
-// Listen for OAuth redirects (for Fitbit)
+// Listen for OAuth redirects (for Fitbit) - backup listener
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.url && changeInfo.url.includes(`${chrome.runtime.id}.chromiumapp.org`)) {
-    // This is our OAuth redirect
-    const url = new URL(changeInfo.url);
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
+  if (changeInfo.url && changeInfo.url.startsWith('https://chromiumapp.org/')) {
+    console.log('[Background] OAuth redirect detected in tabs.onUpdated:', changeInfo.url);
     
-    if (code && globalState?.actions) {
-      try {
-        const result = await globalState.actions.execute('fitbit.handleAuthCallback', { code, state });
-        console.log('[Background] OAuth callback result:', result);
-        
-        // Close the tab on success
-        if (result.success) {
-          chrome.tabs.remove(tabId);
+    try {
+      const url = new URL(changeInfo.url);
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      
+      if (code) {
+        // Check if we're already processing this code
+        if (processingOAuthCodes.has(code)) {
+          console.log('[Background] OAuth code already being processed by other listener, skipping');
+          return;
         }
-      } catch (error) {
-        console.error('[Background] OAuth callback error:', error);
+        
+        // Mark this code as being processed
+        processingOAuthCodes.add(code);
+        
+        console.log('[Background] OAuth code found in tabs.onUpdated:', code);
+        
+        if (globalState?.actions) {
+          const result = await globalState.actions.execute('fitbit.handleAuthCallback', { code, state });
+          console.log('[Background] OAuth callback result:', result);
+          
+          // Close the tab on success
+          if (result.success) {
+            setTimeout(() => {
+              chrome.tabs.remove(tabId).catch(() => {
+                // Tab might already be closed by the other listener
+              });
+            }, 100);
+          }
+          
+          // Remove code from processing set after a delay
+          setTimeout(() => {
+            processingOAuthCodes.delete(code);
+          }, 5000);
+        } else {
+          console.error('[Background] globalState.actions not available yet');
+          processingOAuthCodes.delete(code);
+        }
       }
+    } catch (error) {
+      console.error('[Background] OAuth callback error:', error);
     }
   }
 });

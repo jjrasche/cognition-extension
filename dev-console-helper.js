@@ -182,6 +182,58 @@ if (!chrome.runtime.getManifest().update_url) {
     console.log('  testFitbit()');
   }
 
+
+// 13. Test OAuth callback handling
+  window.testOAuthCallback = async function() {
+    console.log('Testing OAuth callback handling...');
+    
+    // Create a test URL like Fitbit would redirect to
+    const testUrl = 'https://chromiumapp.org/?code=test123&state=test';
+    
+    console.log('Opening test OAuth redirect URL...');
+    chrome.tabs.create({ url: testUrl }, (tab) => {
+      console.log('Test tab created. The extension should detect this and try to process it.');
+      console.log('Check the service worker console for "[Background] Navigation detected" messages');
+    });
+  }
+
+  // 14. Clear Fitbit auth completely
+  window.clearFitbitAuth = async function() {
+    if (confirm('Clear all Fitbit authentication? You will need to re-authorize.')) {
+      await chrome.storage.sync.remove(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry', 'fitbitAuthState']);
+      console.log('Fitbit auth cleared. Run executeAction("fitbit.fitbitAuth") to re-authenticate.');
+    }
+  }
+
+  // 15. Debug Fitbit completely
+  window.debugFitbit = async function() {
+    console.log('=== FITBIT DEBUG REPORT ===');
+    
+    // Check auth status
+    const auth = await viewFitbitAuth();
+    
+    // Check state
+    const health = await viewHealthData();
+    
+    // Check if actions are registered
+    console.log('\nChecking action registration...');
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'system.getStatus' });
+      console.log('System status:', response);
+    } catch (e) {
+      console.log('Could not get system status');
+    }
+    
+    // Test connection if we have a token
+    if (auth.fitbitAccessToken) {
+      console.log('\nTesting Fitbit API connection...');
+      const result = await testFitbit();
+    }
+    
+    console.log('\n=== END FITBIT DEBUG ===');
+    console.log('To start fresh: clearFitbitAuth() then executeAction("fitbit.fitbitAuth")');
+  }
+
   // Auto-display help on load
   console.log(`
 🧠 Cognition Dev Helpers Loaded!
@@ -202,6 +254,9 @@ Fitbit:
   refreshFitbitToken()     - Force token refresh (testing)
   executeAction('fitbit.fitbitAuth')     - Start auth
   executeAction('fitbit.refreshAllData') - Refresh data
+  testOAuthCallback()      - Test OAuth redirect handling
+  clearFitbitAuth()        - Clear Fitbit auth completely
+  debugFitbit()            - Full Fitbit diagnostic report
 
 UI:
   executeAction('ui.toggle')   - Toggle UI
@@ -215,14 +270,7 @@ Other:
   executeAction(name, params) - Run any action
 
 Quick Start:
-1. viewFitbitAuth()  - Check if connected
+1. debugFitbit()      - Full diagnostic
 2. If not connected: executeAction('fitbit.fitbitAuth')
 3. testFitbit()      - Verify it's working
 `);
-
-  // Check initial status
-  viewFitbitAuth();
-  
-} else {
-  console.log('[Dev Helpers] Skipped - production build');
-}

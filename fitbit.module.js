@@ -185,8 +185,12 @@ export async function handleAuthCallback(state, { code, state: authState }) {
     // Verify state matches
     const stored = await chrome.storage.sync.get(['fitbitAuthState']);
     if (authState !== stored.fitbitAuthState) {
-      throw new Error('Invalid state parameter');
+      console.error('[Fitbit] State mismatch - expected:', stored.fitbitAuthState, 'got:', authState);
+      throw new Error('Invalid state parameter - possible CSRF attack or duplicate callback');
     }
+    
+    // Clear the state immediately to prevent reuse
+    await chrome.storage.sync.remove('fitbitAuthState');
     
     // Exchange code for token
     await exchangeCodeForToken(code);
@@ -204,11 +208,14 @@ export async function handleAuthCallback(state, { code, state: authState }) {
     return { success: true, message: 'Authorization complete' };
     
   } catch (error) {
-    await appendNotification(state, {
-      type: 'error',
-      module: 'fitbit',
-      message: `Authorization failed: ${error.message}`
-    });
+    // Only show error notification if it's not a duplicate callback
+    if (!error.message.includes('duplicate callback')) {
+      await appendNotification(state, {
+        type: 'error',
+        module: 'fitbit',
+        message: `Authorization failed: ${error.message}`
+      });
+    }
     
     return { success: false, error: error.message };
   }
