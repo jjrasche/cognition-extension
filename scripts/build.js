@@ -13,7 +13,8 @@ async function build() {
   // Create build directory
   await fs.mkdir(buildDir, { recursive: true });
   
-// Files to copy
+
+  // Files to copy
   const files = [
     'manifest.json',
     'background.js',
@@ -22,6 +23,13 @@ async function build() {
     'ui.module.js',
     'test.html'
   ];
+  
+  // Add dev-reload in development mode
+  const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');
+  if (isDev) {
+    files.push('dev-reload.js');
+    console.log('📦 Including dev-reload client for auto-reload');
+  }
   
   // Copy each file
   for (const file of files) {

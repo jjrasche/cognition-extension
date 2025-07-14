@@ -4,9 +4,15 @@
   "description": "AI assistant Chrome extension built from modular components",
   "scripts": {
     "build": "node scripts/build.js",
-    "dev": "node scripts/build.js --watch",
+    "build:dev": "node scripts/build.js --dev",
+    "watch": "cross-env NODE_ENV=development node scripts/watch.js",
+    "dev": "npm run watch",
     "test": "node scripts/test-modules.js"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "chokidar": "^3.5.3",
+    "cross-env": "^7.0.3",
+    "ws": "^8.16.0"
+  },
   "type": "module"
 }

@@ -146,7 +146,7 @@ export async function startOAuthFlow(state) {
     const authUrl = `https://www.fitbit.com/oauth2/authorize?` +
       `client_id=${CLIENT_ID}&` +
       `response_type=code&` +
-      `scope=activity%20heartrate%20sleep%20offline_access&` +
+      `scope=activity%20heartrate%20sleep&` +
       `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
       `state=${authState}`;
     

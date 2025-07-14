@@ -1,6 +1,11 @@
 // background.js - Service Worker Entry Point
 // This file bootstraps the module system and initializes the extension
 
+// Import dev-reload for development (will fail silently in production)
+import('./dev-reload.js').catch(() => {
+  // Ignore - this file won't exist in production builds
+});
+
 // Import all modules statically (required for Manifest V3)
 import * as startupModule from './startup.module.js';
 import * as fitbitModule from './fitbit.module.js';
@@ -14,7 +19,7 @@ const moduleRegistry = {
 };
 
 // Global state store instance
-let globalState = null;
+let globalState = null; 
 
 // StateStore implementation that all modules will use
 class StateStore {
