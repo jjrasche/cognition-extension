@@ -13,10 +13,11 @@ async function build() {
   // Create build directory
   await fs.mkdir(buildDir, { recursive: true });
   
-  // Files to copy
+// Files to copy
   const files = [
     'manifest.json',
     'background.js',
+    'startup.module.js',
     'fitbit.module.js', 
     'ui.module.js',
     'test.html'

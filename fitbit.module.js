@@ -18,7 +18,7 @@ export const manifest = {
 // Fitbit app credentials
 const CLIENT_ID = "23QNT9";
 const CLIENT_SECRET = "d046fb1a90585a96647164f1b2bd4282";
-const REDIRECT_URI = `https://${chrome.runtime.id}.chromiumapp.org/`;
+const REDIRECT_URI = `https://chromiumapp.org/`;
 
 let pollTimer = null;
 let accessToken = null;
