@@ -6,6 +6,11 @@ import('./dev-reload.js').catch(() => {
   // Ignore - this file won't exist in production builds
 });
 
+// Import dev console helpers for development
+import('./dev-console-helpers.js').catch(() => {
+  // Ignore - this file won't exist in production builds
+});
+
 // Import all modules statically (required for Manifest V3)
 import * as startupModule from './startup.module.js';
 import * as fitbitModule from './fitbit.module.js';

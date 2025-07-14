@@ -14,7 +14,7 @@ async function build() {
   await fs.mkdir(buildDir, { recursive: true });
   
 
-  // Files to copy
+// Files to copy
   const files = [
     'manifest.json',
     'background.js',
@@ -28,7 +28,9 @@ async function build() {
   const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');
   if (isDev) {
     files.push('dev-reload.js');
+    files.push('dev-console-helpers.js');
     console.log('📦 Including dev-reload client for auto-reload');
+    console.log('🛠️  Including console helpers for debugging');
   }
   
   // Copy each file
