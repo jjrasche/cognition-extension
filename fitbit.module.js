@@ -22,16 +22,78 @@ const REDIRECT_URI = `https://chromiumapp.org/`;
 
 let pollTimer = null;
 let accessToken = null;
+let refreshToken = null;
 
-// Consolidated Fitbit API fetch helper
+// Refresh the access token using the refresh token
+async function refreshAccessToken() {
+  const stored = await chrome.storage.sync.get(['fitbitRefreshToken']);
+  const currentRefreshToken = stored.fitbitRefreshToken || refreshToken;
+  
+  if (!currentRefreshToken) {
+    throw new Error('No refresh token available');
+  }
+  
+  const response = await fetch('https://api.fitbit.com/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: currentRefreshToken
+    })
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('[Fitbit] Token refresh failed:', error);
+    throw new Error(`Token refresh failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  
+  // Update both tokens (Fitbit returns new refresh token too)
+  accessToken = data.access_token;
+  refreshToken = data.refresh_token;
+  
+  // Store the new tokens
+  await chrome.storage.sync.set({ 
+    fitbitAccessToken: accessToken,
+    fitbitRefreshToken: refreshToken,
+    fitbitTokenExpiry: Date.now() + (data.expires_in * 1000)
+  });
+  
+  console.log('[Fitbit] Token refreshed successfully');
+}
+
+// Consolidated Fitbit API fetch helper with automatic token refresh
 async function fitbitFetch(endpoint) {
   if (!accessToken) {
     throw new Error('No access token available');
   }
   
-  const response = await fetch(`https://api.fitbit.com${endpoint}`, {
+  // Check if token is expired
+  const stored = await chrome.storage.sync.get(['fitbitTokenExpiry']);
+  if (stored.fitbitTokenExpiry && Date.now() > stored.fitbitTokenExpiry) {
+    console.log('[Fitbit] Token expired, refreshing...');
+    await refreshAccessToken();
+  }
+  
+  let response = await fetch(`https://api.fitbit.com${endpoint}`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
+  
+  // If we get a 401, try refreshing the token once
+  if (response.status === 401) {
+    console.log('[Fitbit] Got 401, attempting token refresh...');
+    await refreshAccessToken();
+    
+    // Retry the request with new token
+    response = await fetch(`https://api.fitbit.com${endpoint}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+  }
   
   if (!response.ok) {
     throw new Error(`Fitbit API error: ${response.status}`);
@@ -41,9 +103,21 @@ async function fitbitFetch(endpoint) {
 }
 
 export async function initialize(state, config) {
-  // Get stored access token
-  const stored = await chrome.storage.sync.get(['fitbitAccessToken']);
+  // Get stored tokens and refresh token
+  const stored = await chrome.storage.sync.get(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry']);
   accessToken = stored.fitbitAccessToken;
+  refreshToken = stored.fitbitRefreshToken;
+  
+  // Check if token exists but is expired
+  if (accessToken && stored.fitbitTokenExpiry && Date.now() > stored.fitbitTokenExpiry) {
+    try {
+      await refreshAccessToken();
+    } catch (error) {
+      console.error('[Fitbit] Failed to refresh expired token:', error);
+      accessToken = null;
+      refreshToken = null;
+    }
+  }
   
   // Check auth first - if no token, start OAuth
   if (!accessToken) {
@@ -62,7 +136,6 @@ export async function initialize(state, config) {
     }, config.pollInterval * 60 * 1000);
   }
 }
-
 
 export async function startOAuthFlow(state) {
   try {
@@ -162,6 +235,7 @@ async function exchangeCodeForToken(code) {
   
   const data = await response.json();
   accessToken = data.access_token;
+  refreshToken = data.refresh_token;
 
   // Store both tokens for future use
   await chrome.storage.sync.set({ 
