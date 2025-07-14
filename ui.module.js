@@ -68,6 +68,7 @@ export const notify = (state, params) => {
     return { success: false, error: 'Notification requires a message' };
   }
   return state.write('ui.notify', {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     message: params.message,
     type: params.type || 'info',
     from: params.from || 'System',

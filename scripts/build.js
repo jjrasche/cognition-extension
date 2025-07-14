@@ -20,6 +20,7 @@ async function build() {
     'background.js',
     'fitbit.module.js', 
     'ui.module.js',
+    'transcript.module.js',
     'test.html'
   ];
   

@@ -94,7 +94,7 @@ const steps = await state.read('activity.today.steps');
 
 ### State Naming Pattern
 
-Follow `domain.type.property`:
+Follow `noun.type.property`:
 - ✅ `fitbit.auth.status`
 - ✅ `sleep.lastNight.hours`
 - ✅ `activity.today.calories`

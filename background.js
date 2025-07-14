@@ -6,11 +6,12 @@ import './dev-reload.js';
 import './dev-console-helper.js';
 import * as fitbitModule from './fitbit.module.js';
 import * as uiModule from './ui.module.js';
-
+import * as transcriptModule from './transcript.module.js';
 // Module registry - maps module names to their exports
 const moduleRegistry = {
   'fitbit': fitbitModule,
-  'ui': uiModule
+  'ui': uiModule,
+  'transcript': transcriptModule
 };
 
 // Global state store instance
@@ -229,11 +230,10 @@ function registerModuleActions(name, module) {
   }
 }
 
-// Get module configuration from storage
+// Get module configuration from StateStore
 async function getModuleConfig(moduleName) {
-  const key = `modules.${moduleName}`;
-  const stored = await chrome.storage.sync.get(key);
-  return stored[key] || {};
+  const key = `modules.${moduleName}.config`;
+  return await globalState.read(key) || {};
 }
 
 async function initializeExtension() {
@@ -251,8 +251,13 @@ async function initializeExtension() {
     await globalState.write('system.modules', []);
     await globalState.write('system.errors', []);
     
-    // Get enabled modules from storage
-    const { enabledModules = ['fitbit', 'ui'] } = await chrome.storage.sync.get('enabledModules');
+    // Get enabled modules from StateStore
+    let enabledModules = await globalState.read('system.enabledModules');
+    if (!enabledModules) {
+      // Default modules if not set
+      enabledModules = ['fitbit', 'ui'];
+      await globalState.write('system.enabledModules', enabledModules);
+    }
     console.log('[Background] Enabled modules:', enabledModules);
     
     const loaded = [];

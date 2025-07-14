@@ -11,7 +11,7 @@ export const manifest = {
   actions: ["refreshAllData", "fitbitAuth", "handleAuthCallback"],
   state: {
     reads: [],
-    writes: ["sleep.lastNight.hours", "sleep.lastNight.quality", "activity.today.calories", "heart.current.bpm", "ui.notify.queue"]
+    writes: ["fitbit.auth.status", "fitbit.lastSync", "sleep.lastNight.hours", "sleep.lastNight.quality", "activity.today.calories", "heart.current.bpm", "ui.notify.queue"]
   }
 };
 
@@ -23,6 +23,7 @@ const REDIRECT_URI = `https://chromiumapp.org/`;
 let pollTimer = null;
 let accessToken = null;
 let refreshToken = null;
+let globalState = null; // Store state reference for use in helper functions
 
 // Refresh the access token using the refresh token
 async function refreshAccessToken() {
@@ -57,8 +58,8 @@ async function refreshAccessToken() {
   accessToken = data.access_token;
   refreshToken = data.refresh_token;
   
-  // Store the new tokens
-  await chrome.storage.sync.set({ 
+  // Store the new tokens in chrome.storage.sync (cross-device sync)
+  await chrome.storage.sync.set({
     fitbitAccessToken: accessToken,
     fitbitRefreshToken: refreshToken,
     fitbitTokenExpiry: Date.now() + (data.expires_in * 1000)
@@ -103,7 +104,10 @@ async function fitbitFetch(endpoint) {
 }
 
 export async function initialize(state, config) {
-  // Get stored tokens and refresh token
+  // Store state reference for use in helper functions
+  globalState = state;
+  
+  // Get stored tokens from chrome.storage.sync (cross-device sync)
   const stored = await chrome.storage.sync.get(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry']);
   accessToken = stored.fitbitAccessToken;
   refreshToken = stored.fitbitRefreshToken;
@@ -268,10 +272,10 @@ async function exchangeCodeForToken(code) {
   accessToken = data.access_token;
   refreshToken = data.refresh_token;
 
-  // Store both tokens for future use
-  await chrome.storage.sync.set({ 
+  // Store both tokens in chrome.storage.sync (cross-device sync)
+  await chrome.storage.sync.set({
     fitbitAccessToken: accessToken,
-    fitbitRefreshToken: data.refresh_token,
+    fitbitRefreshToken: refreshToken,
     fitbitTokenExpiry: Date.now() + (data.expires_in * 1000)
   });
 }
