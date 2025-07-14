@@ -18,7 +18,6 @@ async function build() {
   const files = [
     'manifest.json',
     'background.js',
-    'startup.module.js',
     'fitbit.module.js', 
     'ui.module.js',
     'test.html'

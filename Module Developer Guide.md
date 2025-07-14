@@ -59,7 +59,7 @@ async function refreshAccessToken() { }
 
 ### How Actions Actually Get Called
 
-The startup module maintains an action registry. When you export a function, it gets registered:
+The module system maintains an action registry. When you export a function, it gets registered:
 
 ```javascript
 // In startup.js

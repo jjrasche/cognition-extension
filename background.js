@@ -4,13 +4,11 @@
 // Import all modules statically (required for Manifest V3)
 import './dev-reload.js';
 import './dev-console-helper.js';
-import * as startupModule from './startup.module.js';
 import * as fitbitModule from './fitbit.module.js';
 import * as uiModule from './ui.module.js';
 
 // Module registry - maps module names to their exports
 const moduleRegistry = {
-  'startup': startupModule,
   'fitbit': fitbitModule,
   'ui': uiModule
 };
@@ -31,6 +29,12 @@ class StateStore {
     this.localState = {};
     this.watchers = new Map();
     this.actions = this.createActionRegistry();
+    this.isLoaded = false;
+    this.pendingWrites = new Map();
+    this.writeTimer = null;
+    
+    // Register built-in state management actions
+    this.registerStateActions();
     
     // Listen for state changes
     this.channel.onmessage = (event) => {
@@ -47,41 +51,102 @@ class StateStore {
     this.loadPersistedState();
   }
   
+  registerStateActions() {
+    // Register read action for external access
+    this.actions.register('state.read', async (params) => {
+      const { key } = params;
+      return await this.read(key);
+    }, {
+      module: 'state',
+      description: 'Read a value from state',
+      parameters: ['key']
+    });
+    
+    // Register write action for external access
+    this.actions.register('state.write', async (params) => {
+      const { key, value } = params;
+      await this.write(key, value);
+      return { success: true };
+    }, {
+      module: 'state',
+      description: 'Write a value to state',
+      parameters: ['key', 'value']
+    });
+  }
+  
   async loadPersistedState() {
-    const stored = await chrome.storage.local.get('cognitionState');
-    if (stored.cognitionState) {
-      this.localState = { ...stored.cognitionState };
+    if (this.isLoaded) return;
+    
+    try {
+      const stored = await chrome.storage.local.get('cognitionState');
+      if (stored.cognitionState) {
+        this.localState = { ...stored.cognitionState };
+      }
+      this.isLoaded = true;
+      console.log('[StateStore] Initial state loaded:', Object.keys(this.localState));
+    } catch (error) {
+      console.error('[StateStore] Failed to load persisted state:', error);
+      this.isLoaded = true; // Continue with empty state
+    }
+  }
+  
+  async ensureLoaded() {
+    if (!this.isLoaded) {
+      await this.loadPersistedState();
     }
   }
   
   async read(key) {
-    if (key in this.localState) {
-      return this.localState[key];
-    }
-    
-    const stored = await chrome.storage.local.get('cognitionState');
-    const value = stored.cognitionState?.[key];
-    if (value !== undefined) {
-      this.localState[key] = value;
-    }
-    return value;
+    await this.ensureLoaded();
+    return this.localState[key];
   }
   
   async write(key, value) {
+    await this.ensureLoaded();
+    
+    // Update local state immediately
     this.localState[key] = value;
     
-    // Persist to storage
-    const stored = await chrome.storage.local.get('cognitionState');
-    const state = stored.cognitionState || {};
-    state[key] = value;
-    await chrome.storage.local.set({ cognitionState: state });
+    // Queue for batched persistence
+    this.pendingWrites.set(key, value);
+    this.schedulePersistence();
     
-    // Broadcast change
+    // Broadcast change immediately
     this.channel.postMessage({ key, value });
     
-    // Notify watchers
+    // Notify watchers immediately
     if (this.watchers.has(key)) {
       this.watchers.get(key).forEach(callback => callback(value));
+    }
+  }
+  
+  schedulePersistence() {
+    // Clear existing timer
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+    }
+    
+    // Schedule batched write
+    this.writeTimer = setTimeout(async () => {
+      await this.flushPendingWrites();
+    }, 100); // Batch writes over 100ms
+  }
+  
+  async flushPendingWrites() {
+    if (this.pendingWrites.size === 0) return;
+    
+    try {
+      // Get current state from storage and merge with pending writes
+      const currentState = { ...this.localState };
+      
+      // Write entire state at once
+      await chrome.storage.local.set({ cognitionState: currentState });
+      
+      console.log(`[StateStore] Persisted ${this.pendingWrites.size} changes to storage`);
+      this.pendingWrites.clear();
+    } catch (error) {
+      console.error('[StateStore] Failed to persist state:', error);
+      // Don't clear pendingWrites on error - they'll be retried
     }
   }
   
@@ -402,5 +467,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       
     return true; // Keep channel open for async response
+  }
+  
+  if (request.type === 'GET_STATE' && globalState) {
+    console.log('[Background] Received state request');
+    
+    // Return the current state
+    sendResponse({
+      success: true,
+      state: globalState.localState
+    });
+    
+    return false; // Synchronous response
   }
 });

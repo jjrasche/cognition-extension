@@ -212,12 +212,19 @@
     }
     
     async function refreshState() {
-      // Get current state from extension
-      const stored = await chrome.storage.local.get('cognitionState');
-      const state = stored.cognitionState || {};
-      
-      // Pretty print the state
-      document.getElementById('state-display').textContent = JSON.stringify(state, null, 2);
+      // Get current state from extension via messaging
+      try {
+        const result = await chrome.runtime.sendMessage({ type: 'GET_STATE' });
+        
+        if (result.success) {
+          // Pretty print the state
+          document.getElementById('state-display').textContent = JSON.stringify(result.state, null, 2);
+        } else {
+          document.getElementById('state-display').textContent = 'Error loading state: ' + result.error;
+        }
+      } catch (error) {
+        document.getElementById('state-display').textContent = 'Error: ' + error.message;
+      }
     }
     
     function showStatus(elementId, type, message) {

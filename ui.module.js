@@ -12,33 +12,42 @@ export const manifest = {
 };
 
 // Module initialization - injects UI into tabs
+// Store state reference for use in event listeners
+let globalStateRef = null;
+
 export async function initialize(state, config) {
-  await initializeUIConfig();
-  await injectUIIntoExistingTabs();
+  globalStateRef = state;
+  await initializeUIConfig(state, config);
+  await injectUIIntoExistingTabs(state);
   // Handle new tabs
   chrome.tabs.onCreated.addListener((tab) => {
     if (tab.id) {
-      setTimeout(() => injectUI(tab.id), 100);
+      setTimeout(() => injectUI(globalStateRef, tab.id), 100);
     }
   });
   // Handle navigation
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete') {
-      injectUI(tabId);
+      injectUI(globalStateRef, tabId);
     }
   });
 }
-const initializeUIConfig = async () =>  await chrome.storage.local.set({ uiConfig: { position: config.position || 'right', size: config.size || '20%', ...config } });
-const injectUIIntoExistingTabs = async () => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(tab.id)));
+const initializeUIConfig = async (state, config) => {
+  const uiConfig = { position: config.position || 'right', size: config.size || '20%', ...config };
+  await state.write('ui.config', uiConfig);
+};
+const injectUIIntoExistingTabs = async (state) => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(globalStateRef, tab.id)));
 const shouldInjectIntoTab = (tab) => tab.url;
 const injectContentScript = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentScriptCode, world: 'ISOLATED' });
-const injectCSS = async (tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS() });
+const injectCSS = async (state, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS(state) });
 
-async function injectUI(tabId) {
+async function injectUI(state, tabId) {
+  const tabs = await chrome.tabs.query({});
+  const tab = tabs.find(t => t.id === tabId);
   if (!shouldInjectIntoTab(tab)) return;
   try {
     injectContentScript(tabId);
-    injectCSS(tabId);
+    injectCSS(state, tabId);
   } catch (e) {
     console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
   }
@@ -47,7 +56,12 @@ async function injectUI(tabId) {
 // Module Actions - These run in the service worker context and communicate with content scripts via state changes
 export const show = state => state.write('ui.visible', true).then(() => ({ success: true }));
 export const hide = state => state.write('ui.visible', false).then(() => ({ success: true }));
-export const toggle = async state => state.write('ui.visible', !(await state.read('ui.visible'))).then(() => ({ success: true }));
+export const toggle = async state => {
+  const currentValue = await state.read('ui.visible');
+  const newValue = !currentValue;
+  await state.write('ui.visible', newValue);
+  return { success: true, value: newValue };
+};
 
 export const notify = (state, params) => {
   if (!params?.message) {
@@ -89,11 +103,17 @@ function contentScriptCode() {
     config: {},
     
     async init() {
-      this.config = (await chrome.storage.local.get(['uiConfig'])).uiConfig || {};
+      // Get config from state via messaging
+      const configResult = await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.read', params: { key: 'ui.config' } });
+      this.config = configResult.result || {};
+      
       this.createElements();
       this.setupStateListener();
       this.setupClickHandlers();
-      if ((await chrome.storage.local.get('cognitionState'))?.['ui.visible']) {
+      
+      // Check if UI should be visible
+      const visibleResult = await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.read', params: { key: 'ui.visible' } });
+      if (visibleResult.result) {
         this.show();
       }
       window.__cognitionUI = this; // Mark as initialized
@@ -215,14 +235,8 @@ function contentScriptCode() {
     
     // Helper to update state from content script
     async updateState(key, value) {
-      // Update local storage
-      const stored = await chrome.storage.local.get('cognitionState');
-      const state = stored.cognitionState || {};
-      state[key] = value;
-      await chrome.storage.local.set({ cognitionState: state });
-      
-      // Broadcast the change
-      this.channel.postMessage({ key, value });
+      // Update state via messaging to background script
+      await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.write', params: { key, value } });
     },
     
     show() {
@@ -299,9 +313,8 @@ function contentScriptCode() {
 }
 
 // CSS generation function
-async function generateCSS() {
-  const { uiConfig } = await chrome.storage.local.get(['uiConfig']);
-  const config = uiConfig || {};
+async function generateCSS(state) {
+  const config = await state.read('ui.config') || {};
   
   // Position-based styles
   const positions = {
