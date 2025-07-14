@@ -139,9 +139,19 @@ export async function initialize(state, config) {
 
 export async function startOAuthFlow(state) {
   try {
+    // Check if an auth flow is already in progress
+    const existingState = await chrome.storage.sync.get(['fitbitAuthState']);
+    if (existingState.fitbitAuthState) {
+      console.log('[Fitbit] OAuth flow already in progress, cancelling existing...');
+      // Clear any existing state
+      await chrome.storage.sync.remove('fitbitAuthState');
+    }
+    
     // Generate random state for CSRF protection
     const authState = Math.random().toString(36).substring(7);
     await chrome.storage.sync.set({ fitbitAuthState: authState });
+    
+    console.log('[Fitbit] Starting OAuth flow with state:', authState);
     
     const authUrl = `https://www.fitbit.com/oauth2/authorize?` +
       `client_id=${CLIENT_ID}&` +
@@ -182,15 +192,29 @@ export const fitbitAuth = startOAuthFlow;
 
 export async function handleAuthCallback(state, { code, state: authState }) {
   try {
+    console.log('[Fitbit] Processing OAuth callback - code:', code, 'state:', authState);
+    
     // Verify state matches
     const stored = await chrome.storage.sync.get(['fitbitAuthState']);
+    console.log('[Fitbit] Stored state:', stored.fitbitAuthState, 'received state:', authState);
+    
     if (authState !== stored.fitbitAuthState) {
       console.error('[Fitbit] State mismatch - expected:', stored.fitbitAuthState, 'got:', authState);
+      
+      // If no stored state, it might have been processed already
+      if (!stored.fitbitAuthState) {
+        return { 
+          success: false, 
+          error: 'OAuth callback already processed or no auth flow in progress'
+        };
+      }
+      
       throw new Error('Invalid state parameter - possible CSRF attack or duplicate callback');
     }
     
     // Clear the state immediately to prevent reuse
     await chrome.storage.sync.remove('fitbitAuthState');
+    console.log('[Fitbit] State cleared, proceeding with token exchange');
     
     // Exchange code for token
     await exchangeCodeForToken(code);

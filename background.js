@@ -26,6 +26,12 @@ const moduleRegistry = {
 // Global state store instance
 let globalState = null; 
 
+// Track OAuth codes being processed to prevent duplicate handling
+const processingOAuthCodes = new Set();
+
+// Track active OAuth flows to prevent concurrent auth attempts
+let isOAuthFlowActive = false;
+
 // StateStore implementation that all modules will use
 class StateStore {
   constructor() {
@@ -284,19 +290,41 @@ chrome.webNavigation.onBeforeNavigate.addListener(
       const state = url.searchParams.get('state');
       
       if (code && globalState?.actions) {
-        console.log('[Background] OAuth code found:', code);
+        // Check if we're already processing this code
+        if (processingOAuthCodes.has(code)) {
+          console.log('[Background] OAuth code already being processed by other listener, skipping');
+          return;
+        }
+        
+        // Mark this code as being processed
+        processingOAuthCodes.add(code);
+        
+        console.log('[Background] webNavigation: OAuth code found:', code, 'state:', state);
         
         const result = await globalState.actions.execute('fitbit.handleAuthCallback', { code, state });
-        console.log('[Background] OAuth callback result:', result);
+        console.log('[Background] webNavigation: OAuth callback result:', result);
         
         if (result.success) {
           setTimeout(() => {
-            chrome.tabs.remove(details.tabId);
+            chrome.tabs.remove(details.tabId).catch(() => {
+              // Tab might already be closed
+            });
           }, 100);
         }
+        
+        // Remove code from processing set after a delay
+        setTimeout(() => {
+          processingOAuthCodes.delete(code);
+        }, 5000);
       }
     } catch (error) {
-      console.error('[Background] OAuth redirect error:', error);
+      console.error('[Background] webNavigation: OAuth redirect error:', error);
+      // Clean up on error
+      const url = new URL(details.url);
+      const code = url.searchParams.get('code');
+      if (code) {
+        processingOAuthCodes.delete(code);
+      }
     }
   },
   {
@@ -324,11 +352,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         // Mark this code as being processed
         processingOAuthCodes.add(code);
         
-        console.log('[Background] OAuth code found in tabs.onUpdated:', code);
+        console.log('[Background] tabs.onUpdated: OAuth code found:', code, 'state:', state);
         
         if (globalState?.actions) {
           const result = await globalState.actions.execute('fitbit.handleAuthCallback', { code, state });
-          console.log('[Background] OAuth callback result:', result);
+          console.log('[Background] tabs.onUpdated: OAuth callback result:', result);
           
           // Close the tab on success
           if (result.success) {
@@ -349,7 +377,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         }
       }
     } catch (error) {
-      console.error('[Background] OAuth callback error:', error);
+      console.error('[Background] tabs.onUpdated: OAuth callback error:', error);
+      // Clean up on error
+      const url = new URL(changeInfo.url);
+      const code = url.searchParams.get('code');
+      if (code) {
+        processingOAuthCodes.delete(code);
+      }
     }
   }
 });
