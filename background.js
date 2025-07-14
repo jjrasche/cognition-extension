@@ -263,6 +263,37 @@ chrome.action.onClicked.addListener(async () => {
   }
 });
 
+// Listen for OAuth redirects using webNavigation API
+chrome.webNavigation.onBeforeNavigate.addListener(
+  async (details) => {
+    console.log('[Background] Navigation detected:', details.url);
+    
+    try {
+      const url = new URL(details.url);
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      
+      if (code && globalState?.actions) {
+        console.log('[Background] OAuth code found:', code);
+        
+        const result = await globalState.actions.execute('fitbit.handleAuthCallback', { code, state });
+        console.log('[Background] OAuth callback result:', result);
+        
+        if (result.success) {
+          setTimeout(() => {
+            chrome.tabs.remove(details.tabId);
+          }, 100);
+        }
+      }
+    } catch (error) {
+      console.error('[Background] OAuth redirect error:', error);
+    }
+  },
+  {
+    urls: ['https://chromiumapp.org/*']
+  }
+);
+
 // Listen for OAuth redirects (for Fitbit)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url && changeInfo.url.includes(`${chrome.runtime.id}.chromiumapp.org`)) {

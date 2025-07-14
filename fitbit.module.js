@@ -73,7 +73,7 @@ export async function startOAuthFlow(state) {
     const authUrl = `https://www.fitbit.com/oauth2/authorize?` +
       `client_id=${CLIENT_ID}&` +
       `response_type=code&` +
-      `scope=activity%20heartrate%20sleep&` +
+      `scope=activity%20heartrate%20sleep%20offline_access&` +
       `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
       `state=${authState}`;
     
@@ -162,9 +162,13 @@ async function exchangeCodeForToken(code) {
   
   const data = await response.json();
   accessToken = data.access_token;
-  
-  // Store token for future use
-  await chrome.storage.sync.set({ fitbitAccessToken: accessToken });
+
+  // Store both tokens for future use
+  await chrome.storage.sync.set({ 
+    fitbitAccessToken: accessToken,
+    fitbitRefreshToken: data.refresh_token,
+    fitbitTokenExpiry: Date.now() + (data.expires_in * 1000)
+  });
 }
 
 export async function refreshAllData(state) {
