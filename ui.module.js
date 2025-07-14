@@ -1,75 +1,84 @@
 // ui-module.js - UI overlay system for displaying module content
-
 export const manifest = {
   name: 'UI Overlay',
   version: '1.0.0',
   description: 'Provides sidebar, notifications, and modals for other modules',
   permissions: ['tabs', 'scripting', 'storage'],
-  actions: ['show', 'hide', 'toggle', 'notify', 'modal']
+  actions: ['show', 'hide', 'toggle', 'notify', 'modal'],
+  state: {
+    reads: ['ui.visible'],
+    writes: ['ui.visible', 'ui.content', 'ui.notify', 'ui.modal']
+  }
 };
 
-let stateChannel = null;
-
+// Module initialization - injects UI into tabs
 export async function initialize(state, config) {
-  // Get the state channel from initialization
-  stateChannel = state.channel || new BroadcastChannel('cognition-state');
-  
-  // Store config for content scripts to read
-  const uiConfig = {
-    position: config.position || 'right',
-    size: config.size || '20%',
-    ...config
-  };
-  await chrome.storage.local.set({ uiConfig });
-  
-  // Inject into existing tabs
-  const tabs = await chrome.tabs.query({});
-  tabs.forEach(tab => {
-    if (shouldInjectIntoTab(tab)) {
-      injectUI(tab.id);
-    }
-  });
-  
+  await initializeUIConfig();
+  await injectUIIntoExistingTabs();
   // Handle new tabs
   chrome.tabs.onCreated.addListener((tab) => {
-    if (tab.id && shouldInjectIntoTab(tab)) {
+    if (tab.id) {
       setTimeout(() => injectUI(tab.id), 100);
     }
   });
-  
   // Handle navigation
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && shouldInjectIntoTab(tab)) {
+    if (changeInfo.status === 'complete') {
       injectUI(tabId);
     }
   });
 }
-
-function shouldInjectIntoTab(tab) {
-  return tab.url && 
-         !tab.url.startsWith('chrome://') && 
-         !tab.url.startsWith('edge://') &&
-         !tab.url.startsWith('about:');
-}
+const initializeUIConfig = async () =>  await chrome.storage.local.set({ uiConfig: { position: config.position || 'right', size: config.size || '20%', ...config } });
+const injectUIIntoExistingTabs = async () => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(tab.id)));
+const shouldInjectIntoTab = (tab) => tab.url;
+const injectContentScript = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentScriptCode, world: 'ISOLATED' });
+const injectCSS = async (tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS() });
 
 async function injectUI(tabId) {
+  if (!shouldInjectIntoTab(tab)) return;
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: contentScriptCode,
-      world: 'ISOLATED'
-    });
-    
-    await chrome.scripting.insertCSS({
-      target: { tabId },
-      css: await generateStyles()
-    });
+    injectContentScript(tabId);
+    injectCSS(tabId);
   } catch (e) {
-    // Tab might be restricted, ignore silently
+    console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
   }
 }
 
-// This entire function runs in the page context
+// Module Actions - These run in the service worker context and communicate with content scripts via state changes
+export const show = state => state.write('ui.visible', true).then(() => ({ success: true }));
+export const hide = state => state.write('ui.visible', false).then(() => ({ success: true }));
+export const toggle = async state => state.write('ui.visible', !(await state.read('ui.visible'))).then(() => ({ success: true }));
+
+export const notify = (state, params) => {
+  if (!params?.message) {
+    return { success: false, error: 'Notification requires a message' };
+  }
+  return state.write('ui.notify', {
+    message: params.message,
+    type: params.type || 'info',
+    from: params.from || 'System',
+    duration: params.duration || 5000,
+    timestamp: Date.now(),
+  }).then(() => ({ success: true }));
+}
+
+export const modal = (state, params) => {
+  if (!params?.text) {
+    return { success: false, error: 'Modal requires text' };
+  }
+  return state.write('ui.modal', {
+    title: params.title || 'Confirm',
+    text: params.text,
+    responseAction: params.responseAction || '',
+    timestamp: Date.now()
+  }).then(() => ({ success: true }));
+}
+
+
+
+/*
+ * Content Script Code - Runs in the context of the page
+ */
 function contentScriptCode() {
   // Prevent re-injection
   if (window.__cognitionUI) return;
@@ -80,62 +89,51 @@ function contentScriptCode() {
     config: {},
     
     async init() {
-      // Load config
-      const stored = await chrome.storage.local.get(['uiConfig', 'uiVisible']);
-      this.config = stored.uiConfig || {};
-      
-      // Create UI elements
+      this.config = (await chrome.storage.local.get(['uiConfig'])).uiConfig || {};
       this.createElements();
-      
-      // Set up listeners
       this.setupStateListener();
       this.setupClickHandlers();
-      
-      // Apply initial visibility
-      if (stored.uiVisible) {
+      if ((await chrome.storage.local.get('cognitionState'))?.['ui.visible']) {
         this.show();
       }
-      
-      // Mark as initialized
-      window.__cognitionUI = this;
+      window.__cognitionUI = this; // Mark as initialized
     },
     
     createElements() {
       // Main container
-      const container = this.createElement('div', {
-        id: 'cognition-container',
-        className: 'cognition-ui',
-        innerHTML: `
-          <div class="cog-header">
-            <span class="cog-title">Cognition</span>
-            <button class="cog-close" data-action="ui.hide">×</button>
-          </div>
-          <div class="cog-content"></div>
-        `
-      });
+      const container = document.createElement('div');
+      container.id = 'cognition-container';
+      container.className = 'cognition-ui';
+      container.innerHTML = `
+        <div class="cog-header">
+          <span class="cog-title">Cognition</span>
+          <button class="cog-close" data-action="ui.hide">×</button>
+        </div>
+        <div class="cog-content">
+          <div class="cog-empty">No content</div>
+        </div>
+      `;
       
       // Notifications container
-      const notifications = this.createElement('div', {
-        id: 'cognition-notifications',
-        className: 'cognition-ui'
-      });
+      const notifications = document.createElement('div');
+      notifications.id = 'cognition-notifications';
+      notifications.className = 'cognition-ui';
       
       // Modal
-      const modal = this.createElement('div', {
-        id: 'cognition-modal',
-        className: 'cognition-ui',
-        innerHTML: `
-          <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
-          <div class="cog-modal-content">
-            <h3 class="cog-modal-title"></h3>
-            <p class="cog-modal-text"></p>
-            <div class="cog-modal-buttons">
-              <button class="cog-modal-btn" data-modal-response="true">Yes</button>
-              <button class="cog-modal-btn" data-modal-response="false">No</button>
-            </div>
+      const modal = document.createElement('div');
+      modal.id = 'cognition-modal';
+      modal.className = 'cognition-ui';
+      modal.innerHTML = `
+        <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
+        <div class="cog-modal-content">
+          <h3 class="cog-modal-title"></h3>
+          <p class="cog-modal-text"></p>
+          <div class="cog-modal-buttons">
+            <button class="cog-modal-btn" data-modal-response="true">Yes</button>
+            <button class="cog-modal-btn" data-modal-response="false">No</button>
           </div>
-        `
-      });
+        </div>
+      `;
       
       // Store references
       this.elements = {
@@ -148,35 +146,44 @@ function contentScriptCode() {
       };
       
       // Add to page
-      document.body.append(container, notifications, modal);
-    },
-    
-    createElement(tag, props) {
-      const el = document.createElement(tag);
-      Object.assign(el, props);
-      return el;
+      document.body.appendChild(container);
+      document.body.appendChild(notifications);
+      document.body.appendChild(modal);
     },
     
     setupStateListener() {
-      // Use the existing state channel
+      // Listen to state changes via BroadcastChannel
       const channel = new BroadcastChannel('cognition-state');
-      this.channel = channel;
       
       channel.onmessage = (event) => {
-        const { type, path, value } = event.data;
-        if (type !== 'STATE_UPDATE') return;
+        const { key, value } = event.data;
         
-        // Simple path-based routing
-        const handlers = {
-          'ui.visible': () => value ? this.show() : this.hide(),
-          'ui.content': () => this.updateContent(value),
-          'ui.notify': () => this.addNotification(value),
-          'ui.modal': () => this.showModal(value)
-        };
-        
-        const handler = handlers[path];
-        if (handler) handler();
+        // Handle state changes based on key
+        switch(key) {
+          case 'ui.visible':
+            if (value) this.show();
+            else this.hide();
+            break;
+            
+          case 'ui.content':
+            this.updateContent(value);
+            break;
+            
+          case 'ui.notify':
+            if (value && value.message) {
+              this.addNotification(value);
+            }
+            break;
+            
+          case 'ui.modal':
+            if (value) {
+              this.showModal(value);
+            }
+            break;
+        }
       };
+      
+      this.channel = channel;
     },
     
     setupClickHandlers() {
@@ -184,9 +191,20 @@ function contentScriptCode() {
         // Handle data-action clicks
         const actionEl = e.target.closest('[data-action]');
         if (actionEl) {
-          this.handleAction(actionEl.dataset.action, actionEl.dataset.params);
+          const action = actionEl.dataset.action;
+          // Handle UI-specific actions locally
+          if (action === 'ui.hide') {
+            this.hide();
+            // Also update state so service worker knows
+            this.updateState('ui.visible', false);
+          } else if (action === 'ui.modal.close') {
+            this.hideModal();
+          } else {
+            // Other actions go to state for modules to handle
+            const params = actionEl.dataset.params ? JSON.parse(actionEl.dataset.params) : {};
+            this.updateState('ui.action.request', { action, params });
+          }
         }
-        
         // Handle modal responses
         const responseEl = e.target.closest('[data-modal-response]');
         if (responseEl) {
@@ -195,80 +213,49 @@ function contentScriptCode() {
       });
     },
     
-    handleAction(action, params) {
-      // UI-specific actions handled locally
-      if (action === 'ui.hide') {
-        this.channel.postMessage({
-          type: 'STATE_UPDATE',
-          path: 'ui.visible',
-          value: false
-        });
-        return;
-      }
+    // Helper to update state from content script
+    async updateState(key, value) {
+      // Update local storage
+      const stored = await chrome.storage.local.get('cognitionState');
+      const state = stored.cognitionState || {};
+      state[key] = value;
+      await chrome.storage.local.set({ cognitionState: state });
       
-      if (action === 'ui.modal.close') {
-        this.hideModal();
-        return;
-      }
-      
-      // All other actions go to state for modules to handle
-      this.channel.postMessage({
-        type: 'STATE_UPDATE',
-        path: 'ui.action.request',
-        value: {
-          action,
-          params: params ? JSON.parse(params) : {},
-          timestamp: Date.now()
-        }
-      });
-    },
-    
-    handleModalResponse(confirmed) {
-      const modalData = this.elements.modal.dataset;
-      
-      this.hideModal();
-      
-      if (modalData.responseAction) {
-        this.channel.postMessage({
-          type: 'STATE_UPDATE',
-          path: modalData.responseAction,
-          value: { confirmed, timestamp: Date.now() }
-        });
-      }
+      // Broadcast the change
+      this.channel.postMessage({ key, value });
     },
     
     show() {
       this.elements.container.classList.add('visible');
       this.elements.notifications.classList.add('visible');
-      chrome.storage.local.set({ uiVisible: true });
     },
     
     hide() {
       this.elements.container.classList.remove('visible');
       this.elements.notifications.classList.remove('visible');
       this.elements.modal.classList.remove('visible');
-      chrome.storage.local.set({ uiVisible: false });
     },
     
     updateContent(html) {
-      this.elements.content.innerHTML = html || '<div class="cog-empty">No content</div>';
+      if (!html) {
+        this.elements.content.innerHTML = '<div class="cog-empty">No content</div>';
+      } else {
+        this.elements.content.innerHTML = html;
+      }
     },
     
     addNotification(data) {
-      if (!data?.message) return;
-      
-      const id = Date.now();
-      const notif = this.createElement('div', {
-        className: `cog-notification ${data.type || 'info'}`,
-        innerHTML: `
-          <div class="cog-notif-content">
-            ${data.from ? `<span class="cog-notif-from">${data.from}</span>` : ''}
-            <span class="cog-notif-message">${data.message}</span>
-          </div>
-        `
-      });
+      const notif = document.createElement('div');
+      notif.className = `cog-notification ${data.type || 'info'}`;
+      notif.innerHTML = `
+        <div class="cog-notif-content">
+          ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
+          <span class="cog-notif-message">${data.message}</span>
+        </div>
+      `;
       
       this.elements.notifications.appendChild(notif);
+      const id = Date.now();
       this.notifications.set(id, notif);
       
       // Animate in
@@ -287,11 +274,6 @@ function contentScriptCode() {
     },
     
     showModal(data) {
-      if (!data?.text) {
-        this.hideModal();
-        return;
-      }
-      
       this.elements.modalTitle.textContent = data.title || 'Confirm';
       this.elements.modalText.textContent = data.text;
       this.elements.modal.dataset.responseAction = data.responseAction || '';
@@ -301,6 +283,14 @@ function contentScriptCode() {
     hideModal() {
       this.elements.modal.classList.remove('visible');
       delete this.elements.modal.dataset.responseAction;
+    },
+    
+    handleModalResponse(confirmed) {
+      const responseAction = this.elements.modal.dataset.responseAction;
+      this.hideModal();
+      if (responseAction) {
+        this.updateState(responseAction, { confirmed });
+      }
     }
   };
   
@@ -308,96 +298,40 @@ function contentScriptCode() {
   ui.init();
 }
 
-// UI Module Actions (exportable for voice commands)
-export async function show() {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.visible',
-    value: true
-  });
-  return { success: true };
-}
-
-export async function hide() {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.visible',
-    value: false
-  });
-  return { success: true };
-}
-
-export async function toggle() {
-  const { state } = await chrome.storage.local.get(['state']);
-  const visible = state?.['ui.visible'] || false;
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.visible',
-    value: !visible
-  });
-  return { visible: !visible };
-}
-
-export async function notify(params) {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.notify',
-    value: params
-  });
-  return { success: true };
-}
-
-export async function modal(params) {
-  stateChannel.postMessage({
-    type: 'STATE_UPDATE',
-    path: 'ui.modal',
-    value: params
-  });
-  return { success: true };
-}
-
-// Dynamic style generation based on config
-async function generateStyles() {
+// CSS generation function
+async function generateCSS() {
   const { uiConfig } = await chrome.storage.local.get(['uiConfig']);
   const config = uiConfig || {};
   
   // Position-based styles
   const positions = {
-    right: `
-      right: -${parseInt(config.size) + 1}%;
-      width: ${config.size};
-      height: 100vh;
-      top: 0;
-      border-left: 1px solid rgba(255, 255, 255, 0.1);
-    `,
-    left: `
-      left: -${parseInt(config.size) + 1}%;
-      width: ${config.size};
-      height: 100vh;
-      top: 0;
-      border-right: 1px solid rgba(255, 255, 255, 0.1);
-    `,
-    top: `
-      top: -${parseInt(config.size) + 1}%;
-      height: ${config.size};
-      width: 100vw;
-      left: 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    `,
-    bottom: `
-      bottom: -${parseInt(config.size) + 1}%;
-      height: ${config.size};
-      width: 100vw;
-      left: 0;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-    `
+    right: {
+      base: 'right: 0; width: ' + config.size + '; height: 100vh; top: 0;',
+      hidden: 'transform: translateX(100%);',
+      visible: 'transform: translateX(0);',
+      border: 'border-left: 1px solid rgba(255, 255, 255, 0.1);'
+    },
+    left: {
+      base: 'left: 0; width: ' + config.size + '; height: 100vh; top: 0;',
+      hidden: 'transform: translateX(-100%);',
+      visible: 'transform: translateX(0);',
+      border: 'border-right: 1px solid rgba(255, 255, 255, 0.1);'
+    },
+    top: {
+      base: 'top: 0; height: ' + config.size + '; width: 100vw; left: 0;',
+      hidden: 'transform: translateY(-100%);',
+      visible: 'transform: translateY(0);',
+      border: 'border-bottom: 1px solid rgba(255, 255, 255, 0.1);'
+    },
+    bottom: {
+      base: 'bottom: 0; height: ' + config.size + '; width: 100vw; left: 0;',
+      hidden: 'transform: translateY(100%);',
+      visible: 'transform: translateY(0);',
+      border: 'border-top: 1px solid rgba(255, 255, 255, 0.1);'
+    }
   };
   
-  const positionStyle = positions[config.position] || positions.right;
-  const visibleTransform = config.position === 'left' ? 'left: 0;' :
-                          config.position === 'right' ? 'right: 0;' :
-                          config.position === 'top' ? 'top: 0;' :
-                          'bottom: 0;';
+  const pos = positions[config.position] || positions.right;
   
   return `
     /* Base styles */
@@ -413,20 +347,22 @@ async function generateStyles() {
       box-sizing: border-box;
     }
     
-    /* Container with dynamic positioning */
+    /* Container */
     #cognition-container {
       position: fixed;
-      ${positionStyle}
-      background: rgba(17, 17, 27, 0.85);
+      ${pos.base}
+      ${pos.border}
+      background: rgba(17, 17, 27, 0.6);
       backdrop-filter: blur(10px);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 999998;
       overflow-y: auto;
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+      ${pos.hidden}
     }
     
     #cognition-container.visible {
-      ${visibleTransform}
+      ${pos.visible}
     }
     
     .cog-header {
@@ -491,7 +427,7 @@ async function generateStyles() {
     }
     
     .cog-notification {
-      background: rgba(17, 17, 27, 0.95);
+      background: rgba(17, 17, 27, 0.6);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 8px;
@@ -514,6 +450,10 @@ async function generateStyles() {
     
     .cog-notification.error {
       border-color: rgba(239, 68, 68, 0.5);
+    }
+    
+    .cog-notification.info {
+      border-color: rgba(59, 130, 246, 0.5);
     }
     
     .cog-notif-from {
@@ -550,7 +490,7 @@ async function generateStyles() {
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(17, 17, 27, 0.98);
+      background: rgba(17, 17, 27, 0.6);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 12px;
       padding: 24px;
@@ -605,7 +545,7 @@ async function generateStyles() {
     
     /* Mobile adjustments */
     @media (max-width: 768px) {
-      #cognition-container[style*="width"] {
+      #cognition-container {
         width: 100% !important;
       }
       
@@ -616,6 +556,11 @@ async function generateStyles() {
     }
   `;
 }
+
+/*
+  manual testing
+
+*/
 
 // Tests
 export const tests = [
@@ -630,39 +575,58 @@ export const tests = [
     }
   },
   {
-    name: 'generates position-based styles correctly',
+    name: 'notify validates parameters',
     fn: async () => {
-      global.chrome = {
-        storage: {
-          local: {
-            get: async () => ({
-              uiConfig: { position: 'left', size: '30%' }
-            })
-          }
-        }
-      };
+      const mockState = createMockState();
       
-      const styles = await generateStyles();
-      assert(styles.includes('left: -31%'));
-      assert(styles.includes('width: 30%'));
-      assert(styles.includes('left: 0;')); // visible position
+      // Should fail without message
+      const result1 = await notify(mockState, {});
+      assert(result1.success === false);
+      assert(result1.error.includes('message'));
+      
+      // Should succeed with message
+      const result2 = await notify(mockState, { message: 'Test' });
+      assert(result2.success === true);
+      
+      // Check state was written
+      const notification = await mockState.read('ui.notify');
+      assert(notification.message === 'Test');
+      assert(notification.type === 'info'); // default
+      assert(notification.id.startsWith('notif_'));
     }
   },
   {
-    name: 'actions use state channel correctly',
+    name: 'modal validates parameters',
     fn: async () => {
-      let messageSent = null;
-      stateChannel = {
-        postMessage: (msg) => { messageSent = msg; }
-      };
+      const mockState = createMockState();
       
-      await show();
-      assert(messageSent.path === 'ui.visible');
-      assert(messageSent.value === true);
+      // Should fail without text
+      const result1 = await modal(mockState, {});
+      assert(result1.success === false);
       
-      await notify({ message: 'Test', type: 'info' });
-      assert(messageSent.path === 'ui.notify');
-      assert(messageSent.value.message === 'Test');
+      // Should succeed with text
+      const result2 = await modal(mockState, { text: 'Confirm?' });
+      assert(result2.success === true);
+      
+      const modalData = await mockState.read('ui.modal');
+      assert(modalData.text === 'Confirm?');
+      assert(modalData.title === 'Confirm'); // default
     }
   }
 ];
+
+// Mock state helper for testing
+function createMockState() {
+  const data = {};
+  return {
+    async read(key) { return data[key]; },
+    async write(key, value) { data[key] = value; }
+  };
+}
+
+// Simple assertion helper
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message || 'Assertion failed');
+  }
+}

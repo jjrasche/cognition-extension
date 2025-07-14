@@ -235,6 +235,42 @@ if (!chrome.runtime.getManifest().update_url) {
     console.log('To start fresh: clearFitbitAuth() then executeAction("fitbit.fitbitAuth")');
   }
 
+  globalThis.debugUI = async function() {
+    console.log('=== UI Debug ===');
+    
+    // 1. Check state system
+    console.log('1. State available:', !!globalThis.cognitionState);
+    
+    // 2. Check actions
+    const actions = globalThis.cognitionState?.actions?.list() || [];
+    const uiActions = actions.filter(a => a.module === 'ui');
+    console.log('2. UI Actions registered:', uiActions.length);
+    
+    // 3. Try direct execution
+    if (globalThis.cognitionState?.actions) {
+      const result = await globalThis.cognitionState.actions.execute('ui.show');
+      console.log('3. Direct execution result:', result);
+    }
+    
+    // 4. Check current tab
+    const tabs = await chrome.tabs.query({active: true, currentWindow: true});
+    console.log('4. Current tab:', tabs[0]?.url);
+    
+    // 5. Set UI visible via state
+    await setState('ui.visible', true);
+    console.log('5. Set ui.visible to true');
+    
+    // 6. Send test notification
+    await setState('ui.notify', {
+      message: 'Debug test notification',
+      type: 'success'
+    });
+    console.log('6. Sent test notification');
+    
+    console.log('\nCheck your browser tab now!');
+  }
+
+
   // Auto-display help on load
   console.log(`
 🧠 Cognition Dev Helpers Loaded!
