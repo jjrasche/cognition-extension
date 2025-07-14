@@ -167,7 +167,7 @@ async function saveTokens(tokens) {
 }
 ```
 
-## Action Handling Documentation
+## Action Handling
 You're right that we should document the action pattern. Here's what modules need to know:
 
 ```javascript
@@ -384,3 +384,95 @@ export const tests = [
 ```
 
 That's it. Build real modules that handle real complexity. The system handles the rest.
+
+
+## Debugging Your Module
+
+The extension includes built-in dev console helpers that make debugging much easier.
+
+### Accessing the Dev Console
+
+1. Open `chrome://extensions`
+2. Find Cognition Extension
+3. Click "service worker" link to open the console
+4. Wait 2-3 seconds for initialization to complete
+
+### Available Debug Commands
+
+```javascript
+// View all state
+viewState()
+
+// View specific state value  
+getState('sleep.lastNight.hours')
+
+// List all registered actions
+listActions()
+
+// Execute any action directly
+executeAction('fitbit.refreshAllData')
+
+// Test Fitbit connection
+testFitbit()
+
+// View Fitbit auth status
+viewFitbitAuth()
+
+// Watch state changes in real-time
+watchState('sleep.lastNight.hours')
+stopWatching()
+
+// Debug initialization issues
+debugInit()
+```
+
+### Common Issues
+
+**Actions not showing up?**
+```javascript
+// Check if your module is loaded
+getState('system.modules')
+
+// Verify actions are registered
+listActions()  // Should show your module's actions
+```
+
+**State not updating?**
+```javascript
+// Watch for state changes
+watchState('your.state.key')
+
+// Manually trigger your action
+executeAction('yourmodule.youraction')
+```
+
+**OAuth or async issues?**
+- Check for multiple auth windows (state mismatch)
+- Ensure tokens are persisted to chrome.storage
+- Look for "already being processed" messages in logs
+
+### Service Worker Gotchas
+
+1. **No dynamic imports** - Must use static imports at file top
+2. **Restarts frequently** - Always reload state from storage
+3. **No window object** - Use `globalThis` instead
+4. **Timing matters** - State initializes async, may need to wait
+
+### Testing Pattern
+
+```javascript
+// In your tests, create proper mock state
+function createMockState() {
+  const data = {};
+  return {
+    async read(key) { return data[key]; },
+    async write(key, value) { data[key] = value; },
+    watch(key, callback) { /* mock */ },
+    actions: {
+      register: () => {},
+      execute: async () => ({ success: true }),
+      list: () => []
+    }
+  };
+}
+```

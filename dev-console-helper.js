@@ -3,16 +3,16 @@
 
 // Only load in development
 if (!chrome.runtime.getManifest().update_url) {
-  
+
   // 1. View all current state
-  window.viewState = async function() {
+  globalThis.viewState = async function() {
     const stored = await chrome.storage.local.get('cognitionState');
     console.log('Current State:', stored.cognitionState || {});
     return stored.cognitionState;
   }
 
   // 2. View specific state key
-  window.getState = async function(key) {
+  globalThis.getState = async function(key) {
     const stored = await chrome.storage.local.get('cognitionState');
     const state = stored.cognitionState || {};
     console.log(`${key}:`, state[key]);
@@ -20,7 +20,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 3. View all Fitbit tokens and auth info
-  window.viewFitbitAuth = async function() {
+  globalThis.viewFitbitAuth = async function() {
     const auth = await chrome.storage.sync.get(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry']);
     const hasToken = !!auth.fitbitAccessToken;
     const isExpired = auth.fitbitTokenExpiry ? Date.now() > auth.fitbitTokenExpiry : 'No expiry set';
@@ -36,7 +36,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 4. Execute action via message passing
-  window.executeAction = async function(actionName, params = {}) {
+  globalThis.executeAction = async function(actionName, params = {}) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({
         type: 'EXECUTE_ACTION',
@@ -50,15 +50,15 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 5. Watch state changes in real-time
-  window.watchState = function(key) {
-    if (window._stateWatcher) {
-      window._stateWatcher.close();
+  globalThis.watchState = function(key) {
+    if (globalThis._stateWatcher) {
+      globalThis._stateWatcher.close();
     }
     
-    window._stateWatcher = new BroadcastChannel('cognition-state');
+    globalThis._stateWatcher = new BroadcastChannel('cognition-state');
     console.log(`Watching for changes to: ${key || 'all state'}`);
     
-    window._stateWatcher.onmessage = (event) => {
+    globalThis._stateWatcher.onmessage = (event) => {
       if (!key || event.data.key === key) {
         console.log(`[State Change] ${event.data.key}:`, event.data.value);
       }
@@ -68,16 +68,16 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // Stop watching state
-  window.stopWatching = function() {
-    if (window._stateWatcher) {
-      window._stateWatcher.close();
-      window._stateWatcher = null;
+  globalThis.stopWatching = function() {
+    if (globalThis._stateWatcher) {
+      globalThis._stateWatcher.close();
+      globalThis._stateWatcher = null;
       console.log('Stopped watching state');
     }
   }
 
   // 6. Manually set state (for testing)
-  window.setState = async function(key, value) {
+  globalThis.setState = async function(key, value) {
     const stored = await chrome.storage.local.get('cognitionState');
     const state = stored.cognitionState || {};
     state[key] = value;
@@ -92,7 +92,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 7. View sleep/activity data
-  window.viewHealthData = async function() {
+  globalThis.viewHealthData = async function() {
     const stored = await chrome.storage.local.get('cognitionState');
     const state = stored.cognitionState || {};
     
@@ -118,9 +118,10 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 8. Test Fitbit connection
-  window.testFitbit = async function() {
+  globalThis.testFitbit = async function() {
     console.log('Testing Fitbit connection...');
-    const result = await executeAction('fitbit.refreshAllData');
+    // const result = await executeAction('fitbit.refreshAllData');
+    const result = await globalThis.cognitionState.actions.execute('fitbit.refreshAllData'); 
     if (result.success) {
       console.log('✅ Fitbit working! Data updated.');
       await viewHealthData();
@@ -131,7 +132,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 9. Clear all state (for testing)
-  window.clearState = async function() {
+  globalThis.clearState = async function() {
     if (confirm('Clear all state data? This cannot be undone.')) {
       await chrome.storage.local.clear();
       await chrome.storage.sync.clear();
@@ -140,7 +141,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 10. List all available actions (if accessible)
-  window.listActions = function() {
+  globalThis.listActions = function() {
     if (globalThis.cognitionState?.actions) {
       const actions = globalThis.cognitionState.actions.list();
       console.table(actions);
@@ -160,7 +161,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 11. View all storage
-  window.viewAllStorage = async function() {
+  globalThis.viewAllStorage = async function() {
     const local = await chrome.storage.local.get();
     const sync = await chrome.storage.sync.get();
     
@@ -173,7 +174,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 12. Force token refresh
-  window.refreshFitbitToken = async function() {
+  globalThis.refreshFitbitToken = async function() {
     console.log('Forcing token expiry to test refresh...');
     await chrome.storage.sync.set({ 
       fitbitTokenExpiry: Date.now() - 1000 // Set to past
@@ -184,7 +185,7 @@ if (!chrome.runtime.getManifest().update_url) {
 
 
 // 13. Test OAuth callback handling
-  window.testOAuthCallback = async function() {
+  globalThis.testOAuthCallback = async function() {
     console.log('Testing OAuth callback handling...');
     
     // Create a test URL like Fitbit would redirect to
@@ -198,7 +199,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 14. Clear Fitbit auth completely
-  window.clearFitbitAuth = async function() {
+  globalThis.clearFitbitAuth = async function() {
     if (confirm('Clear all Fitbit authentication? You will need to re-authorize.')) {
       await chrome.storage.sync.remove(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry', 'fitbitAuthState']);
       console.log('Fitbit auth cleared. Run executeAction("fitbit.fitbitAuth") to re-authenticate.');
@@ -206,7 +207,7 @@ if (!chrome.runtime.getManifest().update_url) {
   }
 
   // 15. Debug Fitbit completely
-  window.debugFitbit = async function() {
+  globalThis.debugFitbit = async function() {
     console.log('=== FITBIT DEBUG REPORT ===');
     
     // Check auth status
@@ -274,3 +275,4 @@ Quick Start:
 2. If not connected: executeAction('fitbit.fitbitAuth')
 3. testFitbit()      - Verify it's working
 `);
+}

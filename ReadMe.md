@@ -84,3 +84,38 @@ We believe AI should amplify human capability, not replace it. By making the sys
 ## License
 
 MIT - Build whatever you want with it
+
+
+## Debugging
+
+The extension includes powerful debugging tools in development mode.
+
+### Quick Start Debugging
+
+1. **Open the service worker console:**
+   - Go to `chrome://extensions`
+   - Click "service worker" under Cognition Extension
+   - Wait 2-3 seconds for initialization
+
+2. **Essential commands:**
+   ```javascript
+   // See what's happening
+   viewState()                    // View all state
+   listActions()                  // List all available actions
+   viewHealthData()               // See Fitbit data summary
+   
+   // Test functionality
+   testFitbit()                   // Test Fitbit connection
+   executeAction('ui.toggle')     // Toggle the UI
+   
+   // Watch changes in real-time
+   watchState('sleep.lastNight.hours')
+   stopWatching()
+   ```
+
+3. **Common issues:**
+   - **"globalState not initialized"** - Wait a few seconds after reload
+   - **Empty actions list** - Check if modules loaded: `getState('system.modules')`
+   - **OAuth errors** - Run `debugFitbit()` for full diagnostic
+
+See [Module Developer Guide](./Module%20Developer%20Guide.md#debugging-your-module) for complete debugging documentation.

@@ -1,17 +1,9 @@
 // background.js - Service Worker Entry Point
 // This file bootstraps the module system and initializes the extension
 
-// Import dev-reload for development (will fail silently in production)
-import('./dev-reload.js').catch(() => {
-  // Ignore - this file won't exist in production builds
-});
-
-// Import dev console helpers for development
-import('./dev-console-helpers.js').catch(() => {
-  // Ignore - this file won't exist in production builds
-});
-
 // Import all modules statically (required for Manifest V3)
+import './dev-reload.js';
+import './dev-console-helper.js';
 import * as startupModule from './startup.module.js';
 import * as fitbitModule from './fitbit.module.js';
 import * as uiModule from './ui.module.js';
@@ -248,6 +240,12 @@ async function initializeExtension() {
     if (errors.length > 0) {
       console.log('[Background] Errors:', errors);
     }
+
+    // Export for debugging (only in development)
+    if (globalThis.chrome?.runtime?.id) {
+      globalThis.cognitionState = globalState;
+      globalThis.cognitionModules = moduleRegistry;
+    }
     
   } catch (error) {
     console.error('[Background] Failed to initialize extension:', error);
@@ -406,9 +404,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 });
-
-// Export for debugging (only in development)
-if (globalThis.chrome?.runtime?.id) {
-  globalThis.cognitionState = globalState;
-  globalThis.cognitionModules = moduleRegistry;
-}
