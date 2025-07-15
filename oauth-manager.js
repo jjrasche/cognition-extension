@@ -1,210 +1,245 @@
-// oauth-manager.js - Centralized OAuth handling for all modules
-// Handles redirect detection, deduplication, and routing to appropriate modules
-
+// oauth-manager.js - Complete OAuth handling for all modules
+const url = 'https://chromiumapp.org/'; 
 export class OAuthManager {
   constructor() {
-    this.handlers = new Map();
-    this.processingCodes = new Set();
-    this.pendingFlows = new Map();
-    
-    // Set up listeners
+    this.providers = new Map();
+    this.tokens = new Map();
+    this.refreshPromises = new Map();
     this.setupListeners();
   }
   
-  register(pattern, module, handler) {
-    console.log(`[OAuthManager] Registered handler for ${module} with pattern: ${pattern}`);
-    this.handlers.set(pattern, { module, handler });
+  register(provider, config) {
+    this.verifyConfig(config);
+    this.providers.set(provider, config);
+    this.loadStoredTokens(provider);
+    console.log(`[OAuthManager] Registered ${provider} with scopes:`, config.scopes);
+  }
+
+  verifyConfig(config) {
+    if (!config.provider || !config.clientId || !config.authUrl || !config.tokenUrl) 
+      throw new Error(`Invalid OAuth config for ${config.provider}`);
+  }
+
+  async getToken(provider) {
+    if (!this.providers.has(provider)) throw new Error(`OAuth provider ${provider} not registered`);
+    return await this.checkAndRefresh(provider)
+  }
+
+  async checkAndRefresh(provider) {
+    const token = this.tokens.get(provider);
+    if (token.expiresAt && Date.now() > token.expiresAt) {
+      console.log(`[OAuthManager] Token expired for ${provider}, refreshing...`);
+      return await this.refreshToken(provider);
+    }
+    return token.accessToken;
   }
   
-  async startFlow(module, authUrl, metadata = {}) {
-    const flowId = crypto.randomUUID();
-    
-    this.pendingFlows.set(flowId, {
-      module,
-      startTime: Date.now(),
-      metadata
+  async startAuth(provider) {
+    const csrf = await this.generateCSRF(provider);
+    const authUrl = this.buildAuthUrl(provider, csrf);
+    await chrome.windows.create({ url: authUrl, type: 'popup', width: 600, height: 800, focused: true });
+    return { success: true, message: 'Complete authorization in the popup window' };
+  }
+  
+  // Generate CSRF state
+  async generateCSRF(provider) {
+    const csrf = crypto.randomUUID();
+    await chrome.storage.local.set({ [`oauth_${provider}`]: csrf });
+    return csrf;
+  }
+
+  // create OAuth URL
+  buildAuthUrl(provider) {
+    const config = this.providers.get(provider);
+    if (!config) throw new Error(`Unknown provider: ${provider}`);
+    const params = new URLSearchParams({
+      client_id: config.clientId,
+      response_type: 'code',
+      redirect_uri: config.redirectUri || url,
+      scope: config.scopes.join(' '),
+      state: csrf
     });
+    // Add any provider-specific params
+    if (config.authParams) {
+      Object.entries(config.authParams).forEach(([k, v]) => params.set(k, v));
+    }
+    return `${config.authUrl}?${params}`;
+  }
+
+  // Handle OAuth callback
+  async handleCallback(url) {
+    const urlObj = new URL(url);
+    const code = urlObj.searchParams.get('code');
+    const state = urlObj.searchParams.get('state');
+    const error = urlObj.searchParams.get('error');
     
-    // Clean up old flows after 10 minutes
-    setTimeout(() => {
-      this.pendingFlows.delete(flowId);
-    }, 10 * 60 * 1000);
-    
-    console.log(`[OAuthManager] Starting OAuth flow ${flowId} for ${module}`);
-    
-    // Open auth window
-    const authWindow = await chrome.windows.create({
-      url: authUrl,
-      type: 'popup',
-      width: 600,
-      height: 800,
-      focused: true
-    });
-    
-    // Store window ID with flow
-    const flow = this.pendingFlows.get(flowId);
-    if (flow) {
-      flow.windowId = authWindow.id;
+    if (error) {
+      console.error('[OAuthManager] OAuth error:', error);
+      return { success: false, error };
     }
     
-    return flowId;
-  }
-  
-  setupListeners() {
-    // Primary listener - webNavigation API
-    chrome.webNavigation.onBeforeNavigate.addListener(
-      async (details) => {
-        await this.handlePotentialRedirect(details.url, details.tabId, 'webNavigation');
-      },
-      { urls: ["<all_urls>"] }
-    );
+    if (!code || !state) return { success: false, error: 'Missing code or state' };
     
-    // Backup listener - tabs API
-    chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-      if (changeInfo.url) {
-        await this.handlePotentialRedirect(changeInfo.url, tabId, 'tabs.onUpdated');
-      }
-    });
-    
-    // Clean up when auth windows close
-    chrome.windows.onRemoved.addListener((windowId) => {
-      // Find and clean up any flows associated with this window
-      for (const [flowId, flow] of this.pendingFlows) {
-        if (flow.windowId === windowId) {
-          console.log(`[OAuthManager] Auth window closed for flow ${flowId}`);
-          this.pendingFlows.delete(flowId);
-        }
-      }
-    });
-  }
-  
-  async handlePotentialRedirect(urlString, tabId, source) {
-    let url;
-    try {
-      url = new URL(urlString);
-    } catch {
-      // Not a valid URL, ignore
-      return;
-    }
-    
-    // Check if this URL matches any registered patterns
-    for (const [pattern, { module, handler }] of this.handlers) {
-      if (urlString.startsWith(pattern)) {
-        console.log(`[OAuthManager] [${source}] Potential OAuth redirect detected for ${module}: ${urlString}`);
-        
-        // Extract OAuth parameters
-        const code = url.searchParams.get('code');
-        const state = url.searchParams.get('state');
-        const error = url.searchParams.get('error');
-        const errorDescription = url.searchParams.get('error_description');
-        
-        if (!code && !error) {
-          // Not an OAuth callback
-          continue;
-        }
-        
-        // Handle errors
-        if (error) {
-          console.error(`[OAuthManager] OAuth error for ${module}: ${error} - ${errorDescription}`);
-          
-          try {
-            await handler({
-              error,
-              errorDescription,
-              state,
-              url
-            });
-          } catch (err) {
-            console.error(`[OAuthManager] Error handler failed for ${module}:`, err);
-          }
-          
-          // Close the tab
-          this.closeTab(tabId);
-          return;
-        }
-        
-        // Check if we're already processing this code
-        if (this.processingCodes.has(code)) {
-          console.log(`[OAuthManager] [${source}] Code already being processed, skipping`);
-          return;
-        }
-        
-        // Mark as processing
-        this.processingCodes.add(code);
-        
-        try {
-          console.log(`[OAuthManager] Processing OAuth callback for ${module}`);
-          
-          // Call the module's handler
-          const result = await handler({
-            code,
-            state,
-            url,
-            tabId
-          });
-          
-          if (result?.success) {
-            console.log(`[OAuthManager] OAuth callback handled successfully for ${module}`);
-            this.closeTab(tabId);
-          } else {
-            console.error(`[OAuthManager] OAuth handler returned failure for ${module}:`, result?.error);
-          }
-          
-        } catch (error) {
-          console.error(`[OAuthManager] OAuth handler error for ${module}:`, error);
-        } finally {
-          // Clean up processing code after a delay
-          setTimeout(() => {
-            this.processingCodes.delete(code);
-          }, 5000);
-        }
-        
-        // Found a match, don't check other patterns
+    // Find which provider this is for by checking states
+    let provider = null;
+    for (const [name, config] of this.providers) {
+      const storedState = await chrome.storage.local.get([`oauth_${name}`]);
+      if (storedState[`oauth_${name}`] === state) {
+        provider = name;
+        await chrome.storage.local.remove([`oauth_${name}`]);
         break;
       }
     }
-  }
-  
-  closeTab(tabId) {
-    setTimeout(() => {
-      chrome.tabs.remove(tabId).catch(() => {
-        // Tab might already be closed
-        console.log(`[OAuthManager] Tab ${tabId} already closed`);
-      });
-    }, 100);
-  }
-  
-  /**
-   * Get pending flows for a module
-   */
-  getPendingFlows(module) {
-    const flows = [];
-    for (const [flowId, flow] of this.pendingFlows) {
-      if (flow.module === module) {
-        flows.push({ flowId, ...flow });
-      }
+    
+    if (!provider) {
+      console.error('[OAuthManager] No matching state found');
+      return { success: false, error: 'Invalid state - possible CSRF' };
     }
-    return flows;
+    
+    // Exchange code for tokens
+    const config = this.providers.get(provider);
+    const tokenResponse = await fetch(config.tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...(config.clientSecret ? {
+          'Authorization': `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`
+        } : {})
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: config.redirectUri || url,
+        client_id: config.clientId,
+        ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
+      })
+    });
+    
+    if (!tokenResponse.ok) {
+      const error = await tokenResponse.text();
+      console.error(`[OAuthManager] Token exchange failed for ${provider}:`, error);
+      return { success: false, error: `Token exchange failed: ${tokenResponse.status}` };
+    }
+    
+    const tokens = await tokenResponse.json();
+    await this.storeTokens(provider, tokens);
+    
+    console.log(`[OAuthManager] Successfully authenticated ${provider}`);
+    return { success: true, provider };
   }
   
-  /**
-   * Cancel a pending flow
-   */
-  cancelFlow(flowId) {
-    const flow = this.pendingFlows.get(flowId);
-    if (flow) {
-      this.pendingFlows.delete(flowId);
-      
-      // Close the window if it exists
-      if (flow.windowId) {
-        chrome.windows.remove(flow.windowId).catch(() => {
-          // Window might already be closed
-        });
-      }
-      
-      console.log(`[OAuthManager] Cancelled flow ${flowId}`);
-      return true;
+  // Refresh expired token
+  async refreshToken(provider) {
+    // Prevent concurrent refresh attempts
+    if (this.refreshPromises.has(provider)) {
+      return this.refreshPromises.get(provider);
     }
-    return false;
+    
+    const refreshPromise = this._doRefresh(provider);
+    this.refreshPromises.set(provider, refreshPromise);
+    
+    try {
+      const token = await refreshPromise;
+      return token;
+    } finally {
+      this.refreshPromises.delete(provider);
+    }
+  }
+  
+  async _doRefresh(provider) {
+    const config = this.providers.get(provider);
+    const token = this.tokens.get(provider);
+    
+    if (!token?.refreshToken) {
+      console.error(`[OAuthManager] No refresh token for ${provider}`);
+      return null;
+    }
+    
+    const response = await fetch(config.tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...(config.clientSecret ? {
+          'Authorization': `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`
+        } : {})
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: token.refreshToken,
+        client_id: config.clientId,
+        ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
+      })
+    });
+    
+    if (!response.ok) {
+      console.error(`[OAuthManager] Refresh failed for ${provider}:`, response.status);
+      // Clear invalid tokens
+      await this.clearTokens(provider);
+      return null;
+    }
+    
+    const tokens = await response.json();
+    await this.storeTokens(provider, tokens);
+    
+    console.log(`[OAuthManager] Refreshed token for ${provider}`);
+    return tokens.access_token;
+  }
+  
+  // Store tokens
+  async storeTokens(provider, tokens) {
+    const tokenData = {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || this.tokens.get(provider)?.refreshToken,
+      expiresAt: tokens.expires_in ? Date.now() + (tokens.expires_in * 1000) : null,
+      tokenType: tokens.token_type || 'Bearer',
+      raw: tokens // Store full response in case modules need extra data
+    };
+    
+    this.tokens.set(provider, tokenData);
+    
+    // Persist to chrome.storage.sync for cross-device
+    await chrome.storage.sync.set({
+      [`oauth_${provider}`]: {
+        accessToken: tokenData.accessToken,
+        refreshToken: tokenData.refreshToken,
+        expiresAt: tokenData.expiresAt
+      }
+    });
+  }
+  
+  // Load stored tokens on startup
+  async loadStoredTokens(provider) {
+    const stored = await chrome.storage.sync.get([`oauth_${provider}`]);
+    if (stored[`oauth_${provider}`]) {
+      this.tokens.set(provider, stored[`oauth_${provider}`]);
+      console.log(`[OAuthManager] Loaded stored tokens for ${provider}`);
+    }
+  }
+  
+  // Clear tokens for a provider
+  async clearTokens(provider) {
+    this.tokens.delete(provider);
+    await chrome.storage.sync.remove([`oauth_${provider}`]);
+    console.log(`[OAuthManager] Cleared tokens for ${provider}`);
+  }
+  
+  // Check if authenticated
+  isAuthenticated(provider) {
+    return this.tokens.has(provider) && !!this.tokens.get(provider)?.accessToken;
+  }
+  
+  // Set up redirect listeners
+  setupListeners() {
+    chrome.webNavigation.onBeforeNavigate.addListener(
+      async (details) => {
+        if (details.url.includes('code=') || details.url.includes('error=')) {
+          const result = await this.handleCallback(details.url);
+          if (result.success) {
+            setTimeout(() => chrome.tabs.remove(details.tabId).catch(() => {}), 100);
+          }
+        }
+      },
+      { urls: [url + '*'] }
+    );
   }
 }
