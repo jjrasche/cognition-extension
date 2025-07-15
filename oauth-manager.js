@@ -11,24 +11,11 @@ export class OAuthManager {
     this.setupListeners();
   }
   
-  /**
-   * Register an OAuth handler for a specific redirect URL pattern
-   * @param {string} pattern - URL pattern to match (e.g., 'https://chromiumapp.org/')
-   * @param {string} module - Module name for logging
-   * @param {Function} handler - Async function to handle the OAuth callback
-   */
   register(pattern, module, handler) {
     console.log(`[OAuthManager] Registered handler for ${module} with pattern: ${pattern}`);
     this.handlers.set(pattern, { module, handler });
   }
   
-  /**
-   * Start an OAuth flow
-   * @param {string} module - Module name
-   * @param {string} authUrl - Authorization URL to open
-   * @param {Object} metadata - Additional metadata to store with the flow
-   * @returns {string} - Flow ID for tracking
-   */
   async startFlow(module, authUrl, metadata = {}) {
     const flowId = crypto.randomUUID();
     

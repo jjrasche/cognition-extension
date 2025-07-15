@@ -310,7 +310,8 @@ export const tests = [
 
 Here's a working module that follows all patterns:
 
-```javascript
+todo fix to use the patterns
+~~```javascript
 // weather-module.js
 let apiKey = null;
 
@@ -387,7 +388,7 @@ export const tests = [
     }
   }
 ];
-```
+```~~
 
 That's it. Build real modules that handle real complexity. The system handles the rest.
 

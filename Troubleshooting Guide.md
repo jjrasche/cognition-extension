@@ -50,7 +50,7 @@ const processingOAuthCodes = new Set();
 ```
 
 **Solutions:**
-1. **Prevent concurrent auth flows:**
+~~1. **Prevent concurrent auth flows:**
    ```javascript
    // In fitbit.module.js, check for existing flow
    const stored = await chrome.storage.sync.get(['fitbitAuthState', 'fitbitAuthInProgress']);
@@ -58,12 +58,12 @@ const processingOAuthCodes = new Set();
      console.log('[Fitbit] Auth already in progress, skipping');
      return;
    }
-   ```
-
+   ```~~
+~~
 2. **Clear stale state before new auth:**
    ```javascript
    await chrome.storage.sync.remove(['fitbitAuthState']);
-   ```
+   ```~~
 
 3. **Use deduplication in listeners:**
    - Both `webNavigation` and `tabs.onUpdated` can fire for same callback
