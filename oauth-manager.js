@@ -6,6 +6,7 @@ export class OAuthManager {
     this.providers = new Map();
     this.tokens = new Map();
     this.refreshPromises = new Map();
+    this.pkceVerifiers = new Map();
     this.setupListeners();
   }
   
@@ -28,6 +29,7 @@ export class OAuthManager {
 
   async checkAndRefresh(provider) {
     const token = this.tokens.get(provider);
+    if (!token) return null;  // <-- Add this check
     if (token.expiresAt && Date.now() > token.expiresAt) {
       console.log(`[OAuthManager] Token expired for ${provider}, refreshing...`);
       return await this.refreshToken(provider);
@@ -37,19 +39,60 @@ export class OAuthManager {
   
   async startAuth(provider) {
     const csrf = await this.generateCSRF(provider);
-    const authUrl = this.buildAuthUrl(provider, csrf);
+    const pkce = await this.generatePKCE(provider);
+    const authUrl = this.buildAuthUrl(provider, csrf, pkce);
     await chrome.windows.create({ url: authUrl, type: 'popup', width: 600, height: 800, focused: true });
     return { success: true, message: 'Complete authorization in the popup window' };
   }
 
-  buildAuthUrl(provider, csrf) {
+  async generatePKCE(provider) {
+    // Generate PKCE parameters if needed
+    let pkceParams = {};
+    const config = this.providers.get(provider);
+    if (!config.clientSecret) {
+      pkceParams = await this.generatePKCE(provider);
+    }
+    return pkceParams;
+  }
+
+  // PKCE helpers
+  async generatePKCE(provider) {
+    const config = this.providers.get(provider);
+    if (!config.clientSecret) {
+      pkceParams = await this.generatePKCE(provider);
+    }
+    const verifier = this.generateRandomString();
+    this.pkceVerifiers.set(provider, verifier);
+    
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    
+    const base64url = btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+    
+    return {
+      codeChallenge: base64url,
+      codeVerifier: verifier
+    };
+  }
+
+  generateRandomString() {
+    const array = new Uint32Array(28);
+    crypto.getRandomValues(array);
+    return Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
+  }
+
+  buildAuthUrl(provider, csrf, pkceParams = {}) {
     const config = this.providers.get(provider);
     if (!config) throw new Error(`Unknown provider: ${provider}`);
-    const params = this.buildAuthParams(config, csrf);
+    const params = this.buildAuthParams(config, csrf, pkceParams);
     return `${config.authUrl}?${params}`;
   }
 
-  buildAuthParams(config, csrf) {
+  buildAuthParams(config, csrf, pkceParams = {}) {
     const params = new URLSearchParams({
       client_id: config.clientId,
       response_type: 'code',
@@ -57,6 +100,13 @@ export class OAuthManager {
       scope: config.scopes.join(' '),
       state: csrf
     });
+    
+    // Add PKCE parameters if present
+    if (pkceParams.codeChallenge) {
+      params.set('code_challenge', pkceParams.codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
+    
     if (config.authParams) {
       Object.entries(config.authParams).forEach(([k, v]) => params.set(k, v));
     }
@@ -138,14 +188,25 @@ export class OAuthManager {
   }
 
   buildTokenRequestBody(config, code) {
-    return new URLSearchParams({
+    const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
       redirect_uri: config.redirectUri || url,
       client_id: config.clientId,
       ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
     });
+    // Add PKCE verifier if stored
+    if (this.usePKCE(config)) {
+      const verifier = this.pkceVerifiers.get(config.provider);
+      if (verifier) {
+        body.set('code_verifier', verifier);
+        this.pkceVerifiers.delete(config.provider);
+      }
+    }
+    return body;
   }
+
+  usePKCE = (config) => !config.clientSecret;
 
   buildTokenRequestHeaders(config) {
     const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };

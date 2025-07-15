@@ -37,7 +37,7 @@ const initializeUIConfig = async (state, config) => {
   await state.write('ui.config', uiConfig);
 };
 const injectUIIntoExistingTabs = async (state) => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(globalStateRef, tab.id)));
-const shouldInjectIntoTab = (tab) => tab.url;
+const shouldInjectIntoTab = (tab) => tab.url && !['chrome://', 'chrome-extension://', 'edge://', 'about:', 'file:///', 'view-source:', 'chrome-devtools://'].some(pattern => tab.url.startsWith(pattern));
 const injectContentScript = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentScriptCode, world: 'ISOLATED' });
 const injectCSS = async (state, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS(state) });
 
@@ -45,11 +45,15 @@ async function injectUI(state, tabId) {
   const tabs = await chrome.tabs.query({});
   const tab = tabs.find(t => t.id === tabId);
   if (!shouldInjectIntoTab(tab)) return;
+  
   try {
-    injectContentScript(tabId);
-    injectCSS(state, tabId);
+    await injectContentScript(tabId);
+    await injectCSS(state, tabId);
   } catch (e) {
-    console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
+    // Silently skip error pages, chrome:// pages, etc.
+    if (!e.message.includes('Cannot access') && !e.message.includes('error page')) {
+      console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
+    }
   }
 }
 

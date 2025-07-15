@@ -8,6 +8,7 @@ import { StateStore } from './state-store.js';
 import { enabledModules } from './enabled-modules.js';
 
 const stateStore = new StateStore();
+globalThis.state = stateStore;
 const loaded = [];
 const errors = [];
 
