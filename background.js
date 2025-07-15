@@ -17,9 +17,9 @@ async function initialize() {
     await stateStore.write('system.modules', []);    
     const loaded = [];
     const errors = [];
-    for (const moduleName of enabledModules) {
+    for (const module of enabledModules) {
       try {
-        const module = moduleRegistry[moduleName];
+        const moduleName = module.manifest.name;
         const config = await stateStore.read(`modules.${moduleName}.config`) || {};
         registerModuleActions(moduleName, module);
         await module.initialize(stateStore, config);
@@ -49,38 +49,32 @@ async function initialize() {
 
 // Register a module's actions with the state store
 function registerModuleActions(name, module) {
-  const actions = Object.getOwnPropertyNames(module);
-  actions.remove((action) =>  ['initialize', 'manifest', 'tests', 'default'].includes(action));
+  const actions = Object.getOwnPropertyNames(module)
+    .filter((action) =>  !['initialize', 'manifest', 'tests', 'default'].includes(action));
   for (const action of actions) {
     const fn = module[action];
     if (typeof fn === 'function') {
-      if (stateStore?.actions) {
-        stateStore.actions.register(`${name}.${action}`, async (params) => 
-          await fn(stateStore, params), { module: name, description: `${name} ${action}` });
+      if (stateStore.actions) {
+        const method = async (params) => await fn(stateStore, params);
+        stateStore.actions.register(`${name}.${action}`, method, { module: name, description: `${name} ${action}` });
       }
     }
   }
 }
 
 // Handle extension icon click - toggle UI
-chrome.action.onClicked.addListener(async () => {
-  if (stateStore?.actions) {
-    const result = await stateStore.actions.execute('ui.toggle');
-    console.log('[Background] UI toggle result:', result);
-  }
-});
+chrome.action.onClicked.addListener(() => stateStore.actions.execute('ui.toggle'));
 
 // Listen for OAuth redirects using webNavigation API
+processingOAuthCodes = new Set();
 chrome.webNavigation.onBeforeNavigate.addListener(
   async (details) => {
-    console.log('[Background] Navigation detected:', details.url);
-    
+    console.log('[Background] Navigation detected:', details.url);    
     try {
       const url = new URL(details.url);
-      const code = url.searchParams.get('code');
-      const state = url.searchParams.get('state');
+      const [code, state] = [url.searchParams.get('code'), url.searchParams.get('state')];
       
-      if (code && stateStore?.actions) {
+      if (code && stateStore.actions) {
         // Check if we're already processing this code
         if (processingOAuthCodes.has(code)) {
           console.log('[Background] OAuth code already being processed by other listener, skipping');
@@ -96,11 +90,7 @@ chrome.webNavigation.onBeforeNavigate.addListener(
         console.log('[Background] webNavigation: OAuth callback result:', result);
         
         if (result.success) {
-          setTimeout(() => {
-            chrome.tabs.remove(details.tabId).catch(() => {
-              // Tab might already be closed
-            });
-          }, 100);
+          setTimeout(() => chrome.tabs.remove(details.tabId).catch(() => {/* Tab might already be close */}), 100);
         }
         
         // Remove code from processing set after a delay
@@ -145,7 +135,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         
         console.log('[Background] tabs.onUpdated: OAuth code found:', code, 'state:', state);
         
-        if (stateStore?.actions) {
+        if (stateStore.actions) {
           const result = await stateStore.actions.execute('fitbit.handleAuthCallback', { code, state });
           console.log('[Background] tabs.onUpdated: OAuth callback result:', result);
           
@@ -181,7 +171,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 // Message handling for test page and content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'EXECUTE_ACTION' && stateStore?.actions) {
+  if (request.type === 'EXECUTE_ACTION' && stateStore.actions) {
     console.log('[Background] Received action request:', request.action, request.params);
     
     stateStore.actions.execute(request.action, request.params)

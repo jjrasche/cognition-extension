@@ -1,9 +1,16 @@
+// state-store.js - Unified state management using chrome.storage
+// Provides reactive state with granular watching capabilities
+import { ActionRegistry } from './action-registry.js';
+import { OAuthManager } from './oauth-manager.js';
 
 const COGNITION_STATE = 'cognitionState';
 // StateStore implementation that all modules will use
-class StateStore {
+export class StateStore {
   constructor() {
     this.watchers = new Map();
+    this.actions = new ActionRegistry();
+    this.oauthManager = new OAuthManager();
+
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes[COGNITION_STATE]) {
@@ -41,6 +48,19 @@ class StateStore {
     state[key] = value;
     await chrome.storage.local.set({ [COGNITION_STATE]: state });
   }
+  async writeMany(updates) {
+    const stored = await chrome.storage.local.get(COGNITION_STATE);
+    const state = stored[COGNITION_STATE] || {};
+    Object.assign(state, updates);
+    await chrome.storage.local.set({ [COGNITION_STATE]: state });
+  }
+  
+  async remove(key) {
+    const stored = await chrome.storage.local.get(COGNITION_STATE);
+    const state = stored[COGNITION_STATE] || {};
+    delete state[key];
+    await chrome.storage.local.set({ [COGNITION_STATE]: state });
+  }
   
   watch(pattern, callback) {
     if (!this.watchers.has(pattern)) {
@@ -48,5 +68,16 @@ class StateStore {
     }
     this.watchers.get(pattern).add(callback);
     return () => this.watchers.get(pattern)?.delete(callback);
+  }
+  
+  matchesPattern = (key, pattern) => new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\./g, '\\.') + '$').test(key);
+  
+  async getAll() {
+    const stored = await chrome.storage.local.get(COGNITION_STATE);
+    return stored[COGNITION_STATE] || {};
+  }
+  
+  async clear() {
+    await chrome.storage.local.remove(COGNITION_STATE);
   }
 }

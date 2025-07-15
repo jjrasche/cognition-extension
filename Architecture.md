@@ -48,7 +48,8 @@ LLM → reads both → "You have 5 unread emails. Want me to summarize them befo
 - **Service Worker** (background.js): Initializes modules, manages state, routes actions
 - **Offscreen Document**: Always-on media key listener
 - **Content Scripts**: UI overlays injected by modules (see [UI Overlay](./UI%20Overlay.md))
-- **Storage**: Config in chrome.storage, state via BroadcastChannel, knowledge in graph
+- **StateStore**: Unified state management using chrome.storage with reactive watching
+- **Storage**: All state in chrome.storage.local, knowledge in Neo4j graph
 
 ### Design Philosophy
 

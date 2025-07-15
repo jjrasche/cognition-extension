@@ -79,6 +79,7 @@ You don't implement this - just export functions and return results.
 
 ## State Management
 
+
 ### State is Your Communication Layer
 
 Modules don't call each other. They communicate through state:
@@ -90,6 +91,11 @@ await state.write('sleep.lastNight.hours', 7.5);
 
 // Other modules read it
 const steps = await state.read('activity.today.steps');
+
+// Or watch for changes
+state.watch('activity.*', (value) => {
+  console.log('Activity data changed:', value);
+});
 ```
 
 ### State Naming Pattern

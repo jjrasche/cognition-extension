@@ -23,7 +23,47 @@ const REDIRECT_URI = `https://chromiumapp.org/`;
 let pollTimer = null;
 let accessToken = null;
 let refreshToken = null;
-let globalState = null; // Store state reference for use in helper functions
+
+export async function initialize(state, config) {
+  registerAuth(state, config);
+  
+  // Get stored tokens from chrome.storage.sync (cross-device sync)
+  const stored = await chrome.storage.sync.get(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry']);
+  accessToken = stored.fitbitAccessToken;
+  refreshToken = stored.fitbitRefreshToken;
+  
+  if (accessToken && stored.fitbitTokenExpiry && Date.now() > stored.fitbitTokenExpiry) {
+    await refreshAccessToken();
+  }
+  
+  // Check auth first - if no token, start OAuth
+  if (!accessToken) {
+    await startOAuthFlow(state);
+    return;
+  }
+  
+  // Set up polling only if configured
+  if (config.pollInterval && config.pollInterval > 0) {
+    // Initial data fetch
+    await refreshAllData(state);
+    
+    // Set up recurring polling
+    pollTimer = setInterval(async () => {
+      await refreshAllData(state);
+    }, config.pollInterval * 60 * 1000);
+  }
+}
+
+
+
+
+const registerAuth = (state, config) => state.oauthManager.register(REDIRECT_URI, 'fitbit',
+    async ({ code, state: authState, error, errorDescription }) => {
+      if (error) console.error('[Fitbit] OAuth error:', error, errorDescription);
+      return await handleAuthCallback(state, { code, state: authState });
+    }
+  );
+
 
 // Refresh the access token using the refresh token
 async function refreshAccessToken() {
@@ -101,44 +141,6 @@ async function fitbitFetch(endpoint) {
   }
   
   return response.json();
-}
-
-export async function initialize(state, config) {
-  // Store state reference for use in helper functions
-  globalState = state;
-  
-  // Get stored tokens from chrome.storage.sync (cross-device sync)
-  const stored = await chrome.storage.sync.get(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry']);
-  accessToken = stored.fitbitAccessToken;
-  refreshToken = stored.fitbitRefreshToken;
-  
-  // Check if token exists but is expired
-  if (accessToken && stored.fitbitTokenExpiry && Date.now() > stored.fitbitTokenExpiry) {
-    try {
-      await refreshAccessToken();
-    } catch (error) {
-      console.error('[Fitbit] Failed to refresh expired token:', error);
-      accessToken = null;
-      refreshToken = null;
-    }
-  }
-  
-  // Check auth first - if no token, start OAuth
-  if (!accessToken) {
-    await startOAuthFlow(state);
-    return;
-  }
-  
-  // Set up polling only if configured
-  if (config.pollInterval && config.pollInterval > 0) {
-    // Initial data fetch
-    await refreshAllData(state);
-    
-    // Set up recurring polling
-    pollTimer = setInterval(async () => {
-      await refreshAllData(state);
-    }, config.pollInterval * 60 * 1000);
-  }
 }
 
 export async function startOAuthFlow(state) {
