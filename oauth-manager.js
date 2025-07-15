@@ -1,5 +1,6 @@
 // oauth-manager.js - Complete OAuth handling for all modules
 const url = 'https://chromiumapp.org/'; 
+
 export class OAuthManager {
   constructor() {
     this.providers = new Map();
@@ -22,7 +23,7 @@ export class OAuthManager {
 
   async getToken(provider) {
     if (!this.providers.has(provider)) throw new Error(`OAuth provider ${provider} not registered`);
-    return await this.checkAndRefresh(provider)
+    return await this.checkAndRefresh(provider);
   }
 
   async checkAndRefresh(provider) {
@@ -41,17 +42,20 @@ export class OAuthManager {
     return { success: true, message: 'Complete authorization in the popup window' };
   }
   
-  // Generate CSRF state
   async generateCSRF(provider) {
     const csrf = crypto.randomUUID();
     await chrome.storage.local.set({ [`oauth_${provider}`]: csrf });
     return csrf;
   }
 
-  // create OAuth URL
-  buildAuthUrl(provider) {
+  buildAuthUrl(provider, csrf) {
     const config = this.providers.get(provider);
     if (!config) throw new Error(`Unknown provider: ${provider}`);
+    const params = this.buildAuthParams(config, csrf);
+    return `${config.authUrl}?${params}`;
+  }
+
+  buildAuthParams(config, csrf) {
     const params = new URLSearchParams({
       client_id: config.clientId,
       response_type: 'code',
@@ -59,94 +63,126 @@ export class OAuthManager {
       scope: config.scopes.join(' '),
       state: csrf
     });
-    // Add any provider-specific params
     if (config.authParams) {
       Object.entries(config.authParams).forEach(([k, v]) => params.set(k, v));
     }
-    return `${config.authUrl}?${params}`;
+    return params;
   }
 
-  // Handle OAuth callback
-  async handleCallback(url) {
-    const urlObj = new URL(url);
-    const code = urlObj.searchParams.get('code');
-    const state = urlObj.searchParams.get('state');
-    const error = urlObj.searchParams.get('error');
+  async handleCallback(callbackUrl) {
+    const params = this.extractCallbackParams(callbackUrl);
+    if (params.error) return this.handleCallbackError(params);
+    if (!params.code || !params.state) return { success: false, error: 'Missing code or state' };
     
-    if (error) {
-      console.error('[OAuthManager] OAuth error:', error);
-      return { success: false, error };
+    const provider = await this.findProviderByState(params.state);
+    if (!provider) return { success: false, error: 'Invalid state - possible CSRF' };
+    
+    await this.clearCSRF(provider);
+    return await this.exchangeCodeForTokens(provider, params.code);
+  }
+
+  extractCallbackParams(callbackUrl) {
+    const urlObj = new URL(callbackUrl);
+    return {
+      code: urlObj.searchParams.get('code'),
+      state: urlObj.searchParams.get('state'),
+      error: urlObj.searchParams.get('error'),
+      errorDescription: urlObj.searchParams.get('error_description')
+    };
+  }
+
+  handleCallbackError(params) {
+    console.error('[OAuthManager] OAuth error:', params.error, params.errorDescription);
+    return { success: false, error: params.error };
+  }
+
+  async findProviderByState(state) {
+    for (const [provider, config] of this.providers) {
+      const storedState = await this.getStoredCSRF(provider);
+      if (storedState === state) return provider;
     }
-    
-    if (!code || !state) return { success: false, error: 'Missing code or state' };
-    
-    // Find which provider this is for by checking states
-    let provider = null;
-    for (const [name, config] of this.providers) {
-      const storedState = await chrome.storage.local.get([`oauth_${name}`]);
-      if (storedState[`oauth_${name}`] === state) {
-        provider = name;
-        await chrome.storage.local.remove([`oauth_${name}`]);
-        break;
-      }
+    return null;
+  }
+
+  async getStoredCSRF(provider) {
+    const stored = await chrome.storage.local.get([`oauth_${provider}`]);
+    return stored[`oauth_${provider}`];
+  }
+
+  async clearCSRF(provider) {
+    await chrome.storage.local.remove([`oauth_${provider}`]);
+  }
+
+  async exchangeCodeForTokens(provider, code) {
+    try {
+      const config = this.providers.get(provider);
+      const response = await this.requestTokens(config, code);
+      const tokens = await this.parseTokenResponse(response);
+      await this.storeTokens(provider, tokens);
+      console.log(`[OAuthManager] Successfully authenticated ${provider}`);
+      return { success: true, provider };
+    } catch (error) {
+      console.error(`[OAuthManager] Token exchange failed for ${provider}:`, error);
+      return { success: false, error: error.message };
     }
+  }
+
+  async requestTokens(config, code) {
+    const body = this.buildTokenRequestBody(config, code);
+    const headers = this.buildTokenRequestHeaders(config);
     
-    if (!provider) {
-      console.error('[OAuthManager] No matching state found');
-      return { success: false, error: 'Invalid state - possible CSRF' };
-    }
-    
-    // Exchange code for tokens
-    const config = this.providers.get(provider);
-    const tokenResponse = await fetch(config.tokenUrl, {
+    const response = await fetch(config.tokenUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...(config.clientSecret ? {
-          'Authorization': `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`
-        } : {})
-      },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: config.redirectUri || url,
-        client_id: config.clientId,
-        ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
-      })
+      headers,
+      body
     });
     
-    if (!tokenResponse.ok) {
-      const error = await tokenResponse.text();
-      console.error(`[OAuthManager] Token exchange failed for ${provider}:`, error);
-      return { success: false, error: `Token exchange failed: ${tokenResponse.status}` };
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token exchange failed: ${response.status} - ${error}`);
     }
     
-    const tokens = await tokenResponse.json();
-    await this.storeTokens(provider, tokens);
-    
-    console.log(`[OAuthManager] Successfully authenticated ${provider}`);
-    return { success: true, provider };
+    return response;
   }
-  
-  // Refresh expired token
+
+  buildTokenRequestBody(config, code) {
+    return new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: config.redirectUri || url,
+      client_id: config.clientId,
+      ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
+    });
+  }
+
+  buildTokenRequestHeaders(config) {
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    if (config.clientSecret) {
+      headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
+    }
+    return headers;
+  }
+
+  async parseTokenResponse(response) {
+    return await response.json();
+  }
+
   async refreshToken(provider) {
-    // Prevent concurrent refresh attempts
     if (this.refreshPromises.has(provider)) {
       return this.refreshPromises.get(provider);
     }
     
-    const refreshPromise = this._doRefresh(provider);
+    const refreshPromise = this.doRefresh(provider);
     this.refreshPromises.set(provider, refreshPromise);
     
     try {
-      const token = await refreshPromise;
-      return token;
+      return await refreshPromise;
     } finally {
       this.refreshPromises.delete(provider);
     }
   }
-  
-  async _doRefresh(provider) {
+
+  async doRefresh(provider) {
     const config = this.providers.get(provider);
     const token = this.tokens.get(provider);
     
@@ -155,49 +191,63 @@ export class OAuthManager {
       return null;
     }
     
-    const response = await fetch(config.tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...(config.clientSecret ? {
-          'Authorization': `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`
-        } : {})
-      },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: token.refreshToken,
-        client_id: config.clientId,
-        ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
-      })
-    });
-    
-    if (!response.ok) {
-      console.error(`[OAuthManager] Refresh failed for ${provider}:`, response.status);
-      // Clear invalid tokens
+    try {
+      const response = await this.requestRefresh(config, token.refreshToken);
+      const tokens = await this.parseTokenResponse(response);
+      await this.storeTokens(provider, tokens);
+      console.log(`[OAuthManager] Refreshed token for ${provider}`);
+      return tokens.access_token;
+    } catch (error) {
+      console.error(`[OAuthManager] Refresh failed for ${provider}:`, error);
       await this.clearTokens(provider);
       return null;
     }
-    
-    const tokens = await response.json();
-    await this.storeTokens(provider, tokens);
-    
-    console.log(`[OAuthManager] Refreshed token for ${provider}`);
-    return tokens.access_token;
   }
-  
-  // Store tokens
+
+  async requestRefresh(config, refreshToken) {
+    const body = this.buildRefreshRequestBody(config, refreshToken);
+    const headers = this.buildTokenRequestHeaders(config);
+    
+    const response = await fetch(config.tokenUrl, {
+      method: 'POST',
+      headers,
+      body
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Refresh failed: ${response.status}`);
+    }
+    
+    return response;
+  }
+
+  buildRefreshRequestBody(config, refreshToken) {
+    return new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: config.clientId,
+      ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
+    });
+  }
+
   async storeTokens(provider, tokens) {
-    const tokenData = {
+    const tokenData = this.buildTokenData(provider, tokens);
+    this.tokens.set(provider, tokenData);
+    await this.persistTokens(provider, tokenData);
+  }
+
+  buildTokenData(provider, tokens) {
+    const existingToken = this.tokens.get(provider);
+    return {
       accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token || this.tokens.get(provider)?.refreshToken,
+      refreshToken: tokens.refresh_token || existingToken?.refreshToken,
       expiresAt: tokens.expires_in ? Date.now() + (tokens.expires_in * 1000) : null,
       tokenType: tokens.token_type || 'Bearer',
-      raw: tokens // Store full response in case modules need extra data
+      raw: tokens
     };
-    
-    this.tokens.set(provider, tokenData);
-    
-    // Persist to chrome.storage.sync for cross-device
+  }
+
+  async persistTokens(provider, tokenData) {
     await chrome.storage.sync.set({
       [`oauth_${provider}`]: {
         accessToken: tokenData.accessToken,
@@ -206,8 +256,7 @@ export class OAuthManager {
       }
     });
   }
-  
-  // Load stored tokens on startup
+
   async loadStoredTokens(provider) {
     const stored = await chrome.storage.sync.get([`oauth_${provider}`]);
     if (stored[`oauth_${provider}`]) {
@@ -215,31 +264,38 @@ export class OAuthManager {
       console.log(`[OAuthManager] Loaded stored tokens for ${provider}`);
     }
   }
-  
-  // Clear tokens for a provider
+
   async clearTokens(provider) {
     this.tokens.delete(provider);
     await chrome.storage.sync.remove([`oauth_${provider}`]);
     console.log(`[OAuthManager] Cleared tokens for ${provider}`);
   }
-  
-  // Check if authenticated
+
   isAuthenticated(provider) {
     return this.tokens.has(provider) && !!this.tokens.get(provider)?.accessToken;
   }
-  
-  // Set up redirect listeners
+
   setupListeners() {
     chrome.webNavigation.onBeforeNavigate.addListener(
-      async (details) => {
-        if (details.url.includes('code=') || details.url.includes('error=')) {
-          const result = await this.handleCallback(details.url);
-          if (result.success) {
-            setTimeout(() => chrome.tabs.remove(details.tabId).catch(() => {}), 100);
-          }
-        }
-      },
-      { urls: [url + '*'] }
+      async (details) => this.handleNavigationEvent(details),
+      { urls: [`${url}*`] }
     );
+  }
+
+  async handleNavigationEvent(details) {
+    if (!this.isOAuthCallback(details.url)) return;
+    
+    const result = await this.handleCallback(details.url);
+    if (result.success) {
+      this.closeTab(details.tabId);
+    }
+  }
+
+  isOAuthCallback(callbackUrl) {
+    return callbackUrl.includes('code=') || callbackUrl.includes('error=');
+  }
+
+  closeTab(tabId) {
+    setTimeout(() => chrome.tabs.remove(tabId).catch(() => {}), 100);
   }
 }
