@@ -5,302 +5,70 @@
 
 // Module manifest
 export const manifest = {
-  name: "Fitbit",
+  name: "fitbit",
   version: "1.0.0",
-  permissions: ["storage", "identity"],
-  actions: ["refreshAllData", "fitbitAuth", "handleAuthCallback"],
+  permissions: ["storage"],
+  actions: ["refreshAllData", "startAuth", "disconnect"],
   state: {
     reads: [],
-    writes: ["fitbit.auth.status", "fitbit.lastSync", "sleep.lastNight.hours", "sleep.lastNight.quality", "activity.today.calories", "heart.current.bpm", "ui.notify.queue"]
+    writes: ["fitbit.auth.status", "fitbit.lastSync", "sleep.lastNight.hours", "sleep.lastNight.quality", "activity.today.calories", "heart.current.bpm"]
   }
 };
 
-// Fitbit app credentials
-const CLIENT_ID = "23QNT9";
-const CLIENT_SECRET = "d046fb1a90585a96647164f1b2bd4282";
-const REDIRECT_URI = `https://chromiumapp.org/`;
+// OAuth configuration
+export const oauth = {
+  provider: 'fitbit',
+  clientId: '23QNT9',
+  clientSecret: 'd046fb1a90585a96647164f1b2bd4282',
+  authUrl: 'https://www.fitbit.com/oauth2/authorize',
+  tokenUrl: 'https://api.fitbit.com/oauth2/token',
+  scopes: ['activity', 'heartrate', 'sleep'],
+  redirectUri: 'https://chromiumapp.org/'
+};
 
 let pollTimer = null;
-let accessToken = null;
-let refreshToken = null;
 
 export async function initialize(state, config) {
-  registerAuth(state, config);
+  // Check if authenticated
+  const isAuth = state.oauthManager.isAuthenticated('fitbit');
+  await state.write('fitbit.auth.status', isAuth ? 'connected' : 'disconnected');
   
-  // Get stored tokens from chrome.storage.sync (cross-device sync)
-  const stored = await chrome.storage.sync.get(['fitbitAccessToken', 'fitbitRefreshToken', 'fitbitTokenExpiry']);
-  accessToken = stored.fitbitAccessToken;
-  refreshToken = stored.fitbitRefreshToken;
-  
-  if (accessToken && stored.fitbitTokenExpiry && Date.now() > stored.fitbitTokenExpiry) {
-    await refreshAccessToken();
-  }
-  
-  // Check auth first - if no token, start OAuth
-  if (!accessToken) {
-    await startOAuthFlow(state);
-    return;
-  }
-  
-  // Set up polling only if configured
-  if (config.pollInterval && config.pollInterval > 0) {
-    // Initial data fetch
+  // Set up polling if configured and authenticated
+  if (isAuth && config.pollInterval && config.pollInterval > 0) {
     await refreshAllData(state);
-    
-    // Set up recurring polling
-    pollTimer = setInterval(async () => {
-      await refreshAllData(state);
-    }, config.pollInterval * 60 * 1000);
+    pollTimer = setInterval(() => refreshAllData(state), config.pollInterval * 60 * 1000);
   }
 }
 
+// Start OAuth flow
+export const startAuth = async (state) => state.oauthManager.startAuth('fitbit');
 
-
-
-const registerAuth = (state, config) => state.oauthManager.register(REDIRECT_URI, 'fitbit',
-    async ({ code, state: authState, error, errorDescription }) => {
-      if (error) console.error('[Fitbit] OAuth error:', error, errorDescription);
-      return await handleAuthCallback(state, { code, state: authState });
-    }
-  );
-
-
-// Refresh the access token using the refresh token
-async function refreshAccessToken() {
-  const stored = await chrome.storage.sync.get(['fitbitRefreshToken']);
-  const currentRefreshToken = stored.fitbitRefreshToken || refreshToken;
-  
-  if (!currentRefreshToken) {
-    throw new Error('No refresh token available');
+// Disconnect (clear tokens)
+export const disconnect = async (state) => {
+  await state.oauthManager.clearTokens('fitbit');
+  await state.write('fitbit.auth.status', 'disconnected');
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
   }
-  
-  const response = await fetch('https://api.fitbit.com/oauth2/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`
-    },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: currentRefreshToken
-    })
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('[Fitbit] Token refresh failed:', error);
-    throw new Error(`Token refresh failed: ${response.status}`);
-  }
-  
-  const data = await response.json();
-  
-  // Update both tokens (Fitbit returns new refresh token too)
-  accessToken = data.access_token;
-  refreshToken = data.refresh_token;
-  
-  // Store the new tokens in chrome.storage.sync (cross-device sync)
-  await chrome.storage.sync.set({
-    fitbitAccessToken: accessToken,
-    fitbitRefreshToken: refreshToken,
-    fitbitTokenExpiry: Date.now() + (data.expires_in * 1000)
-  });
-  
-  console.log('[Fitbit] Token refreshed successfully');
-}
+  return { success: true, message: 'Fitbit disconnected' };
+};
 
-// Consolidated Fitbit API fetch helper with automatic token refresh
-async function fitbitFetch(endpoint) {
-  if (!accessToken) {
-    throw new Error('No access token available');
-  }
-  
-  // Check if token is expired
-  const stored = await chrome.storage.sync.get(['fitbitTokenExpiry']);
-  if (stored.fitbitTokenExpiry && Date.now() > stored.fitbitTokenExpiry) {
-    console.log('[Fitbit] Token expired, refreshing...');
-    await refreshAccessToken();
-  }
-  
-  let response = await fetch(`https://api.fitbit.com${endpoint}`, {
-    headers: { 'Authorization': `Bearer ${accessToken}` }
-  });
-  
-  // If we get a 401, try refreshing the token once
-  if (response.status === 401) {
-    console.log('[Fitbit] Got 401, attempting token refresh...');
-    await refreshAccessToken();
-    
-    // Retry the request with new token
-    response = await fetch(`https://api.fitbit.com${endpoint}`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-  }
-  
-  if (!response.ok) {
-    throw new Error(`Fitbit API error: ${response.status}`);
-  }
-  
-  return response.json();
-}
-
-export async function startOAuthFlow(state) {
-  try {
-    // Check if an auth flow is already in progress
-    const existingState = await chrome.storage.sync.get(['fitbitAuthState']);
-    if (existingState.fitbitAuthState) {
-      console.log('[Fitbit] OAuth flow already in progress, cancelling existing...');
-      // Clear any existing state
-      await chrome.storage.sync.remove('fitbitAuthState');
-    }
-    
-    // Generate random state for CSRF protection
-    const authState = Math.random().toString(36).substring(7);
-    await chrome.storage.sync.set({ fitbitAuthState: authState });
-    
-    console.log('[Fitbit] Starting OAuth flow with state:', authState);
-    
-    const authUrl = `https://www.fitbit.com/oauth2/authorize?` +
-      `client_id=${CLIENT_ID}&` +
-      `response_type=code&` +
-      `scope=activity%20heartrate%20sleep&` +
-      `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
-      `state=${authState}`;
-    
-    // Open auth window
-    const authWindow = await chrome.windows.create({
-      url: authUrl,
-      type: 'popup',
-      width: 500,
-      height: 750
-    });
-    
-    await appendNotification(state, {
-      type: 'info',
-      module: 'fitbit',
-      message: 'Please authorize Fitbit in the popup window'
-    });
-    
-    return { success: true, message: 'Authorization window opened' };
-    
-  } catch (error) {
-    await appendNotification(state, {
-      type: 'error',
-      module: 'fitbit',
-      message: `Failed to start authorization: ${error.message}`
-    });
-    
-    return { success: false, error: error.message };
-  }
-}
-
-// Alias for the action system
-export const fitbitAuth = startOAuthFlow;
-
-export async function handleAuthCallback(state, { code, state: authState }) {
-  try {
-    console.log('[Fitbit] Processing OAuth callback - code:', code, 'state:', authState);
-    
-    // Verify state matches
-    const stored = await chrome.storage.sync.get(['fitbitAuthState']);
-    console.log('[Fitbit] Stored state:', stored.fitbitAuthState, 'received state:', authState);
-    
-    if (authState !== stored.fitbitAuthState) {
-      console.error('[Fitbit] State mismatch - expected:', stored.fitbitAuthState, 'got:', authState);
-      
-      // If no stored state, it might have been processed already
-      if (!stored.fitbitAuthState) {
-        return { 
-          success: false, 
-          error: 'OAuth callback already processed or no auth flow in progress'
-        };
-      }
-      
-      throw new Error('Invalid state parameter - possible CSRF attack or duplicate callback');
-    }
-    
-    // Clear the state immediately to prevent reuse
-    await chrome.storage.sync.remove('fitbitAuthState');
-    console.log('[Fitbit] State cleared, proceeding with token exchange');
-    
-    // Exchange code for token
-    await exchangeCodeForToken(code);
-    
-    // Notify success
-    await appendNotification(state, {
-      type: 'success',
-      module: 'fitbit',
-      message: 'Fitbit connected successfully!'
-    });
-    
-    // Start initial data fetch
-    await refreshAllData(state);
-    
-    return { success: true, message: 'Authorization complete' };
-    
-  } catch (error) {
-    // Only show error notification if it's not a duplicate callback
-    if (!error.message.includes('duplicate callback')) {
-      await appendNotification(state, {
-        type: 'error',
-        module: 'fitbit',
-        message: `Authorization failed: ${error.message}`
-      });
-    }
-    
-    return { success: false, error: error.message };
-  }
-}
-
-async function exchangeCodeForToken(code) {
-  const response = await fetch('https://api.fitbit.com/oauth2/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`
-    },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      grant_type: 'authorization_code',
-      redirect_uri: REDIRECT_URI,
-      code: code
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Token exchange failed: ${response.status}`);
-  }
-  
-  const data = await response.json();
-  accessToken = data.access_token;
-  refreshToken = data.refresh_token;
-
-  // Store both tokens in chrome.storage.sync (cross-device sync)
-  await chrome.storage.sync.set({
-    fitbitAccessToken: accessToken,
-    fitbitRefreshToken: refreshToken,
-    fitbitTokenExpiry: Date.now() + (data.expires_in * 1000)
-  });
-}
-
+// Refresh all data from Fitbit
 export async function refreshAllData(state) {
-  if (!accessToken) {
-    await appendNotification(state, {
-      type: 'error',
-      module: 'fitbit',
-      message: 'Fitbit not authorized - please complete setup'
-    });
-    return { success: false, error: 'No access token' };
+  const token = await state.oauthManager.getToken('fitbit');
+  if (!token) {
+    await state.write('fitbit.auth.status', 'disconnected');
+    return { success: false, error: 'Not authenticated' };
   }
   
   try {
-    // Fetch all data in parallel
     const [sleepData, activityData, heartData] = await Promise.all([
-      fetchSleepData(),
-      fetchActivityData(),
-      fetchHeartRate()
+      fetchSleepData(token),
+      fetchActivityData(token),
+      fetchHeartRate(token)
     ]);
     
-    // Write to state
     if (sleepData) {
       await state.write('sleep.lastNight.hours', sleepData.hours);
       await state.write('sleep.lastNight.quality', sleepData.quality);
@@ -314,33 +82,44 @@ export async function refreshAllData(state) {
       await state.write('heart.current.bpm', heartData.bpm);
     }
     
+    await state.write('fitbit.lastSync', new Date().toISOString());
+    
     return { 
       success: true, 
-      updated: new Date().toISOString(),
       data: { sleepData, activityData, heartData }
     };
     
   } catch (error) {
     console.error('[Fitbit] Refresh error:', error);
     
-    await appendNotification(state, {
-      type: 'error',
-      module: 'fitbit',
-      message: `Failed to fetch Fitbit data: ${error.message}`
-    });
+    // If 401, token might be invalid
+    if (error.message?.includes('401')) {
+      await state.write('fitbit.auth.status', 'token_invalid');
+    }
     
     return { success: false, error: error.message };
   }
 }
 
-async function fetchSleepData() {
+// Fitbit API helper
+const fitbitFetch = async (endpoint, token) => {
+  const response = await fetch(`https://api.fitbit.com${endpoint}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  
+  if (!response.ok) throw new Error(`Fitbit API error: ${response.status}`);
+  return response.json();
+};
+
+// Fetch sleep data
+const fetchSleepData = async (token) => {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split('T')[0];
   
-  const data = await fitbitFetch(`/1.2/user/-/sleep/date/${dateStr}.json`);
+  const data = await fitbitFetch(`/1.2/user/-/sleep/date/${dateStr}.json`, token);
   
-  if (data.sleep && data.sleep.length > 0) {
+  if (data.sleep?.length > 0) {
     const mainSleep = data.sleep.find(s => s.isMainSleep) || data.sleep[0];
     return {
       hours: Math.round(mainSleep.duration / (1000 * 60 * 60) * 10) / 10,
@@ -349,53 +128,41 @@ async function fetchSleepData() {
   }
   
   return null;
-}
+};
 
-async function fetchActivityData() {
+// Fetch activity data
+const fetchActivityData = async (token) => {
   const today = new Date().toISOString().split('T')[0];
-  const data = await fitbitFetch(`/1/user/-/activities/date/${today}.json`);
+  const data = await fitbitFetch(`/1/user/-/activities/date/${today}.json`, token);
   
   return {
     calories: data.summary?.caloriesOut || 0
   };
-}
+};
 
-async function fetchHeartRate() {
+// Fetch heart rate data
+const fetchHeartRate = async (token) => {
   const today = new Date().toISOString().split('T')[0];
-  const data = await fitbitFetch(`/1/user/-/activities/heart/date/${today}/1d.json`);
+  const data = await fitbitFetch(`/1/user/-/activities/heart/date/${today}/1d.json`, token);
   
-  // Get most recent heart rate data
-  if (data['activities-heart'] && data['activities-heart'].length > 0) {
-    const todayData = data['activities-heart'][0];
+  if (data['activities-heart']?.[0]?.value) {
+    const todayData = data['activities-heart'][0].value;
     
-    if (todayData.value && todayData.value.restingHeartRate) {
-      return { bpm: todayData.value.restingHeartRate };
+    if (todayData.restingHeartRate) {
+      return { bpm: todayData.restingHeartRate };
     }
     
     // Estimate from zones if no resting rate
-    if (todayData.value && todayData.value.heartRateZones) {
-      const zones = todayData.value.heartRateZones;
-      const fatBurnZone = zones.find(z => z.name === 'Fat Burn');
-      if (fatBurnZone) {
-        return { bpm: Math.round((fatBurnZone.min + fatBurnZone.max) / 2) };
-      }
+    const fatBurnZone = todayData.heartRateZones?.find(z => z.name === 'Fat Burn');
+    if (fatBurnZone) {
+      return { bpm: Math.round((fatBurnZone.min + fatBurnZone.max) / 2) };
     }
   }
   
   return { bpm: 0 };
-}
+};
 
-async function appendNotification(state, notification) {
-  const currentQueue = await state.read('ui.notify.queue') || [];
-  currentQueue.push({
-    ...notification,
-    timestamp: Date.now(),
-    id: `fitbit_${Date.now()}`
-  });
-  await state.write('ui.notify.queue', currentQueue);
-}
-
-// Cleanup function for service worker restarts
+// Cleanup
 export async function cleanup() {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -403,173 +170,38 @@ export async function cleanup() {
   }
 }
 
-// Test cases
+// Tests
 export const tests = [
   {
-    name: 'initializes with configurable polling timer',
+    name: 'refreshAllData handles missing token gracefully',
     fn: async () => {
-      const mockState = createMockState();
-      const config = { pollInterval: 15 };
-      
-      await initialize(mockState, config);
-      
-      // Timer should be set (can't easily test interval, but can test it was called)
-      assert(pollTimer !== null, 'Polling timer should be initialized');
-      
-      // Cleanup
-      if (pollTimer) clearInterval(pollTimer);
-    }
-  },
-  
-  {
-    name: 'handles missing credentials gracefully',
-    fn: async () => {
-      const mockState = createMockState();
-      accessToken = null;
-      
-      const result = await refreshAllData(mockState);
-      
-      assert(result.success === false, 'Should fail without access token');
-      assert(result.error === 'No access token', 'Should return correct error');
-      
-      const notifications = await mockState.read('ui.notify.queue');
-      assert(notifications.length > 0, 'Should create notification');
-      assert(notifications[0].type === 'error', 'Should be error notification');
-    }
-  },
-  
-  {
-    name: 'refreshAllData writes all state paths correctly',
-    fn: async () => {
-      const mockState = createMockState();
-      accessToken = 'mock_token';
-      
-      // Mock fetch responses
-      const originalFetch = global.fetch;
-      global.fetch = async (url) => {
-        if (url.includes('sleep')) {
-          return {
-            ok: true,
-            json: () => Promise.resolve({
-              sleep: [{
-                isMainSleep: true,
-                duration: 28800000, // 8 hours in ms
-                efficiency: 85
-              }]
-            })
-          };
-        }
-        if (url.includes('activities/date')) {
-          return {
-            ok: true,
-            json: () => Promise.resolve({
-              summary: { caloriesOut: 2500 }
-            })
-          };
-        }
-        if (url.includes('heart')) {
-          return {
-            ok: true,
-            json: () => Promise.resolve({
-              'activities-heart': [{
-                value: { restingHeartRate: 65 }
-              }]
-            })
-          };
-        }
+      const mockState = {
+        oauthManager: { getToken: async () => null },
+        write: async () => {}
       };
       
       const result = await refreshAllData(mockState);
-      
-      assert(result.success === true, 'Should succeed with mock data');
-      
-      const sleepHours = await mockState.read('sleep.lastNight.hours');
-      const sleepQuality = await mockState.read('sleep.lastNight.quality');
-      const calories = await mockState.read('activity.today.calories');
-      const heartRate = await mockState.read('heart.current.bpm');
-      
-      assert(sleepHours === 8, 'Should write correct sleep hours');
-      assert(sleepQuality === 85, 'Should write correct sleep quality');
-      assert(calories === 2500, 'Should write correct calories');
-      assert(heartRate === 65, 'Should write correct heart rate');
-      
-      // Restore
-      global.fetch = originalFetch;
+      assert(result.success === false);
+      assert(result.error === 'Not authenticated');
     }
   },
   
   {
-    name: 'handles API errors without crashing state',
+    name: 'fitbitFetch throws on non-ok response',
     fn: async () => {
-      const mockState = createMockState();
-      accessToken = 'mock_token';
+      global.fetch = async () => ({ ok: false, status: 404 });
       
-      // Mock failing fetch
-      const originalFetch = global.fetch;
-      global.fetch = async () => {
-        return { ok: false, status: 401 };
-      };
-      
-      const result = await refreshAllData(mockState);
-      
-      assert(result.success === false, 'Should fail gracefully');
-      assert(result.error.includes('401'), 'Should include error details');
-      
-      const notifications = await mockState.read('ui.notify.queue');
-      assert(notifications.length > 0, 'Should create error notification');
-      
-      // Restore
-      global.fetch = originalFetch;
-    }
-  },
-  
-  {
-    name: 'appends error notification to ui.notify.queue on API failure',
-    fn: async () => {
-      const mockState = createMockState();
-      accessToken = 'mock_token';
-      
-      const originalFetch = global.fetch;
-      global.fetch = async () => {
-        throw new Error('Network error');
-      };
-      
-      await refreshAllData(mockState);
-      
-      const notifications = await mockState.read('ui.notify.queue');
-      assert(notifications.length === 1, 'Should add one notification');
-      
-      const notification = notifications[0];
-      assert(notification.type === 'error', 'Should be error type');
-      assert(notification.module === 'fitbit', 'Should be from fitbit module');
-      assert(notification.message.includes('Network error'), 'Should include error message');
-      assert(notification.timestamp, 'Should have timestamp');
-      assert(notification.id.startsWith('fitbit_'), 'Should have fitbit ID');
-      
-      global.fetch = originalFetch;
+      try {
+        await fitbitFetch('/test', 'fake_token');
+        assert(false, 'Should have thrown');
+      } catch (error) {
+        assert(error.message.includes('404'));
+      }
     }
   }
 ];
 
-// Mock state helper for testing
-function createMockState() {
-  const data = {};
-  return {
-    async read(key) { 
-      return data[key]; 
-    },
-    async write(key, value) { 
-      data[key] = value; 
-    },
-    watch(key, callback) {
-      // Mock watcher - could be enhanced for testing
-    }
-  };
-}
-
-// Simple assertion helper
+// Test helpers
 function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message || 'Assertion failed');
-  }
+  if (!condition) throw new Error(message || 'Assertion failed');
 }

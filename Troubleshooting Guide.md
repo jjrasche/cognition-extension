@@ -201,17 +201,6 @@ if (!globalThis.cognitionState?.actions) {
 
 ## Quick Diagnostic Commands
 
-```javascript
-// Check everything at once
-debugInit()      // See initialization state
-listActions()    // Verify actions loaded
-viewState()      // Check current state
-debugFitbit()    // Full Fitbit diagnostic
-
-// Reset if needed
-clearState()     // Clear all data (careful!)
-clearFitbitAuth() // Reset Fitbit connection
-```
 
 ## Getting More Help
 

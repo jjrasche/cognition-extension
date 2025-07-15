@@ -1,3 +1,4 @@
+
 // state-store.js - Unified state management using chrome.storage
 // Provides reactive state with granular watching capabilities
 import { ActionRegistry } from './action-registry.js';
@@ -10,7 +11,6 @@ export class StateStore {
     this.watchers = new Map();
     this.actions = new ActionRegistry();
     this.oauthManager = new OAuthManager();
-
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes[COGNITION_STATE]) {

@@ -41,12 +41,6 @@ export class OAuthManager {
     await chrome.windows.create({ url: authUrl, type: 'popup', width: 600, height: 800, focused: true });
     return { success: true, message: 'Complete authorization in the popup window' };
   }
-  
-  async generateCSRF(provider) {
-    const csrf = crypto.randomUUID();
-    await chrome.storage.local.set({ [`oauth_${provider}`]: csrf });
-    return csrf;
-  }
 
   buildAuthUrl(provider, csrf) {
     const config = this.providers.get(provider);
@@ -104,13 +98,18 @@ export class OAuthManager {
     return null;
   }
 
-  async getStoredCSRF(provider) {
-    const stored = await chrome.storage.local.get([`oauth_${provider}`]);
-    return stored[`oauth_${provider}`];
+  providerName = (provider) =>  `oauth_${provider}`
+  async generateCSRF(provider) {
+    const csrf = crypto.randomUUID();
+    await chrome.storage.local.set({ [this.providerName(provider)]: csrf });
+    return csrf;
   }
-
+  async getStoredCSRF(provider) {
+    const stored = await chrome.storage.local.get([this.providerName(provider)]);
+    return stored[this.providerName(provider)];
+  }
   async clearCSRF(provider) {
-    await chrome.storage.local.remove([`oauth_${provider}`]);
+    await chrome.storage.local.remove([this.providerName(provider)]);
   }
 
   async exchangeCodeForTokens(provider, code) {
@@ -130,18 +129,11 @@ export class OAuthManager {
   async requestTokens(config, code) {
     const body = this.buildTokenRequestBody(config, code);
     const headers = this.buildTokenRequestHeaders(config);
-    
-    const response = await fetch(config.tokenUrl, {
-      method: 'POST',
-      headers,
-      body
-    });
-    
+    const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
     if (!response.ok) {
       const error = await response.text();
       throw new Error(`Token exchange failed: ${response.status} - ${error}`);
     }
-    
     return response;
   }
 
@@ -163,15 +155,12 @@ export class OAuthManager {
     return headers;
   }
 
-  async parseTokenResponse(response) {
-    return await response.json();
-  }
+  parseTokenResponse = async (response) => await response.json();
 
   async refreshToken(provider) {
     if (this.refreshPromises.has(provider)) {
       return this.refreshPromises.get(provider);
     }
-    
     const refreshPromise = this.doRefresh(provider);
     this.refreshPromises.set(provider, refreshPromise);
     
@@ -207,17 +196,10 @@ export class OAuthManager {
   async requestRefresh(config, refreshToken) {
     const body = this.buildRefreshRequestBody(config, refreshToken);
     const headers = this.buildTokenRequestHeaders(config);
-    
-    const response = await fetch(config.tokenUrl, {
-      method: 'POST',
-      headers,
-      body
-    });
-    
+    const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
     if (!response.ok) {
       throw new Error(`Refresh failed: ${response.status}`);
-    }
-    
+    } 
     return response;
   }
 
@@ -249,7 +231,7 @@ export class OAuthManager {
 
   async persistTokens(provider, tokenData) {
     await chrome.storage.sync.set({
-      [`oauth_${provider}`]: {
+      [this.providerName(provider)]: {
         accessToken: tokenData.accessToken,
         refreshToken: tokenData.refreshToken,
         expiresAt: tokenData.expiresAt
@@ -258,16 +240,16 @@ export class OAuthManager {
   }
 
   async loadStoredTokens(provider) {
-    const stored = await chrome.storage.sync.get([`oauth_${provider}`]);
-    if (stored[`oauth_${provider}`]) {
-      this.tokens.set(provider, stored[`oauth_${provider}`]);
+    const stored = await chrome.storage.sync.get([this.providerName(provider)]);
+    if (stored[this.providerName(provider)]) {
+      this.tokens.set(provider, stored[this.providerName(provider)]);
       console.log(`[OAuthManager] Loaded stored tokens for ${provider}`);
     }
   }
 
   async clearTokens(provider) {
     this.tokens.delete(provider);
-    await chrome.storage.sync.remove([`oauth_${provider}`]);
+    await chrome.storage.sync.remove([this.providerName(provider)]);
     console.log(`[OAuthManager] Cleared tokens for ${provider}`);
   }
 
