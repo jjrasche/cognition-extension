@@ -1,4 +1,4 @@
-class ActionRegistry {
+export class ActionRegistry {
   constructor() {
     this.actions = new Map();
   }

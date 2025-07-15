@@ -2,6 +2,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { enabledModules } from '../enabled-modules.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -9,21 +10,34 @@ const buildDir = path.join(rootDir, 'build');
 
 async function build() {
   console.log('Building Cognition Extension...');
+  console.log('Enabled modules:', enabledModules);
   
   // Create build directory
   await fs.mkdir(buildDir, { recursive: true });
-  
 
-// Files to copy
-  const files = [
+  // Files to copy
+  const coreFiles = [
     'manifest.json',
     'background.js',
-    'fitbit.module.js', 
+    'state-store.js',
+    'action-registry.js',
+    'oauth-manager.js',
+    'enabled-modules.js',
+    'fitbit.module.js',
     'ui.module.js',
-    'transcript.module.js',
-    'test.html'
+    'transcript.module.js'
   ];
-  
+
+  // Get module files safely
+  const moduleFiles = enabledModules
+    .filter(module => module && typeof module === 'object')
+    .map(module => module.path)
+    .filter(modulePath => modulePath && typeof modulePath === 'string');
+
+  console.log('Module files to copy:', moduleFiles);
+
+  const files = [...coreFiles, ...moduleFiles];
+
   // Add dev-reload in development mode
   const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');
   if (isDev) {
