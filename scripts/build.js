@@ -25,7 +25,7 @@ async function build() {
     'enabled-modules.js',
     'fitbit.module.js',
     'ui.module.js',
-    'transcript.module.js'
+    'text-input.module.js'
   ];
 
   // Get module files safely

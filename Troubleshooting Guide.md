@@ -1,211 +1,138 @@
-# Troubleshooting Guide
+# Cognition Extension Debugging Checklist
 
-This guide covers common issues and their solutions.
+## 1. Initial Extension Load Check
 
-## Service Worker Issues
+### In Chrome Extensions Page (chrome://extensions)
+- [ ] Extension is loaded without errors
+- [ ] Service worker shows as "Active"
+- [ ] No errors in "Errors" button
+- [ ] Manifest version shows as 3
 
-### "import() is disallowed on ServiceWorkerGlobalScope"
+### Open Service Worker Console
+1. Click "service worker" link under Cognition Extension
+2. Wait 2-3 seconds for initialization
+3. Check for any red error messages
 
-**Problem:** Dynamic imports like `import('./module.js').then()` don't work in service workers.
+## 2. Core Initialization Tests
 
-**Solution:** Use static imports at the top of the file:
+Run these commands in the service worker console:
+
 ```javascript
-// ❌ BAD - Dynamic import
-import('./dev-console-helper.js').then(() => {
-  console.log('Loaded');
-});
+// Check if state is initialized
+globalThis.cognitionState
+// Expected: StateStore object
 
-// ✅ GOOD - Static import
-import './dev-console-helper.js';
+// Check system status
+await globalThis.cognitionState.read('system.status')
+// Expected: 'ready'
+
+// Check loaded modules
+await globalThis.cognitionState.read('system.modules')
+// Expected: Array with fitbit, ui, transcript modules
+
+// Check for any errors
+await globalThis.cognitionState.read('system.errors')
+// Expected: Empty array or specific error details
 ```
 
-### "globalState not initialized yet"
+## 3. Module Registration Tests
 
-**Problem:** Trying to use the state before initialization completes.
-
-**Solution:** 
-1. Wait a few seconds after extension reload
-2. Check initialization status: `debugInit()`
-3. Move debug exports inside `initializeExtension()` after state creation
-
-## OAuth Issues
-
-### "processingOAuthCodes is not defined"
-
-**Problem:** Variable used but never declared in background.js.
-
-**Solution:** Add at the top of background.js:
 ```javascript
-// Track OAuth codes being processed to prevent duplicate handling
-const processingOAuthCodes = new Set();
+// List all registered actions
+listActions()
+// Expected: Table showing actions from all modules
+
+// Check specific module actions exist
+globalThis.cognitionState.actions.has('ui.toggle')
+globalThis.cognitionState.actions.has('fitbit.refreshAllData')
+globalThis.cognitionState.actions.has('transcript.startTranscription')
 ```
 
-### OAuth State Mismatch Errors
+## 4. UI Module Tests
 
-**Problem:** Multiple auth flows creating different state values, causing mismatches.
-
-**Symptoms:**
-```
-[Fitbit] State mismatch - expected: abc123 got: xyz789
-```
-
-**Solutions:**
-~~1. **Prevent concurrent auth flows:**
-   ```javascript
-   // In fitbit.module.js, check for existing flow
-   const stored = await chrome.storage.sync.get(['fitbitAuthState', 'fitbitAuthInProgress']);
-   if (stored.fitbitAuthInProgress) {
-     console.log('[Fitbit] Auth already in progress, skipping');
-     return;
-   }
-   ```~~
-~~
-2. **Clear stale state before new auth:**
-   ```javascript
-   await chrome.storage.sync.remove(['fitbitAuthState']);
-   ```~~
-
-3. **Use deduplication in listeners:**
-   - Both `webNavigation` and `tabs.onUpdated` can fire for same callback
-   - Check `processingOAuthCodes` Set before processing
-
-### Multiple OAuth Windows
-
-**Problem:** User clicks auth button multiple times, opening multiple windows.
-
-**Solution:** Track active auth state and prevent multiple windows:
 ```javascript
-let isOAuthFlowActive = false;
+// Test UI toggle
+await executeAction('ui.toggle')
+// Expected: {success: true, value: true/false}
 
-export async function startOAuthFlow(state) {
-  if (isOAuthFlowActive) {
-    console.log('[Module] OAuth flow already active');
-    return;
-  }
-  isOAuthFlowActive = true;
-  // ... rest of flow
-}
+// Check UI state
+await globalThis.cognitionState.read('ui.visible')
+
+// Test notification
+await executeAction('ui.notify', {
+  message: 'Test notification',
+  type: 'info'
+})
 ```
 
-## State Management Issues
+## 5. Fitbit Module Tests
 
-### Actions Not Registering
-
-**Problem:** `listActions()` returns empty array despite modules being loaded.
-
-**Causes:**
-1. `registerModuleActions()` called before state is ready
-2. Module exports not being detected properly
-3. Timing issue with globalState assignment
-
-**Solution:** Ensure proper initialization order:
 ```javascript
-// In initializeExtension()
-1. Create StateStore
-2. Wait for loadPersistedState()
-3. Register module actions
-4. Initialize modules
-5. Export to globalThis (for debugging)
+// Check Fitbit auth status
+await globalThis.cognitionState.read('fitbit.auth.status')
+// Expected: 'connected' or 'disconnected'
+
+// View Fitbit tokens (if connected)
+await globalThis.cognitionState.oauthManager.isAuthenticated('fitbit')
+
+// Test Fitbit data refresh (if authenticated)
+testFitbit()
 ```
 
-### State Not Persisting
+## 6. State Management Tests
 
-**Problem:** State lost on service worker restart.
-
-**Solution:** Always persist to chrome.storage:
 ```javascript
-// ❌ BAD - Only in memory
-this.localState[key] = value;
+// Test state write/read
+await globalThis.cognitionState.write('test.debug', 'hello')
+await globalThis.cognitionState.read('test.debug')
+// Expected: 'hello'
 
-// ✅ GOOD - Persist immediately
-await chrome.storage.local.set({ cognitionState: state });
+// Test state watching
+watchState('test.debug')
+await globalThis.cognitionState.write('test.debug', 'changed')
+// Expected: Console log showing change
+
+stopWatching()
 ```
 
-## Module Development Issues
+## 7. Common Issues to Check
 
-### Circular Import Dependencies
+### Issue: "globalState not initialized"
+- Wait 2-3 seconds after reload
+- Run `debugInit()` to see initialization details
+- Check for errors in `system.errors`
 
-**Problem:** Module tries to import from background.js.
+### Issue: Actions not showing up
+- Check if modules loaded: `await globalThis.cognitionState.read('system.modules')`
+- Look for module initialization errors in console
+- Verify module files are in build folder
 
-**Solution:** Modules receive state as parameter - no imports needed:
+### Issue: OAuth not working
+- Check for multiple auth windows
+- Look for "processingOAuthCodes" errors
+- Verify OAuth configuration in fitbit.module.js
+
+### Issue: UI not appearing
+- Open a regular webpage (not chrome:// pages)
+- Check if content script injected
+- Look for CSP errors in page console
+
+## 8. Test Page Verification
+
+1. Open test.html in a browser tab
+2. Try each button:
+   - Toggle UI Overlay
+   - Show Test Notification
+   - Connect Fitbit
+   - Refresh State
+
+## 9. Module-Specific Debug Commands
+
 ```javascript
-// ❌ BAD
-import { globalState } from './background.js';
+// View all health data
+viewHealthData()
 
-// ✅ GOOD
-export async function myAction(state, params) {
-  await state.write('my.key', 'value');
-}
-```
+// Debug Fitbit specifically
+debugFitbit()
 
-### Module Not Loading
-
-**Problem:** Module file exists but isn't loading.
-
-**Debug steps:**
-1. Check file is in build folder
-2. Verify filename matches import exactly
-3. Check for syntax errors in module
-4. Look for console errors during initialization
-5. Verify module is in `enabledModules` array
-
-## Dev Console Helper Issues
-
-### Helpers Not Available
-
-**Problem:** Functions like `viewState()` not defined in console.
-
-**Checklist:**
-1. ✓ File named correctly (`dev-console-helper.js` not `helpers`)
-2. ✓ File included in build process
-3. ✓ Static import in background.js
-4. ✓ No syntax errors in helper file
-5. ✓ Checking service worker console (not popup or page console)
-6. ✓ Waiting for initialization to complete
-
-### executeAction Not Working
-
-**Problem:** `executeAction` fails with various errors.
-
-**Solution:** Use the state's action system directly:
-```javascript
-// If using direct access
-await globalThis.cognitionState.actions.execute('module.action', params)
-
-// If state not ready, wait
-if (!globalThis.cognitionState?.actions) {
-  console.log('State not ready, try again in a few seconds');
-}
-```
-
-## Chrome Extension Issues
-
-### Changes Not Showing
-
-**Problem:** Code changes don't appear after reload.
-
-**Solution:**
-1. Run build: `npm run build:dev`
-2. Click reload button in chrome://extensions
-3. Close and reopen service worker console
-4. For persistent issues: Remove and re-add extension
-
-### "Cannot read property of undefined"
-
-**Problem:** Trying to access Chrome APIs that don't exist.
-
-**Common causes:**
-- Using `window` in service worker (use `globalThis`)
-- API needs permission in manifest.json
-- API not available in service workers
-
-## Quick Diagnostic Commands
-
-
-## Getting More Help
-
-1. Check console for error messages
-2. Look for `[Background]`, `[Fitbit]`, `[StateStore]` prefixed logs
-3. Use `watchState()` to monitor state changes
-4. Enable verbose logging by adding more console.log statements
-5. Check the [Module Developer Guide](./Module%20Developer%20Guide.md) for patterns
+// Check OAuth manager state
