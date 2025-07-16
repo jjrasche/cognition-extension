@@ -10,10 +10,10 @@ export class OAuthManager {
     this.setupListeners();
   }
   
-  register(provider, config) {
+  async register(provider, config) {
     this.verifyConfig(config);
     this.providers.set(provider, config);
-    this.loadStoredTokens(provider);
+    await this.loadStoredTokens(provider);
     console.log(`[OAuthManager] Registered ${provider} with scopes:`, config.scopes);
   }
 
@@ -40,43 +40,32 @@ export class OAuthManager {
   async startAuth(provider) {
     const csrf = await this.generateCSRF(provider);
     const pkce = await this.generatePKCE(provider);
-    const authUrl = this.buildAuthUrl(provider, csrf, pkce);
+    const authUrl = this.buildAuthUrl(provider, csrf, pkce || {});
     await chrome.windows.create({ url: authUrl, type: 'popup', width: 600, height: 800, focused: true });
     return { success: true, message: 'Complete authorization in the popup window' };
   }
-
-  async generatePKCE(provider) {
-    // Generate PKCE parameters if needed
-    let pkceParams = {};
-    const config = this.providers.get(provider);
-    if (!config.clientSecret) {
-      pkceParams = await this.generatePKCE(provider);
-    }
-    return pkceParams;
-  }
-
+  
   // PKCE helpers
   async generatePKCE(provider) {
     const config = this.providers.get(provider);
     if (!config.clientSecret) {
-      pkceParams = await this.generatePKCE(provider);
+      const verifier = this.generateRandomString();
+      this.pkceVerifiers.set(provider, verifier);
+      
+      const encoder = new TextEncoder();
+      const data = encoder.encode(verifier);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      
+      const base64url = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+      
+      return {
+        codeChallenge: base64url,
+        codeVerifier: verifier
+      };
     }
-    const verifier = this.generateRandomString();
-    this.pkceVerifiers.set(provider, verifier);
-    
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    
-    const base64url = btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-    
-    return {
-      codeChallenge: base64url,
-      codeVerifier: verifier
-    };
   }
 
   generateRandomString() {
@@ -321,7 +310,7 @@ export class OAuthManager {
   setupListeners() {
     chrome.webNavigation.onBeforeNavigate.addListener(
       async (details) => this.handleNavigationEvent(details),
-      { urls: [`${url}*`] }
+      { url: [{ urlMatches: `${url}.*` }] }
     );
   }
 
