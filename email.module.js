@@ -25,7 +25,7 @@ export const manifest = {
 // OAuth configuration - to be filled after app registration
 export const oauth = {
   provider: 'outlook',
-  clientId: '', // To be configured in app settings
+  clientId: 'bb8d061d-475b-4aa6-9ef3-90a4908325ee',
   authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
   tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
   scopes: ['Mail.Read', 'User.Read', 'offline_access'],
