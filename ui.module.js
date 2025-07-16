@@ -1,44 +1,35 @@
 import { StateStore } from "./state-store.js";
 
-// ui-module.js - UI overlay system for displaying module content
 export const manifest = {
-  name: 'UI Overlay',
+  name: 'ui',
   version: '1.0.0',
   description: 'Provides sidebar, notifications, and modals for other modules',
   permissions: ['tabs', 'scripting', 'storage'],
   actions: ['show', 'hide', 'toggle', 'notify', 'modal'],
   state: {
-    reads: ['ui.visible'],
-    writes: ['ui.visible', 'ui.content', 'ui.notify', 'ui.modal']
+    reads: ['ui.visible', 'ui.action.request'],
+    writes: ['ui.visible', 'ui.content', 'ui.notify', 'ui.modal', 'ui.action.request']
   }
 };
 
-// Module initialization - injects UI into tabs
-// Store state reference for use in event listeners
-let globalStateRef = null;
-
 export async function initialize(state, config) {
-  globalStateRef = state;
+  state.watch('ui.action.request', (request) => state.actions.execute(request.action, request.params));
   await initializeUIConfig(state, config);
   await injectUIIntoExistingTabs(state);
-  // Handle new tabs
-  chrome.tabs.onCreated.addListener((tab) => {
-    if (tab.id) {
-      setTimeout(() => injectUI(globalStateRef, tab.id), 100);
-    }
-  });
-  // Handle navigation
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete') {
-      injectUI(globalStateRef, tabId);
-    }
-  });
+  injectIntoNewTabs(state);
+  injectIntoNavigatedTabs(state);
 }
+const injectIntoNewTabs = async (state) => chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.id) setTimeout(() => injectUI(state, tab.id), 100);
+});
+const injectIntoNavigatedTabs = async (state) => chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete') injectUI(state, tabId);
+});
 const initializeUIConfig = async (state, config) => {
   const uiConfig = { position: config.position || 'right', size: config.size || '20%', ...config };
   await state.write('ui.config', uiConfig);
 };
-const injectUIIntoExistingTabs = async (state) => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(globalStateRef, tab.id)));
+const injectUIIntoExistingTabs = async (state) => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(state, tab.id)));
 const shouldInjectIntoTab = (tab) => tab.url && !['chrome://', 'chrome-extension://', 'edge://', 'about:', 'file:///', 'view-source:', 'chrome-devtools://'].some(pattern => tab.url.startsWith(pattern));
 const injectContentScript = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentScriptCode, world: 'ISOLATED' });
 const injectCSS = async (state, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS(state) });
@@ -52,10 +43,7 @@ async function injectUI(state, tabId) {
     await injectContentScript(tabId);
     await injectCSS(state, tabId);
   } catch (e) {
-    // Silently skip error pages, chrome:// pages, etc.
-    if (!e.message.includes('Cannot access') && !e.message.includes('error page')) {
-      console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
-    }
+    console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
   }
 }
 
@@ -97,149 +85,94 @@ export const modal = (state, params) => {
 
 
 
+
+const modalTemplate = `
+  <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
+  <div class="cog-modal-content">
+    <h3 class="cog-modal-title"></h3>
+    <p class="cog-modal-text"></p>
+    <div class="cog-modal-buttons">
+      <button class="cog-modal-btn" data-modal-response="true">Yes</button>
+      <button class="cog-modal-btn" data-modal-response="false">No</button>
+    </div>
+  </div>
+`;
+const mainTemplate = `
+  <div class="cog-header">
+    <span class="cog-title">Cognition</span>
+    <button class="cog-close" data-action="ui.hide">×</button>
+  </div>
+  <div class="cog-content">
+    <div class="cog-empty">No content</div>
+  </div>
+`;
+const notificationTemplate = (data) => `
+  <div class="cog-notif-content">
+    ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
+    <span class="cog-notif-message">${data.message}</span>
+  </div>
+`;
+
 /*
  * Content Script Code - Runs in the context of the page
  */
 function contentScriptCode() {
-  // Prevent re-injection
-  if (window && '__cognitionUI' in window) return;
-  
-  const ui = {
-    elements: {},
-    notifications: new Map(),
-    config: {},
-    state: new StateStore(),
-    
+  if (window && '__cognitionUI' in window) return; // Prevent re-injection
+  const ui = {    
     async init() {
-      // Get config from state via messaging
+      this.elements = {};
+      this.notifications = new Map();
+      this.config = {};
+      this.state = new StateStore();
       this.config = (await this.state.read('ui.config')).result || {};
       
       this.createElements();
       this.setupStateListener();
-      this.setupClickHandlers();
-      
-      // Check if UI should be visible
-      if (await this.state.read('ui.visible')) {
-        this.show();
-      }
-      window['__cognitionUI'] = this; // Mark as initialized
+      this.setupActionClickHandlers();
+      this.setupModalResponseClickHandlers();
+      (await this.state.read('ui.visible')) && this.show();
+      window['__cognitionUI'] = this;
     },
     
     createElements() {
-      // Main container
-      const container = document.createElement('div');
-      container.id = 'cognition-container';
-      container.className = 'cognition-ui';
-      container.innerHTML = `
-        <div class="cog-header">
-          <span class="cog-title">Cognition</span>
-          <button class="cog-close" data-action="ui.hide">×</button>
-        </div>
-        <div class="cog-content">
-          <div class="cog-empty">No content</div>
-        </div>
-      `;
-      
-      // Notifications container
-      const notifications = document.createElement('div');
-      notifications.id = 'cognition-notifications';
-      notifications.className = 'cognition-ui';
-      
-      // Modal
-      const modal = document.createElement('div');
-      modal.id = 'cognition-modal';
-      modal.className = 'cognition-ui';
-      modal.innerHTML = `
-        <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
-        <div class="cog-modal-content">
-          <h3 class="cog-modal-title"></h3>
-          <p class="cog-modal-text"></p>
-          <div class="cog-modal-buttons">
-            <button class="cog-modal-btn" data-modal-response="true">Yes</button>
-            <button class="cog-modal-btn" data-modal-response="false">No</button>
-          </div>
-        </div>
-      `;
-      
-      // Store references
-      this.elements = {
-        container,
-        notifications,
-        modal,
-        content: container.querySelector('.cog-content'),
-        modalTitle: modal.querySelector('.cog-modal-title'),
-        modalText: modal.querySelector('.cog-modal-text')
-      };
-      
-      // Add to page
-      document.body.appendChild(container);
-      document.body.appendChild(notifications);
-      document.body.appendChild(modal);
+      const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
+      const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });
+      const modal = Object.assign(document.createElement('div'), { id: 'cognition-modal', className: 'cognition-ui', innerHTML: modalTemplate });
+      this.elements = { container, notifications, modal }
+      Object.keys(this.elements).forEach(el => document.body.appendChild(this.elements[el]));
+      this.elements.content = container.querySelector('.cog-content');
+      this.elements.modalTitle = modal.querySelector('.cog-modal-title');
+      this.elements.modalText = modal.querySelector('.cog-modal-text');
     },
     
     setupStateListener() {
-      // Listen to state changes via BroadcastChannel
-      const channel = new BroadcastChannel('cognition-state');
-      
-      channel.onmessage = (event) => {
-        const { key, value } = event.data;
-        
-        // Handle state changes based on key
-        switch(key) {
-          case 'ui.visible':
-            if (value) this.show();
-            else this.hide();
-            break;
-            
-          case 'ui.content':
-            this.updateContent(value);
-            break;
-            
-          case 'ui.notify':
-            if (value && value.message) {
-              this.addNotification(value);
-            }
-            break;
-            
-          case 'ui.modal':
-            if (value) {
-              this.showModal(value);
-            }
-            break;
-        }
-      };
-      
-      this.channel = channel;
+      this.state.watch('ui.visible', (value) => value ? this.show() : this.hide());
+      this.state.watch('ui.content', (html) => this.updateContent(html));
+      this.state.watch('ui.notify', (data) => this.addNotification(data));
+      this.state.watch('ui.modal', (data) => this.showModal(data));
     },
-    
-    setupClickHandlers() {
-      document.addEventListener('click', async (e) => {
-        // Handle data-action clicks
-        const actionEl = e.target instanceof Element ? e.target.closest('[data-action]') : null;
-        if (actionEl && actionEl instanceof HTMLElement) {
-          const action = actionEl.dataset.action;
-          // Handle UI-specific actions locally
-          if (action === 'ui.hide') {
-            this.hide();
-            // Also update state so service worker knows
-            await this.state.write('ui.visible', false);
-          } else if (action === 'ui.modal.close') {
-            this.hideModal();
-          } else {
-            const params = actionEl.dataset.params ? JSON.parse(actionEl.dataset.params) : {};
-            await this.state.write('ui.action.request', { action, params });
-          }
-        }
-        // Handle modal responses
-        const responseEl = e.target instanceof HTMLElement ? e.target.closest('[data-modal-response]') : null;
+    getElementDataset(element, key) {
+        const responseEl = element instanceof HTMLElement ? element.closest(key) : null;
         if (responseEl && responseEl instanceof HTMLElement) {
-          this.handleModalResponse(responseEl.dataset.modalResponse === 'true');
+          return responseEl.dataset;
         }
+        throw new Error(`Element ${key} not found`);
+    },
+    setupActionClickHandlers() {
+      document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
+        const dataSet = this.getElementDataset(e.target, '[data-action]');
+        await this.state.write('ui.action.request', { action: dataSet.action, params: JSON.parse(dataSet.params ?? '{}') });
       });
     },
-    
+    setupModalResponseClickHandlers() {
+      document.addEventListener('click', async (e) => {
+        const dataSet = this.getElementDataset(e.target, '[data-modal-response]');
+        this.state.write(dataSet.responseAction, { response: dataSet.modalResponse === 'true' });
+        this.hideModal();
+      });
+    },
     show() {
-      this.elements.container.classList.add('visible');
+      this.elements.foreach.classList.add('visible');
       this.elements.notifications.classList.add('visible');
     },
     
@@ -250,30 +183,16 @@ function contentScriptCode() {
     },
     
     updateContent(html) {
-      if (!html) {
-        this.elements.content.innerHTML = '<div class="cog-empty">No content</div>';
-      } else {
-        this.elements.content.innerHTML = html;
-      }
+      this.elements.content.innerHTML = html || '<div class="cog-empty">No content</div>';
     },
     
     addNotification(data) {
-      const notif = document.createElement('div');
-      notif.className = `cog-notification ${data.type || 'info'}`;
-      notif.innerHTML = `
-        <div class="cog-notif-content">
-          ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
-          <span class="cog-notif-message">${data.message}</span>
-        </div>
-      `;
-      
-      this.elements.notifications.appendChild(notif);
       const id = Date.now();
+      const notif = Object.assign(document.createElement('div'), { className: `cog-notification ${data.type || 'info'}`, innerHTML: notificationTemplate(data) });
+      this.elements.notifications.appendChild(notif);
       this.notifications.set(id, notif);
-      
       // Animate in
       requestAnimationFrame(() => notif.classList.add('visible'));
-      
       // Auto remove
       setTimeout(() => {
         notif.classList.remove('visible');
@@ -296,18 +215,8 @@ function contentScriptCode() {
     hideModal() {
       this.elements.modal.classList.remove('visible');
       delete this.elements.modal.dataset.responseAction;
-    },
-    
-    handleModalResponse(confirmed) {
-      const responseAction = this.elements.modal.dataset.responseAction;
-      this.hideModal();
-      if (responseAction) {
-        this.state.write(responseAction, { confirmed });
-      }
     }
   };
-  
-  // Initialize
   ui.init();
 }
 
