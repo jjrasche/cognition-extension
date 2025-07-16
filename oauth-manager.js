@@ -293,6 +293,9 @@ export class OAuthManager {
     if (stored[this.providerName(provider)]) {
       this.tokens.set(provider, stored[this.providerName(provider)]);
       console.log(`[OAuthManager] Loaded stored tokens for ${provider}`);
+    } else {
+      console.log(`[OAuthManager] No stored tokens for ${provider}, starting auth flow`);
+      this.startAuth(provider);
     }
   }
 
