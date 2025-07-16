@@ -22,14 +22,11 @@ const setState = async (v) => await state.writeMany({ 'input.text.current': v.cu
 const setCurrent = async (state, value) => await state.write('input.text.current', value);
 const setContent = async (state, html) => await state.write('ui.content', html);
 
-export const initialize = async (state) => {
-  await setState({ current: '', active: false });
-};
+export const initialize = async (state) => await setState({ current: '', active: false })
 
 export const show = async (state, { prompt = 'Enter text:', placeholder = 'Type here...' } = {}) => {
   await showUI(state);
   await setState({ current: '', active: true });
-  
   const html = `
     <div style="padding: 20px;">
       <div style="color: rgba(255,255,255,0.9); margin-bottom: 12px; font-size: 16px;">${escapeHtml(prompt)}</div>
@@ -51,7 +48,6 @@ export const show = async (state, { prompt = 'Enter text:', placeholder = 'Type 
       };
     </script>
   `;
-  
   await setContent(state, html);
   return { success: true };
 };

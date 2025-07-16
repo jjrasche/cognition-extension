@@ -1,3 +1,5 @@
+import { StateStore } from "./state-store.js";
+
 // ui-module.js - UI overlay system for displaying module content
 export const manifest = {
   name: 'UI Overlay',
@@ -100,28 +102,27 @@ export const modal = (state, params) => {
  */
 function contentScriptCode() {
   // Prevent re-injection
-  if (window.__cognitionUI) return;
+  if (window && '__cognitionUI' in window) return;
   
   const ui = {
     elements: {},
     notifications: new Map(),
     config: {},
+    state: new StateStore(),
     
     async init() {
       // Get config from state via messaging
-      const configResult = await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.read', params: { key: 'ui.config' } });
-      this.config = configResult.result || {};
+      this.config = (await this.state.read('ui.config')).result || {};
       
       this.createElements();
       this.setupStateListener();
       this.setupClickHandlers();
       
       // Check if UI should be visible
-      const visibleResult = await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.read', params: { key: 'ui.visible' } });
-      if (visibleResult.result) {
+      if (await this.state.read('ui.visible')) {
         this.show();
       }
-      window.__cognitionUI = this; // Mark as initialized
+      window['__cognitionUI'] = this; // Mark as initialized
     },
     
     createElements() {
@@ -212,36 +213,29 @@ function contentScriptCode() {
     },
     
     setupClickHandlers() {
-      document.addEventListener('click', (e) => {
+      document.addEventListener('click', async (e) => {
         // Handle data-action clicks
-        const actionEl = e.target.closest('[data-action]');
-        if (actionEl) {
+        const actionEl = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+        if (actionEl && actionEl instanceof HTMLElement) {
           const action = actionEl.dataset.action;
           // Handle UI-specific actions locally
           if (action === 'ui.hide') {
             this.hide();
             // Also update state so service worker knows
-            this.updateState('ui.visible', false);
+            await this.state.write('ui.visible', false);
           } else if (action === 'ui.modal.close') {
             this.hideModal();
           } else {
-            // Other actions go to state for modules to handle
             const params = actionEl.dataset.params ? JSON.parse(actionEl.dataset.params) : {};
-            this.updateState('ui.action.request', { action, params });
+            await this.state.write('ui.action.request', { action, params });
           }
         }
         // Handle modal responses
-        const responseEl = e.target.closest('[data-modal-response]');
-        if (responseEl) {
+        const responseEl = e.target instanceof HTMLElement ? e.target.closest('[data-modal-response]') : null;
+        if (responseEl && responseEl instanceof HTMLElement) {
           this.handleModalResponse(responseEl.dataset.modalResponse === 'true');
         }
       });
-    },
-    
-    // Helper to update state from content script
-    async updateState(key, value) {
-      // Update state via messaging to background script
-      await chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.write', params: { key, value } });
     },
     
     show() {
@@ -308,7 +302,7 @@ function contentScriptCode() {
       const responseAction = this.elements.modal.dataset.responseAction;
       this.hideModal();
       if (responseAction) {
-        this.updateState(responseAction, { confirmed });
+        this.state.write(responseAction, { confirmed });
       }
     }
   };

@@ -12,6 +12,8 @@
   "devDependencies": {
     "chokidar": "^3.5.3",
     "cross-env": "^7.0.3",
+    "eslint": "^9.31.0",
+    "eslint-plugin-jsdoc": "^51.4.1",
     "ws": "^8.16.0"
   },
   "type": "module"

@@ -5,19 +5,15 @@ import { ActionRegistry } from './action-registry.js';
 import { OAuthManager } from './oauth-manager.js';
 
 const COGNITION_STATE = 'cognitionState';
-// StateStore implementation that all modules will use
+
 export class StateStore {
   constructor() {
     this.watchers = new Map();
-    this.actions = new ActionRegistry();
-    this.oauthManager = new OAuthManager();
-
+    
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes[COGNITION_STATE]) {
         const oldState = changes[COGNITION_STATE].oldValue || {};
         const newState = changes[COGNITION_STATE].newValue || {};
-
-        // Find what changed and notify watchers
         for (const [key, value] of Object.entries(newState)) {
           if (oldState[key] !== value) {
             this.notifyWatchers(key, value);
@@ -79,5 +75,13 @@ export class StateStore {
   
   async clear() {
     await chrome.storage.local.remove(COGNITION_STATE);
+  }
+}
+
+export class ExtensionState extends StateStore{
+  constructor() {
+    super();
+    this.actions = new ActionRegistry();
+    this.oauthManager = new OAuthManager();
   }
 }
