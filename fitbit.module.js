@@ -8,7 +8,7 @@ export const manifest = {
   name: "fitbit",
   version: "1.0.0",
   permissions: ["storage"],
-  actions: ["refreshAllData", "startAuth", "disconnect"],
+  actions: ["refreshAllData"],
   state: {
     reads: [],
     writes: ["fitbit.auth.status", "fitbit.lastSync", "sleep.lastNight.hours", "sleep.lastNight.quality", "activity.today.calories", "heart.current.bpm"]
@@ -29,30 +29,12 @@ export const oauth = {
 let pollTimer = null;
 
 export async function initialize(state, config) {
-  // Check if authenticated
-  const isAuth = state.oauthManager.isAuthenticated('fitbit');
-  await state.write('fitbit.auth.status', isAuth ? 'connected' : 'disconnected');
-  
-  // Set up polling if configured and authenticated
-  if (isAuth && config.pollInterval && config.pollInterval > 0) {
+  if (state.oauthManager.isAuthenticated('fitbit') && config.pollInterval && config.pollInterval > 0) {
     await refreshAllData(state);
     pollTimer = setInterval(() => refreshAllData(state), config.pollInterval * 60 * 1000);
   }
 }
 
-// Start OAuth flow
-export const startAuth = async (state) => state.oauthManager.startAuth('fitbit');
-
-// Disconnect (clear tokens)
-export const disconnect = async (state) => {
-  await state.oauthManager.clearTokens('fitbit');
-  await state.write('fitbit.auth.status', 'disconnected');
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-  return { success: true, message: 'Fitbit disconnected' };
-};
 
 // Refresh all data from Fitbit
 export async function refreshAllData(state) {
@@ -189,8 +171,7 @@ export const tests = [
   {
     name: 'fitbitFetch throws on non-ok response',
     fn: async () => {
-      global.fetch = async () => ({ ok: false, status: 404 });
-      
+      global.fetch = async () => new Response('', { status: 404, statusText: 'Not Found' });
       try {
         await fitbitFetch('/test', 'fake_token');
         assert(false, 'Should have thrown');

@@ -29,7 +29,7 @@ export class OAuthManager {
 
   async checkAndRefresh(provider) {
     const token = this.tokens.get(provider);
-    if (!token) return null;  // <-- Add this check
+    if (!token) return null;
     if (token.expiresAt && Date.now() > token.expiresAt) {
       console.log(`[OAuthManager] Token expired for ${provider}, refreshing...`);
       return await this.refreshToken(provider);
@@ -45,7 +45,6 @@ export class OAuthManager {
     return { success: true, message: 'Complete authorization in the popup window' };
   }
   
-  // PKCE helpers
   async generatePKCE(provider) {
     const config = this.providers.get(provider);
     if (!config.clientSecret) {
