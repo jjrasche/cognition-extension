@@ -68,7 +68,8 @@ const defaultOptions = { pattern: 'all' };
 const validatePattern = (pattern) => ensure(['all', 'current', 'new'].includes(pattern), 'Invalid pattern');
 const validateModuleName = (moduleName) => ensure(moduleName, 'Module name is required');
 const validateContentFunction = (contentFunction) => ensure(typeof contentFunction === 'function', 'Content function must be a function');
-export async function register({ moduleName, contentFunction, options = defaultOptions }) {
+export async function register(state, params) {
+  const { moduleName, contentFunction, options = { pattern: 'all' } } = params;
   validateModuleName(moduleName);
   validateContentFunction(contentFunction);
   validatePattern(options.pattern);

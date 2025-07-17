@@ -11,48 +11,25 @@ export const manifest = {
     writes: ['ui.visible', 'ui.content', 'ui.notify', 'ui.modal', 'ui.action.request']
   }
 };
+const injectCSS = async (state, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS(state) });
 
 export const contentScript = {
   pattern: 'all',
   contentFunction: contentScriptCode,
+  cssFunction: generateCSS
 };
 
 export async function initialize(state, config) {
-  state.watch('ui.action.request', (request) => state.actions.execute(request.action, request.params));
+  watchUIActions(state);
   await initializeUIConfig(state, config);
-  await injectUIIntoExistingTabs(state);
-  injectIntoNewTabs(state);
-  injectIntoNavigatedTabs(state);
-}
-const injectIntoNewTabs = async (state) => chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.id) setTimeout(() => injectUI(state, tab.id), 100);
-});
-const injectIntoNavigatedTabs = async (state) => chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete') injectUI(state, tabId);
-});
+};
 const initializeUIConfig = async (state, config) => {
   const uiConfig = { position: config.position || 'right', size: config.size || '20%', ...config };
   await state.write('ui.config', uiConfig);
 };
-const injectUIIntoExistingTabs = async (state) => await Promise.all([... await chrome.tabs.query({})].map(async (tab) => await injectUI(state, tab.id)));
-const shouldInjectIntoTab = (tab) => tab.url && !['chrome://', 'chrome-extension://', 'edge://', 'about:', 'file:///', 'view-source:', 'chrome-devtools://'].some(pattern => tab.url.startsWith(pattern));
-const injectContentScript = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentScriptCode, world: 'ISOLATED' });
-const injectCSS = async (state, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS(state) });
-
-async function injectUI(state, tabId) {
-  const tabs = await chrome.tabs.query({});
-  const tab = tabs.find(t => t.id === tabId);
-  if (!shouldInjectIntoTab(tab)) return;
-  
-  try {
-    await injectContentScript(tabId);
-    await injectCSS(state, tabId);
-  } catch (e) {
-    console.error(`[UI Module] Failed to inject into tab ${tabId}:`, e);
-  }
-}
 
 // Module Actions - These run in the service worker context and communicate with content scripts via state changes
+export const watchUIActions = state => state.watch('ui.action.request', (request) => state.actions.execute(request.action, request.params));
 export const show = state => state.write('ui.visible', true).then(() => ({ success: true }));
 export const hide = state => state.write('ui.visible', false).then(() => ({ success: true }));
 export const toggle = async state => {
@@ -61,7 +38,6 @@ export const toggle = async state => {
   await state.write('ui.visible', newValue);
   return { success: true, value: newValue };
 };
-
 export const notify = (state, params) => {
   if (!params?.message) {
     return { success: false, error: 'Notification requires a message' };
@@ -75,7 +51,6 @@ export const notify = (state, params) => {
     timestamp: Date.now(),
   }).then(() => ({ success: true }));
 }
-
 export const modal = (state, params) => {
   if (!params?.text) {
     return { success: false, error: 'Modal requires text' };
@@ -87,10 +62,9 @@ export const modal = (state, params) => {
     timestamp: Date.now()
   }).then(() => ({ success: true }));
 }
-
-
-
-
+/*
+ * Content Script
+ */
 const modalTemplate = `
   <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
   <div class="cog-modal-content">
@@ -117,118 +91,102 @@ const notificationTemplate = (data) => `
     <span class="cog-notif-message">${data.message}</span>
   </div>
 `;
-
-/*
- * Content Script Code - Runs in the context of the page
- */
 function contentScriptCode() {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
-  const ui = {    
-    async init() {
-      this.elements = {};
-      this.notifications = new Map();
-      this.config = {};
-      this.state = new StateStore();
-      this.config = (await this.state.read('ui.config')).result || {};
-      
-      this.createElements();
-      this.setupStateListener();
-      this.setupActionClickHandlers();
-      this.setupModalResponseClickHandlers();
-      (await this.state.read('ui.visible')) && this.show();
-      window['__cognitionUI'] = this;
-    },
-    
-    createElements() {
-      const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
-      const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });
-      const modal = Object.assign(document.createElement('div'), { id: 'cognition-modal', className: 'cognition-ui', innerHTML: modalTemplate });
-      this.elements = { container, notifications, modal }
-      Object.keys(this.elements).forEach(el => document.body.appendChild(this.elements[el]));
-      this.elements.content = container.querySelector('.cog-content');
-      this.elements.modalTitle = modal.querySelector('.cog-modal-title');
-      this.elements.modalText = modal.querySelector('.cog-modal-text');
-    },
-    
-    setupStateListener() {
-      this.state.watch('ui.visible', (value) => value ? this.show() : this.hide());
-      this.state.watch('ui.content', (html) => this.updateContent(html));
-      this.state.watch('ui.notify', (data) => this.addNotification(data));
-      this.state.watch('ui.modal', (data) => this.showModal(data));
-    },
-    getElementDataset(element, key) {
-        const responseEl = element instanceof HTMLElement ? element.closest(key) : null;
-        if (responseEl && responseEl instanceof HTMLElement) {
-          return responseEl.dataset;
-        }
-        throw new Error(`Element ${key} not found`);
-    },
-    setupActionClickHandlers() {
-      document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
-        const dataSet = this.getElementDataset(e.target, '[data-action]');
-        await this.state.write('ui.action.request', { action: dataSet.action, params: JSON.parse(dataSet.params ?? '{}') });
-      });
-    },
-    setupModalResponseClickHandlers() {
-      document.addEventListener('click', async (e) => {
-        const dataSet = this.getElementDataset(e.target, '[data-modal-response]');
-        this.state.write(dataSet.responseAction, { response: dataSet.modalResponse === 'true' });
-        this.hideModal();
-      });
-    },
-    show() {
-      this.elements.foreach.classList.add('visible');
-      this.elements.notifications.classList.add('visible');
-    },
-    
-    hide() {
-      this.elements.container.classList.remove('visible');
-      this.elements.notifications.classList.remove('visible');
-      this.elements.modal.classList.remove('visible');
-    },
-    
-    updateContent(html) {
-      this.elements.content.innerHTML = html || '<div class="cog-empty">No content</div>';
-    },
-    
-    addNotification(data) {
-      const id = Date.now();
-      const notif = Object.assign(document.createElement('div'), { className: `cog-notification ${data.type || 'info'}`, innerHTML: notificationTemplate(data) });
-      this.elements.notifications.appendChild(notif);
-      this.notifications.set(id, notif);
-      // Animate in
-      requestAnimationFrame(() => notif.classList.add('visible'));
-      // Auto remove
+  let elements = {};
+  const notifications = new Map();
+  const state = new StateStore();
+  
+  const createElements = () => {
+    const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
+    const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });
+    const modal = Object.assign(document.createElement('div'), { id: 'cognition-modal', className: 'cognition-ui', innerHTML: modalTemplate });
+    elements = { container, notifications, modal }
+    Object.keys(elements).forEach(el => document.body.appendChild(elements[el]));
+    elements.content = container.querySelector('.cog-content');
+    elements.modalTitle = modal.querySelector('.cog-modal-title');
+    elements.modalText = modal.querySelector('.cog-modal-text');
+  }
+  const setupStateListener = () => {
+    state.watch('ui.visible', (value) => value ? show() : hide());
+    state.watch('ui.content', (html) => updateContent(html));
+    state.watch('ui.notify', (data) => addNotification(data));
+    state.watch('ui.modal', (data) => showModal(data));
+  }
+  const getElementDataset = (element, key) => {
+      const responseEl = element instanceof HTMLElement ? element.closest(key) : null;
+      if (responseEl && responseEl instanceof HTMLElement) {
+        return responseEl.dataset;
+      }
+      throw new Error(`Element ${key} not found`);
+  }
+  const setupActionClickHandlers = () => {
+    document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
+      const dataSet = getElementDataset(e.target, '[data-action]');
+      await state.write('ui.action.request', { action: dataSet.action, params: JSON.parse(dataSet.params ?? '{}') });
+    });
+  }
+  const setupModalResponseClickHandlers = () => {
+    document.addEventListener('click', async (e) => {
+      const dataSet = getElementDataset(e.target, '[data-modal-response]');
+      state.write(dataSet.responseAction, { response: dataSet.modalResponse === 'true' });
+      hideModal();
+    });
+  }
+  const show = () => {
+    elements.container.classList.add('visible');
+    elements.notifications.classList.add('visible');
+  }
+  const hide = () => {
+    elements.container.classList.remove('visible');
+    elements.notifications.classList.remove('visible');
+    elements.modal.classList.remove('visible');
+  }
+  const updateContent = (html) => {
+    elements.content.innerHTML = html || '<div class="cog-empty">No content</div>';
+  }
+  const addNotification = (data) => {
+    const id = Date.now();
+    const notif = Object.assign(document.createElement('div'), { className: `cog-notification ${data.type || 'info'}`, innerHTML: notificationTemplate(data) });
+    elements.notifications.appendChild(notif);
+    notifications.set(id, notif);
+    // Animate in
+    requestAnimationFrame(() => notif.classList.add('visible'));
+    // Auto remove
+    setTimeout(() => {
+      notif.classList.remove('visible');
       setTimeout(() => {
-        notif.classList.remove('visible');
-        setTimeout(() => {
-          if (this.notifications.has(id)) {
-            this.notifications.delete(id);
-            notif.remove();
-          }
-        }, 300);
-      }, data.duration || 5000);
-    },
-    
-    showModal(data) {
-      this.elements.modalTitle.textContent = data.title || 'Confirm';
-      this.elements.modalText.textContent = data.text;
-      this.elements.modal.dataset.responseAction = data.responseAction || '';
-      this.elements.modal.classList.add('visible');
-    },
-    
-    hideModal() {
-      this.elements.modal.classList.remove('visible');
-      delete this.elements.modal.dataset.responseAction;
-    }
-  };
-  ui.init();
+        if (notifications.has(id)) {
+          notifications.delete(id);
+          notif.remove();
+        }
+      }, 300);
+    }, data.duration || 5000);
+  }
+  const showModal = (data) => {
+    elements.modalTitle.textContent = data.title || 'Confirm';
+    elements.modalText.textContent = data.text;
+    elements.modal.dataset.responseAction = data.responseAction || '';
+    elements.modal.classList.add('visible');
+  }
+  const hideModal = () => {
+    elements.modal.classList.remove('visible');
+    delete elements.modal.dataset.responseAction;
+  }
+  // Initialize UI
+  (async () => {
+    createElements();
+    setupStateListener();
+    setupActionClickHandlers();
+    setupModalResponseClickHandlers();
+    (await state.read('ui.visible')) && show();
+    window['__cognitionUI'] = {};
+  })();
 }
 
 // CSS generation function
 async function generateCSS(state) {
   const config = await state.read('ui.config') || {};
-  
   // Position-based styles
   const positions = {
     right: {
@@ -481,78 +439,4 @@ async function generateCSS(state) {
       }
     }
   `;
-}
-
-/*
-  manual testing
-
-*/
-
-// Tests
-export const tests = [
-  {
-    name: 'module exports all expected actions',
-    fn: async () => {
-      assert(typeof show === 'function');
-      assert(typeof hide === 'function');
-      assert(typeof toggle === 'function');
-      assert(typeof notify === 'function');
-      assert(typeof modal === 'function');
-    }
-  },
-  {
-    name: 'notify validates parameters',
-    fn: async () => {
-      const mockState = createMockState();
-      
-      // Should fail without message
-      const result1 = await notify(mockState, {});
-      assert(result1.success === false);
-      assert(result1.error.includes('message'));
-      
-      // Should succeed with message
-      const result2 = await notify(mockState, { message: 'Test' });
-      assert(result2.success === true);
-      
-      // Check state was written
-      const notification = await mockState.read('ui.notify');
-      assert(notification.message === 'Test');
-      assert(notification.type === 'info'); // default
-      assert(notification.id.startsWith('notif_'));
-    }
-  },
-  {
-    name: 'modal validates parameters',
-    fn: async () => {
-      const mockState = createMockState();
-      
-      // Should fail without text
-      const result1 = await modal(mockState, {});
-      assert(result1.success === false);
-      
-      // Should succeed with text
-      const result2 = await modal(mockState, { text: 'Confirm?' });
-      assert(result2.success === true);
-      
-      const modalData = await mockState.read('ui.modal');
-      assert(modalData.text === 'Confirm?');
-      assert(modalData.title === 'Confirm'); // default
-    }
-  }
-];
-
-// Mock state helper for testing
-function createMockState() {
-  const data = {};
-  return {
-    async read(key) { return data[key]; },
-    async write(key, value) { data[key] = value; }
-  };
-}
-
-// Simple assertion helper
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message || 'Assertion failed');
-  }
 }

@@ -16,9 +16,9 @@ async function initialize() {
     console.log('[Background] Extension Initializing...');
     await extensionState.write('system.status', 'initializing');
     await extensionState.write('system.modules', []);
+    await registerModules();
     registerModuleOauth();
     registerModuleContentScripts();
-    registerModules()
     console.log('[Background] Extension initialized successfully');
     await extensionState.write('system.modules', loaded);
     await extensionState.write('system.errors', errors);
@@ -35,10 +35,8 @@ async function initialize() {
   }
 };
 
-// initialize module oauth
 function registerModuleOauth() {
   for (const module of enabledModules) {
-    // Check if module has oauth property before accessing it
     if (module && 'oauth' in module) {
       try {
         extensionState.oauthManager.register(module.oauth.provider, module.oauth);
@@ -66,6 +64,9 @@ async function registerModules() {
     const moduleName = module.manifest.name;
     try {
       const config = await extensionState.read(`modules.${moduleName}.config`) || {};
+      if (module.manifest.name === 'content-script-handler') {
+        debugger;
+      }
       registerModuleActions(moduleName, module);
       await module.initialize(extensionState, config);
       loaded.push({ name: moduleName, version: module.manifest?.version, status: 'active' });

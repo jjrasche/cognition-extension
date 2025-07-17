@@ -23,6 +23,7 @@ async function build() {
     'action-registry.js',
     'oauth-manager.js',
     'enabled-modules.js',
+    'content-script-handler.module.js',
     'fitbit.module.js',
     'ui.module.js',
     'text-input.module.js',
