@@ -12,6 +12,11 @@ export const manifest = {
   }
 };
 
+export const contentScript = {
+  pattern: 'all',
+  contentFunction: contentScriptCode,
+};
+
 export async function initialize(state, config) {
   state.watch('ui.action.request', (request) => state.actions.execute(request.action, request.params));
   await initializeUIConfig(state, config);

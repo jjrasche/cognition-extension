@@ -17,6 +17,7 @@ async function initialize() {
     await extensionState.write('system.status', 'initializing');
     await extensionState.write('system.modules', []);
     registerModuleOauth();
+    registerModuleContentScripts();
     registerModules()
     console.log('[Background] Extension initialized successfully');
     await extensionState.write('system.modules', loaded);
@@ -45,6 +46,17 @@ function registerModuleOauth() {
         console.error(`[Background] Failed to register OAuth for ${module.manifest.name}:`, error);
         errors.push({ module: module.manifest.name, error: `OAuth registration: ${error.message}` });
       }
+    }
+  }
+}
+
+function registerModuleContentScripts() {
+  for (const module of enabledModules) {
+    if (module && 'contentScript' in module) {
+      extensionState.actions.execute('contentHandler.register', {
+        moduleName: module.manifest.name,
+        ... module.contentScript
+      });
     }
   }
 }
