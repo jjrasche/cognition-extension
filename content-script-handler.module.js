@@ -2,7 +2,7 @@ export const manifest = {
   name: "contentHandler",
   description: "Handles content script registration and injection across browser tabs",
   version: "1.0.0",
-  permissions: ["tabs", "scripting"],
+  permissions: ["tabs", "scripting", "activeTab"],
   actions: ["register"],
 };
 
@@ -10,7 +10,7 @@ const restrictedPatterns = [ 'chrome://', 'chrome-extension://', 'edge://', 'abo
 // tracks which modules registered for content script injection
 let registrations = new Set();
 const getRegistration = async (moduleName) => [...registrations].find(reg => reg.moduleName === moduleName) || (() => { throw new Error(`Module ${moduleName} not registered`); })();
-const addRegistration = (moduleName, contentFunction, cssFunction, options) => registrations.add({ moduleName, content: contentFunction.toString(), css: cssFunction?.toString(), options });
+const addRegistration = (moduleName, contentFunction, cssFunction, options) => registrations.add({ moduleName, contentFunction, cssFunction, options });
 // track which modules are injected into which tabs
 let injectedTabIds = new Map();
 const isInjected = (tabId, moduleName) => injectedTabIds.get(tabId) && (!moduleName || injectedTabIds.get(tabId).has(moduleName));
@@ -44,7 +44,14 @@ const createNewTab = async () => await chrome.tabs.create({ url: 'about:blank' }
 const getCurrentTab = async () => (await tabs({ active: true, currentWindow: true }))[0];
 const newTabPattern = async (registration) => registration.options.pattern === 'new' ? (await createNewTab()).id : null;
 
-const shouldInjectIntoTab = (tab) => (!tab || !tab.url) ? false : !restrictedPatterns.some(pattern => tab.url.startsWith(pattern));
+const shouldInjectIntoTab = (tab) => {
+  if (!tab || !tab.url) return false;
+  if (restrictedPatterns.some(pattern => tab.url.startsWith(pattern))) return false; // Skip restricted URL patterns
+  if (tab.url.includes('oauth') || tab.url.includes('login') || tab.url.includes('auth')) return false; // Skip OAuth/auth pages
+  if (tab.status === 'error' || tab.url.includes('chrome-error://')) return false; // Skip error pages
+  if (tab.windowId && tab.windowId !== chrome.windows.WINDOW_ID_CURRENT) return false; // Skip popup windows
+  return true;
+};
 const forAllValidTabs = async (operation) => {
   for (const tab of await tabs()) {
     if (shouldInjectIntoTab(tab)) await operation(tab);
@@ -85,8 +92,8 @@ async function injectModuleScript(moduleName, tabId) {
   ensure(!isInjected(tabId, moduleName), `Module ${moduleName} already injected into tab ${tabId}`);
   try {
     if (!shouldInjectIntoTab(await tab(tabId))) return { success: false, error: 'Cannot inject into restricted tab' };
-    await executeContentFunction(registration, tabId);
-    if (registration.css) await executeCssFunction(registration, tabId);
+    await insertContent(registration.contentFunction, tabId);
+    if (registration.css) await insertCSS(registration.cssFunction, tabId);
     addInjectedTabId(tabId, moduleName);
     return { success: true };
   } catch (error) {
@@ -94,14 +101,6 @@ async function injectModuleScript(moduleName, tabId) {
     return { success: false, error: error.message };
   }
 }
-const executeContentFunction = async (registration, tabId) => await chrome.scripting.executeScript({ 
-  target: { tabId }, 
-  func: deserializeFunction(registration.content),
-  world: 'ISOLATED' });
-const executeCssFunction = async (registration, tabId) => await chrome.scripting.insertCSS({ 
-  target: { tabId }, 
-  css: await deserializeFunction(registration.css)() });
-// eslint-disable-next-line no-new-func
-const deserializeFunction = (functionString) => new Function('return ' + functionString)();
-
+const insertContent = async (contentFunction, tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentFunction, world: 'ISOLATED' });
+const insertCSS = async (cssFunction, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: cssFunction });
 const ensure = (condition, message) => condition || (() => { throw new Error(message); })();

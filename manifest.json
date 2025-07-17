@@ -8,7 +8,8 @@
     "scripting",
     "identity",
     "windows",
-    "webNavigation"
+    "webNavigation",
+    "activeTab"
   ],
   "host_permissions": [
     "https://api.fitbit.com/*",
