@@ -1,7 +1,25 @@
+
+
 /**
  * Transcript Module - Bridge to Web Speech API for live transcription
  * Provides real-time speech recognition and transcription capabilities
- */
+
+
+Summary: Transcript Module Approach
+Decision: Dedicated transcript tab
+
+Open a chrome-extension://[id]/transcript.html page
+One-time microphone permission (remembered for extension)
+Clean tab management: if transcript tab exists, focus it; else create it
+Full control over UI/UX in the transcript page
+No complex content script injection needed
+
+Two possible modes:
+
+Microphone transcription - Web Speech API (what we're building)
+Tab audio transcription - chrome.tabCapture API (future feature)
+
+*/
 
 // Module manifest
 export const manifest = {
