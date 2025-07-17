@@ -23,4 +23,13 @@ export class ActionRegistry {
 
   list = () => Array.from(this.actions.entries()).map(([name, action]) => ({ name, ...action.metadata }));
   has = (name) => this.actions.has(name);
+
+  readableList() {
+    const moduleMap = {};
+    this.list().forEach(action => {
+      if (!moduleMap[action.module]) moduleMap[action.module] = [];
+      moduleMap[action.module].push(action.name);
+    });
+    return Object.entries(moduleMap).map(([module, actionList]) => `- ${module}: ${actionList.join(', ')}`).join('\n');
+  }
 }

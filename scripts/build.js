@@ -27,6 +27,7 @@ async function build() {
     'fitbit.module.js',
     'ui.module.js',
     'text-input.module.js',
+    'context-assembler.module.js',
     'email.module.js',
   ];
 
