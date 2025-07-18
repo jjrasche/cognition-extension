@@ -1,6 +1,5 @@
-// input.module.js - Real-time text input module
 export const manifest = {
-  name: 'Input',
+  name: 'textInput',
   version: '1.0.0',
   description: 'Real-time text input through UI overlay',
   permissions: ['storage'],
