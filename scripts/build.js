@@ -18,8 +18,10 @@ async function build() {
   // Files to copy
   const coreFiles = [
     'manifest.json',
+    'helper-methods.module.js',
     'background.js',
     'state-store.js',
+    'extension-state.js',
     'action-registry.js',
     'oauth-manager.js',
     'enabled-modules.js',

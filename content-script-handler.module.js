@@ -44,14 +44,16 @@ const createNewTab = async () => await chrome.tabs.create({ url: 'about:blank' }
 const getCurrentTab = async () => (await tabs({ active: true, currentWindow: true }))[0];
 const newTabPattern = async (registration) => registration.options.pattern === 'new' ? (await createNewTab()).id : null;
 
-const shouldInjectIntoTab = (tab) => {
-  if (!tab || !tab.url) return false;
-  if (restrictedPatterns.some(pattern => tab.url.startsWith(pattern))) return false; // Skip restricted URL patterns
-  if (tab.url.includes('oauth') || tab.url.includes('login') || tab.url.includes('auth')) return false; // Skip OAuth/auth pages
-  if (tab.status === 'error' || tab.url.includes('chrome-error://')) return false; // Skip error pages
-  if (tab.windowId && tab.windowId !== chrome.windows.WINDOW_ID_CURRENT) return false; // Skip popup windows
-  return true;
-};
+const hasTabAndUrl = (tab) => logAndReturn(!!(tab && tab.url), '❌ No tab or URL:', tab);
+const isAllowedUrl = (tab) => logAndReturn(!restrictedPatterns.some(pattern => tab.url.startsWith(pattern)), '❌ Restricted URL:', tab);
+const isNotAuthUrl = (tab) => logAndReturn(!(tab.url.includes('oauth') || tab.url.includes('login') || tab.url.includes('auth')), '❌ Auth URL:', tab);
+const isNotErrorPage = (tab) => logAndReturn(!(tab.status === 'error' || tab.url.includes('chrome-error://')), '❌ Error page:', tab);
+const shouldInjectIntoTab = (tab) => hasTabAndUrl(tab) 
+  && isAllowedUrl(tab)
+  && isNotAuthUrl(tab)
+  && isNotErrorPage(tab)
+  && (debugLog('✅ Valid tab for injection:', tab.url), true);
+
 const forAllValidTabs = async (operation) => {
   for (const tab of await tabs()) {
     if (shouldInjectIntoTab(tab)) await operation(tab);
@@ -101,6 +103,8 @@ async function injectModuleScript(moduleName, tabId) {
     return { success: false, error: error.message };
   }
 }
-const insertContent = async (contentFunction, tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentFunction, world: 'ISOLATED' });
+const insertContent = async (contentFunction, tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentFunction, world: 'ISOLATED' }); //, files: ['state-store.js']
 const insertCSS = async (cssFunction, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: cssFunction });
 const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
+const debugLog = (message, ...args) => null//console.log('[ContentHandler]', message, ...args);
+const logAndReturn = (condition, message, tab) => { if (!condition) debugLog(message, tab.url || tab); return condition; };

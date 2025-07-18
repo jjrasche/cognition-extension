@@ -1,9 +1,6 @@
 
 // state-store.js - Unified state management using chrome.storage
 // Provides reactive state with granular watching capabilities
-import { ActionRegistry } from './action-registry.js';
-import { OAuthManager } from './oauth-manager.js';
-
 const COGNITION_STATE = 'cognitionState';
 
 export class StateStore {
@@ -75,13 +72,5 @@ export class StateStore {
   
   async clear() {
     await chrome.storage.local.remove(COGNITION_STATE);
-  }
-}
-
-export class ExtensionState extends StateStore{
-  constructor() {
-    super();
-    this.actions = new ActionRegistry();
-    this.oauthManager = new OAuthManager();
   }
 }

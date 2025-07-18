@@ -1,5 +1,3 @@
-import { StateStore } from "./state-store.js";
-
 export const manifest = {
   name: 'ui',
   version: '1.0.0',
@@ -94,9 +92,7 @@ const notificationTemplate = (data) => `
 function contentScriptCode() {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
   let elements = {};
-  const notifications = new Map();
-  const state = new StateStore();
-  
+  const notifications = new Map();  
   const createElements = () => {
     const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
     const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });

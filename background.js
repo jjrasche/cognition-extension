@@ -2,7 +2,7 @@
 // This file bootstraps the module system and initializes the extension
 import './dev-reload.js';
 import './dev-console-helper.js';
-import { ExtensionState } from './state-store.js';
+import { ExtensionState } from './extension-state.js';
 import { enabledModules } from './enabled-modules.js';
 
 const extensionState = new ExtensionState();
