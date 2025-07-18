@@ -5,12 +5,14 @@ import * as textInputModule from './text-input.module.js';
 import * as emailModule from './email.module.js';
 import * as contentScriptHandlerModule from './content-script-handler.module.js';
 import * as contextAssemblerModule from './context-assembler.module.js';
+import * as groqInferenceModule from './groq-inference.module.js';
 
 export const enabledModules = [
     contentScriptHandlerModule, // is core module, must load first
     fitbitModule,
     uiModule,
-    contextAssemblerModule,
     emailModule,
-    textInputModule
+    textInputModule,
+    contextAssemblerModule,
+    groqInferenceModule
 ];

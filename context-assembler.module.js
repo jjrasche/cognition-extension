@@ -14,13 +14,22 @@ export async function initialize() {}
 export async function assembleLLMContext(state, params = {}) {
   try {
     const context = {
+      userPrompt: state.read('input.text.current'),  // TODO need to change based on source e.g. voice vs. text
       systemPrompt: generateSystemPrompt(state),
       currentState: await state.getAll(),
       availableActions: state.actions.list(),
       timestamp: new Date().toISOString()
     };
     
-    return { success: true, context };
+    return {
+      success: true,
+      context: {
+        messages: [
+          { role: 'system', content: 'You are Cognition...' },
+          { role: 'user', content: 'Current state: {...}\n\nUser: How did I sleep?' }
+        ]
+      }
+    };
   } catch (error) {
     console.error('[ContextAssembler] Error assembling context:', error);
     return { success: false, error: error.message };

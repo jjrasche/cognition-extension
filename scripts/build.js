@@ -29,6 +29,8 @@ async function build() {
     'text-input.module.js',
     'context-assembler.module.js',
     'email.module.js',
+    'context.module.js',
+    'groq-inference.module.js',
   ];
 
   // Get module files safely

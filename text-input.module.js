@@ -11,9 +11,6 @@ export const manifest = {
   }
 };
 
-// HTML escape helper
-const escapeHtml = (str) => str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-
 // Single-line state update lambdas
 const updateTextInput = (value) => chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', action: 'state.write', params: { key: 'input.text.current', value } });
 const showUI = async (state) => await state.actions.execute('ui.show');
@@ -29,11 +26,11 @@ export const show = async (state, { prompt = 'Enter text:', placeholder = 'Type 
   await setState({ current: '', active: true });
   const html = `
     <div style="padding: 20px;">
-      <div style="color: rgba(255,255,255,0.9); margin-bottom: 12px; font-size: 16px;">${escapeHtml(prompt)}</div>
+      <div style="color: rgba(255,255,255,0.9); margin-bottom: 12px; font-size: 16px;">${globalThis.escapeHtml(prompt)}</div>
       <input 
         type="text" 
         class="cognition-text-input"
-        placeholder="${escapeHtml(placeholder)}"
+        placeholder="${globalThis.escapeHtml(placeholder)}"
         style="width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 14px; outline: none;"
         onfocus="this.style.borderColor='rgba(99,102,241,0.6)'; this.style.background='rgba(255,255,255,0.15)';"
         onblur="this.style.borderColor='rgba(255,255,255,0.2)'; this.style.background='rgba(255,255,255,0.1)';"
