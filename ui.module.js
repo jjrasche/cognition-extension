@@ -9,13 +9,6 @@ export const manifest = {
     writes: ['ui.visible', 'ui.content', 'ui.notify', 'ui.modal', 'ui.action.request']
   }
 };
-const injectCSS = async (state, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: await generateCSS(state) });
-
-export const contentScript = {
-  pattern: 'all',
-  contentFunction: contentScriptCode,
-  cssFunction: generateCSS
-};
 
 export async function initialize(state, config) {
   watchUIActions(state);
@@ -89,7 +82,7 @@ const notificationTemplate = (data) => `
     <span class="cog-notif-message">${data.message}</span>
   </div>
 `;
-function contentScriptCode() {
+const contentFunction = () => {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
   let elements = {};
   const notifications = new Map();  
@@ -181,7 +174,7 @@ function contentScriptCode() {
 }
 
 // CSS generation function
-async function generateCSS(state) {
+async function cssFunction(state) {
   const config = await state.read('ui.config') || {};
   // Position-based styles
   const positions = {
@@ -436,3 +429,11 @@ async function generateCSS(state) {
     }
   `;
 }
+
+export const contentScript = {
+  contentFunction,
+  cssFunction,
+  options: {
+    pattern: 'all',
+  },
+};

@@ -1,6 +1,6 @@
-import { ActionRegistry } from "action-registry";
-import { OAuthManager } from "oauth-manager";
-import { StateStore } from "state-store";
+import { ActionRegistry } from "./action-registry.js";
+import { OAuthManager } from "./oauth-manager.js";
+import { StateStore } from "./state-store.js";
 
 export class ExtensionState extends StateStore{
   constructor() {

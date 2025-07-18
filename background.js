@@ -53,7 +53,7 @@ function registerModuleContentScripts() {
     if (module && 'contentScript' in module) {
       extensionState.actions.execute('contentHandler.register', {
         moduleName: module.manifest.name,
-        ... module.contentScript
+        ...module.contentScript
       });
     }
   }
