@@ -94,8 +94,8 @@ async function injectModuleScript(moduleName, tabId) {
   ensure(!isInjected(tabId, moduleName), `Module ${moduleName} already injected into tab ${tabId}`);
   try {
     if (!shouldInjectIntoTab(await tab(tabId))) return { success: false, error: 'Cannot inject into restricted tab' };
-    await insertContent(registration.contentFunction, tabId);
     await insertState(tabId);
+    await insertContent(registration.contentFunction, tabId);
     if (registration.css) await insertCSS(registration.cssFunction, tabId);
     addInjectedTabId(tabId, moduleName);
     return { success: true };
@@ -105,7 +105,7 @@ async function injectModuleScript(moduleName, tabId) {
   }
 }
 const insertContent = async (contentFunction, tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentFunction, world: 'ISOLATED' });
-const insertState = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', files: ['state-store.js'] });
+const insertState = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', files: ['content-state.js'] });
 const insertCSS = async (cssFunction, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: cssFunction });
 const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
 const debugLog = (message, ...args) => null//console.log('[ContentHandler]', message, ...args);

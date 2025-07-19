@@ -31,7 +31,6 @@ async function build() {
     'text-input.module.js',
     'context-assembler.module.js',
     'email.module.js',
-    'context.module.js',
     'groq-inference.module.js',
   ];
 
@@ -44,6 +43,14 @@ async function build() {
   console.log('Module files to copy:', moduleFiles);
 
   const files = [...coreFiles, ...moduleFiles];
+
+
+  // create a content-script compatible state store
+  const stateStoreContent = fs.readFileSync('state-store.js', 'utf8')
+    .replace(/export class StateStore/g, 'class StateStore')
+    .replace(/import.*from.*;\n/g, ''); // Remove imports
+
+  fs.writeFileSync('build/content-state.js', stateStoreContent + '\nwindow.ContentStore = StateStore;');
 
   // Add dev-reload in development mode
   const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');

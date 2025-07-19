@@ -56,36 +56,38 @@ export const modal = (state, params) => {
 /*
  * Content Script
  */
-const modalTemplate = `
-  <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
-  <div class="cog-modal-content">
-    <h3 class="cog-modal-title"></h3>
-    <p class="cog-modal-text"></p>
-    <div class="cog-modal-buttons">
-      <button class="cog-modal-btn" data-modal-response="true">Yes</button>
-      <button class="cog-modal-btn" data-modal-response="false">No</button>
-    </div>
-  </div>
-`;
-const mainTemplate = `
-  <div class="cog-header">
-    <span class="cog-title">Cognition</span>
-    <button class="cog-close" data-action="ui.hide">×</button>
-  </div>
-  <div class="cog-content">
-    <div class="cog-empty">No content</div>
-  </div>
-`;
-const notificationTemplate = (data) => `
-  <div class="cog-notif-content">
-    ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
-    <span class="cog-notif-message">${data.message}</span>
-  </div>
-`;
-const contentFunction = () => {
+const contentFunction = async () => {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
+  const { ContentStore } = await import(chrome.runtime.getURL('content-store.js'));
+  const modalTemplate = `
+    <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
+    <div class="cog-modal-content">
+      <h3 class="cog-modal-title"></h3>
+      <p class="cog-modal-text"></p>
+      <div class="cog-modal-buttons">
+        <button class="cog-modal-btn" data-modal-response="true">Yes</button>
+        <button class="cog-modal-btn" data-modal-response="false">No</button>
+      </div>
+    </div>
+  `;
+  const mainTemplate = `
+    <div class="cog-header">
+      <span class="cog-title">Cognition</span>
+      <button class="cog-close" data-action="ui.hide">×</button>
+    </div>
+    <div class="cog-content">
+      <div class="cog-empty">No content</div>
+    </div>
+  `;
+  const notificationTemplate = (data) => `
+    <div class="cog-notif-content">
+      ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
+      <span class="cog-notif-message">${data.message}</span>
+    </div>
+  `;
   let elements = {};
-  const notifications = new Map();  
+  const notifications = new Map();
+  const state = new ContentStore();
   const createElements = () => {
     const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
     const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });
