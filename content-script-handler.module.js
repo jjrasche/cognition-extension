@@ -96,7 +96,7 @@ async function injectModuleScript(moduleName, tabId) {
     if (!shouldInjectIntoTab(await tab(tabId))) return { success: false, error: 'Cannot inject into restricted tab' };
     await insertState(tabId);
     await insertContent(registration.contentFunction, tabId);
-    if (registration.css) await insertCSS(registration.cssFunction, tabId);
+    if (registration.cssFunction) await insertCSS(registration.cssFunction, tabId);
     addInjectedTabId(tabId, moduleName);
     return { success: true };
   } catch (error) {
