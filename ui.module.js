@@ -13,6 +13,7 @@ export const manifest = {
 export async function initialize(state, config) {
   watchUIActions(state);
   await initializeUIConfig(state, config);
+  setContentScript(state);
 };
 const initializeUIConfig = async (state, config) => {
   const uiConfig = { position: config.position || 'right', size: config.size || '20%', ...config };
@@ -53,10 +54,22 @@ export const modal = (state, params) => {
     timestamp: Date.now()
   }).then(() => ({ success: true }));
 }
+
 /*
  * Content Script
  */
-const contentFunction = async () => {
+export let contentScript;
+
+const setContentScript = async (state) => {
+  contentScript = {
+    contentFunction,
+    css: cssFunction(await state.read('ui.config')),
+    options: {
+      pattern: 'all',
+    }
+  };
+};
+async function contentFunction() {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
   // const { ContentStore } = await import(...)
   const modalTemplate = `
@@ -176,8 +189,7 @@ const contentFunction = async () => {
 }
 
 // CSS generation function
-async function cssFunction(state) {
-  const config = await state.read('ui.config') || {};
+function cssFunction (config) {
   // Position-based styles
   const positions = {
     right: {
@@ -431,11 +443,3 @@ async function cssFunction(state) {
     }
   `;
 }
-
-export const contentScript = {
-  contentFunction,
-  cssFunction,
-  options: {
-    pattern: 'all',
-  },
-};

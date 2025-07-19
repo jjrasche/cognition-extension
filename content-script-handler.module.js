@@ -10,7 +10,7 @@ const restrictedPatterns = [ 'chrome://', 'chrome-extension://', 'edge://', 'abo
 // tracks which modules registered for content script injection
 let registrations = new Set();
 const getRegistration = async (moduleName) => [...registrations].find(reg => reg.moduleName === moduleName) || (() => { throw new Error(`Module ${moduleName} not registered`); })();
-const addRegistration = (moduleName, contentFunction, cssFunction, options) => registrations.add({ moduleName, contentFunction, cssFunction, options });
+const addRegistration = (moduleName, contentFunction, css, options) => registrations.add({ moduleName, contentFunction, css, options });
 // track which modules are injected into which tabs
 let injectedTabIds = new Map();
 const isInjected = (tabId, moduleName) => injectedTabIds.get(tabId) && (!moduleName || injectedTabIds.get(tabId).has(moduleName));
@@ -78,11 +78,11 @@ const validatePattern = (pattern) => ensure(['all', 'current', 'new'].includes(p
 const validateModuleName = (moduleName) => ensure(moduleName, 'Module name is required');
 const validateContentFunction = (contentFunction) => ensure(typeof contentFunction === 'function', 'Content function must be a function');
 export async function register(state, params) {
-  const { moduleName, contentFunction, cssFunction, options = { pattern: 'all' } } = params;
+  const { moduleName, contentFunction, css, options = { pattern: 'all' } } = params;
   validateModuleName(moduleName);
   validateContentFunction(contentFunction);
   validatePattern(options.pattern);
-  addRegistration(moduleName, contentFunction, cssFunction, options);  
+  addRegistration(moduleName, contentFunction, css, options);
   await injectIntoAllTabs(moduleName);
   return { success: true, moduleName };
 }
@@ -96,7 +96,7 @@ async function injectModuleScript(moduleName, tabId) {
     if (!shouldInjectIntoTab(await tab(tabId))) return { success: false, error: 'Cannot inject into restricted tab' };
     await insertState(tabId);
     await insertContent(registration.contentFunction, tabId);
-    if (registration.cssFunction) await insertCSS(registration.cssFunction, tabId);
+    if (registration.css) await insertCSS(registration.css, tabId);
     addInjectedTabId(tabId, moduleName);
     return { success: true };
   } catch (error) {
@@ -106,7 +106,7 @@ async function injectModuleScript(moduleName, tabId) {
 }
 const insertContent = async (contentFunction, tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentFunction, world: 'ISOLATED' });
 const insertState = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', files: ['./content-state.js'] });
-const insertCSS = async (cssFunction, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css: cssFunction });
+const insertCSS = async (css, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css });
 const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
 const debugLog = (message, ...args) => null//console.log('[ContentHandler]', message, ...args);
 const logAndReturn = (condition, message, tab) => { if (!condition) debugLog(message, tab.url || tab); return condition; };
