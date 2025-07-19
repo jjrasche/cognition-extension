@@ -58,7 +58,7 @@ export const modal = (state, params) => {
  */
 const contentFunction = async () => {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
-  const { ContentStore } = await import(chrome.runtime.getURL('content-store.js'));
+  // const { ContentStore } = await import(...)
   const modalTemplate = `
     <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
     <div class="cog-modal-content">
@@ -84,10 +84,10 @@ const contentFunction = async () => {
       ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
       <span class="cog-notif-message">${data.message}</span>
     </div>
-  `;
+`;
   let elements = {};
   const notifications = new Map();
-  const state = new ContentStore();
+  const state = new window.ContentStore();
   const createElements = () => {
     const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
     const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });

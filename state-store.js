@@ -2,7 +2,6 @@
 // state-store.js - Unified state management using chrome.storage
 // Provides reactive state with granular watching capabilities
 const COGNITION_STATE = 'cognitionState';
-
 export class StateStore {
   constructor() {
     this.watchers = new Map();
@@ -74,3 +73,5 @@ export class StateStore {
     await chrome.storage.local.remove(COGNITION_STATE);
   }
 }
+
+globalThis.ContentStore = StateStore;
