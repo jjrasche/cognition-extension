@@ -1,5 +1,5 @@
 export const manifest = {
-  name: "contentHandler",
+  name: "content-script-handler",
   description: "Handles content script registration and injection across browser tabs",
   version: "1.0.0",
   permissions: ["tabs", "scripting", "activeTab"],

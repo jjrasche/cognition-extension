@@ -2,7 +2,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { moduleFiles } from '../module.registry.js';
+import { modules } from '../module-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -15,19 +15,19 @@ async function build() {
   await fs.mkdir(buildDir, { recursive: true });
 
   // Files to copy
-  const files = [
+  const coreFiles = [
     'manifest.json',
     'background.js',
     'state-store.js',
     'extension-state.js',
     'action-registry.js',
     'oauth-manager.js',
-    'module.registry.js',
-    ...moduleFiles
+    'module-registry.js',
   ];
-  console.log('files:', files);
-
-
+  const moduleFiles = modules
+    .map(module => `${module.manifest?.name}.module.js`)
+    .filter(modulePath => modulePath && typeof modulePath === 'string');
+  const files = [...coreFiles, ...moduleFiles];
 
   // create a content-script compatible state store
   const stateStoreContent = (await fs.readFile('state-store.js', 'utf8'))

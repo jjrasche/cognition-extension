@@ -3,13 +3,12 @@
 import './dev-reload.js';
 import './dev-console-helper.js';
 import { ExtensionState } from './extension-state.js';
-import { loadEnabledModules } from './module.registry.js';
+import { modules } from './module-registry.js';
 
 const extensionState = new ExtensionState();
 globalThis.state = extensionState;
 const loaded = [];
 const errors = [];
-let modules = [];
 chrome.runtime.onInstalled.addListener(async () => await initialize());
 
 async function initialize() {
@@ -17,7 +16,6 @@ async function initialize() {
     console.log('[Background] Extension Initializing...');
     await extensionState.write('system.status', 'initializing');
     await extensionState.write('system.modules', []);
-    modules = await loadEnabledModules();
     await registerModules();
     registerModuleOauth();
     registerModuleContentScripts();
@@ -53,7 +51,7 @@ function registerModuleOauth() {
 function registerModuleContentScripts() {
   for (const module of modules) {
     if (module && 'contentScript' in module) {
-      extensionState.actions.execute('contentHandler.register', {
+      extensionState.actions.execute("content-script-handler.register", {
         moduleName: module.manifest.name,
         ...module.contentScript
       });

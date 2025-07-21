@@ -1,11 +1,5 @@
-/**
- * Outlook Module - Bridge to Microsoft Graph API for email access
- * Provides read-only access to user's Outlook/Microsoft email
- */
-
-// Module manifest
 export const manifest = {
-  name: "outlook",
+  name: "outlook-email",
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["listTodayEmails", "readEmail", "showRecentEmail"],

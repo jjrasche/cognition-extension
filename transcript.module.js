@@ -23,7 +23,7 @@ Tab audio transcription - chrome.tabCapture API (future feature)
 
 // Module manifest
 export const manifest = {
-  name: "Transcript",
+  name: "transcript",
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["startTranscription", "stopTranscription"],

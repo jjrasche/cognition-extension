@@ -1,5 +1,5 @@
 export const manifest = {
-  name: "groq",
+  name: "groq-inference",
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["prompt", "listModels", "setModel", "getUsage"],

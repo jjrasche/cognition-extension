@@ -1,5 +1,5 @@
 export const manifest = {
-  name: "contextAssembler",
+  name: "context-assembler",
   version: "1.0.0",
   description: "Packages current state and available actions for LLM consumption",
   permissions: ["storage"],

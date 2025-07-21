@@ -1,6 +1,5 @@
-// utilities.module.js
 export const manifest = {
-  name: "utilities",
+  name: "global-helpers",
   version: "1.0.0",
   description: "Shared utility functions for all modules, used in memory not through state calls",
   permissions: [],

@@ -1,5 +1,5 @@
 export const manifest = {
-  name: 'textInput',
+  name: 'text-input',
   version: '1.0.0',
   description: 'Real-time text input through UI overlay',
   permissions: ['storage'],
