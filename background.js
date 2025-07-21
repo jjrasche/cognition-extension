@@ -3,12 +3,13 @@
 import './dev-reload.js';
 import './dev-console-helper.js';
 import { ExtensionState } from './extension-state.js';
-import { enabledModules } from './enabled-modules.js';
+import { loadEnabledModules } from './module.registry.js';
 
 const extensionState = new ExtensionState();
 globalThis.state = extensionState;
 const loaded = [];
 const errors = [];
+let modules = [];
 chrome.runtime.onInstalled.addListener(async () => await initialize());
 
 async function initialize() {
@@ -16,6 +17,7 @@ async function initialize() {
     console.log('[Background] Extension Initializing...');
     await extensionState.write('system.status', 'initializing');
     await extensionState.write('system.modules', []);
+    modules = await loadEnabledModules();
     await registerModules();
     registerModuleOauth();
     registerModuleContentScripts();
@@ -36,7 +38,7 @@ async function initialize() {
 };
 
 function registerModuleOauth() {
-  for (const module of enabledModules) {
+  for (const module of modules) {
     if (module && 'oauth' in module) {
       try {
         extensionState.oauthManager.register(module.oauth.provider, module.oauth);
@@ -49,7 +51,7 @@ function registerModuleOauth() {
 }
 
 function registerModuleContentScripts() {
-  for (const module of enabledModules) {
+  for (const module of modules) {
     if (module && 'contentScript' in module) {
       extensionState.actions.execute('contentHandler.register', {
         moduleName: module.manifest.name,
@@ -60,13 +62,10 @@ function registerModuleContentScripts() {
 }
 
 async function registerModules() {
-  for (const module of enabledModules) {
+  for (const module of modules) {
     const moduleName = module.manifest.name;
     try {
       const config = await extensionState.read(`modules.${moduleName}.config`) || {};
-      if (module.manifest.name === 'content-script-handler') {
-        debugger;
-      }
       registerModuleActions(moduleName, module);
       await module.initialize(extensionState, config);
       loaded.push({ name: moduleName, version: module.manifest?.version, status: 'active' });

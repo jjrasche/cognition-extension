@@ -18,8 +18,8 @@ export class StateStore {
       }
     });
   }
-  
-  notifyWatchers(key, value) {
+
+  notifyWatchers = (key, value) => {
     this.watchers.get(key)?.forEach(cb => cb(value)); // call watcher callbacks with updated value
     // Pattern matching (e.g., "ui.*")
     for (const [pattern, callbacks] of this.watchers) {
@@ -28,33 +28,33 @@ export class StateStore {
       }
     }
   }
-  
-  async read(key) {
+
+  read = async (key) => {
     const stored = await chrome.storage.local.get(COGNITION_STATE);
     return stored[COGNITION_STATE]?.[key];
   }
-  
-  async write(key, value) {
+
+  write = async (key, value) => {
     const stored = await chrome.storage.local.get(COGNITION_STATE);
     const state = stored[COGNITION_STATE] || {};
     state[key] = value;
     await chrome.storage.local.set({ [COGNITION_STATE]: state });
   }
-  async writeMany(updates) {
+  writeMany = async (updates) => {
     const stored = await chrome.storage.local.get(COGNITION_STATE);
     const state = stored[COGNITION_STATE] || {};
     Object.assign(state, updates);
     await chrome.storage.local.set({ [COGNITION_STATE]: state });
   }
-  
-  async remove(key) {
+
+  remove = async (key) => {
     const stored = await chrome.storage.local.get(COGNITION_STATE);
     const state = stored[COGNITION_STATE] || {};
     delete state[key];
     await chrome.storage.local.set({ [COGNITION_STATE]: state });
   }
-  
-  watch(pattern, callback) {
+
+  watch = (pattern, callback) => {
     if (!this.watchers.has(pattern)) {
       this.watchers.set(pattern, new Set());
     }
@@ -63,15 +63,15 @@ export class StateStore {
   }
   
   matchesPattern = (key, pattern) => new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\./g, '\\.') + '$').test(key);
-  
-  async getAll() {
+
+  getAll = async () => {
     const stored = await chrome.storage.local.get(COGNITION_STATE);
     return stored[COGNITION_STATE] || {};
   }
-  
-  async clear() {
+
+  clear = async () => {
     await chrome.storage.local.remove(COGNITION_STATE);
   }
 }
-// console.log('StateStore initialized. Using chrome.storage.local for state management.');
+
 globalThis.ContentStore = StateStore;

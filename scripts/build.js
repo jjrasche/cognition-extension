@@ -2,7 +2,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { enabledModules } from '../enabled-modules.js';
+import { moduleFiles } from '../module.registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -10,39 +10,23 @@ const buildDir = path.join(rootDir, 'build');
 
 async function build() {
   console.log('Building Cognition Extension...');
-  console.log('Enabled modules:', enabledModules);
   
   // Create build directory
   await fs.mkdir(buildDir, { recursive: true });
 
   // Files to copy
-  const coreFiles = [
+  const files = [
     'manifest.json',
-    'helper-methods.module.js',
     'background.js',
     'state-store.js',
     'extension-state.js',
     'action-registry.js',
     'oauth-manager.js',
-    'enabled-modules.js',
-    'content-script-handler.module.js',
-    'fitbit.module.js',
-    'ui.module.js',
-    'text-input.module.js',
-    'context-assembler.module.js',
-    'email.module.js',
-    'groq-inference.module.js',
+    'module.registry.js',
+    ...moduleFiles
   ];
+  console.log('files:', files);
 
-  // Get module files safely
-  const moduleFiles = enabledModules
-    .filter(module => module && typeof module === 'object')
-    .map(module => module.path)
-    .filter(modulePath => modulePath && typeof modulePath === 'string');
-
-  console.log('Module files to copy:', moduleFiles);
-
-  const files = [...coreFiles, ...moduleFiles];
 
 
   // create a content-script compatible state store

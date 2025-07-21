@@ -183,7 +183,8 @@ async function contentFunction() {
     setupStateListener();
     setupActionClickHandlers();
     setupModalResponseClickHandlers();
-    (await state.read('ui.visible')) && show();
+    const uiVisible = await state.read('ui.visible');
+    if (uiVisible) show();
     window['__cognitionUI'] = {};
   })();
 }

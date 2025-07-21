@@ -1,323 +1,179 @@
 /**
- * Debug Module - Logs state changes to console for development
- * Helps developers understand what's happening in the system
+ * Enhanced Debug Module - Visual Timeline for State Changes and Actions
  */
 
-// Module manifest
 export const manifest = {
-  name: "Debug",
-  version: "1.0.0",
-  permissions: [],
-  actions: ["startWatching", "stopWatching", "logCurrentState"],
+  name: "debug",
+  version: "2.0.0",
+  permissions: ["storage"],
+  actions: ["openTimeline", "clearHistory", "toggleRealTime"],
   state: {
-    reads: ["*"], // Read all state
-    writes: ["debug.watching", "debug.logCount"]
+    reads: ["*"],
+    writes: ["debug.timeline", "debug.settings", "debug.realtime"]
   }
 };
 
-// Track watchers and state
-let isWatching = false;
-let watchers = new Map();
-let logCount = 0;
+const timeline = [];
+const startTime = Date.now();
+const maxSize = 10 * 1024 * 1024;
+let realTimeEnabled = false;
 
-export async function initialize(state, config) {
-  console.log('[Debug] Module initialized');
-  
-  // Start watching automatically if configured
-  if (config.autoStart !== false) {
-    await startWatching(state);
-  }
-  
-  // Initialize debug state
-  await state.write('debug.watching', isWatching);
-  await state.write('debug.logCount', 0);
-}
+const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
+const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+const formatValue = v => !v ? String(v) : typeof v === 'string' ? (v.length > 100 ? v.substring(0, 100) + '...' : v) : typeof v === 'object' ? JSON.stringify(v).substring(0, 200) + '...' : String(v);
 
-export async function startWatching(state) {
-  if (isWatching) {
-    console.log('[Debug] Already watching state changes');
-    return { success: true, message: 'Already watching' };
-  }
-  
-  isWatching = true;
-  await state.write('debug.watching', true);
-  
-  // Watch for new state keys by monitoring the state object itself
-  // Since we can't watch all possible keys, we'll watch the most common patterns
-  const commonPatterns = [
-    'system.',
-    'sleep.',
-    'activity.',
-    'heart.',
-    'ui.',
-    'fitbit.',
-    'debug.'
-  ];
-  
-  // Set up watchers for common state patterns
-  for (const pattern of commonPatterns) {
-    setupPatternWatcher(state, pattern);
-  }
-  
-  console.log('[Debug] 🔍 Started watching state changes for patterns:', commonPatterns);
-  
-  return { success: true, message: 'Started watching state changes' };
-}
+const getCaller = () => {
+  const stack = new Error().stack.split('\n').slice(2, 8);
+  const moduleMatch = stack.find(line => line.includes('.module.js'))?.match(/(\w+)\.module\.js/);
+  return moduleMatch?.[1] || stack.find(line => line.match(/at (\w+)/))?.match(/at (\w+)/)?.[1] || 'unknown';
+};
 
-export async function stopWatching(state) {
-  if (!isWatching) {
-    return { success: true, message: 'Not currently watching' };
-  }
-  
-  isWatching = false;
-  await state.write('debug.watching', false);
-  
-  // Clear all watchers
-  for (const [key, unwatchFn] of watchers) {
-    unwatchFn();
-  }
-  watchers.clear();
-  
-  console.log('[Debug] 🛑 Stopped watching state changes');
-  
-  return { success: true, message: 'Stopped watching state changes' };
-}
+const addEntry = entry => (timeline.push(entry), enforceLimit(), updateRealTime());
+const enforceLimit = () => JSON.stringify(timeline).length > maxSize && timeline.splice(0, Math.floor(timeline.length * 0.25));
+const updateRealTime = () => realTimeEnabled && globalThis.state?.write('debug.timeline', timeline);
 
-export async function logCurrentState(state) {
-  // Since we can't easily get all state keys, log what we know about
-  const knownKeys = [
-    'system.status',
-    'system.modules', 
-    'system.errors',
-    'sleep.lastNight.hours',
-    'sleep.lastNight.quality',
-    'activity.today.calories',
-    'heart.current.bpm',
-    'ui.visible',
-    'ui.notify.queue',
-    'debug.watching',
-    'debug.logCount'
-  ];
-  
-  console.log('[Debug] 📊 Current State Snapshot:');
-  console.log('========================================');
-  
-  for (const key of knownKeys) {
-    try {
-      const value = await state.read(key);
-      if (value !== undefined) {
-        console.log(`  ${key}:`, value);
-      }
-    } catch (error) {
-      // Ignore errors for keys that don't exist
-    }
-  }
-  
-  console.log('========================================');
-  
-  return { success: true, message: 'Current state logged to console' };
-}
+const recordState = (key, value) => addEntry({
+  type: 'state', timestamp: Date.now(), relativeTime: Date.now() - startTime,
+  key, value: formatValue(value), caller: getCaller(), id: generateId()
+});
 
-function setupPatternWatcher(state, pattern) {
-  // For each pattern, we'll try to watch some common variations
-  const variations = generateKeyVariations(pattern);
-  
-  for (const key of variations) {
-    try {
-      const unwatchFn = state.watch(key, (value) => {
-        logStateChange(key, value);
-      });
-      
-      if (unwatchFn) {
-        watchers.set(key, unwatchFn);
-      }
-    } catch (error) {
-      // Some keys might not be watchable, that's OK
-    }
-  }
-}
+const recordAction = (name, params, status, timestamp, metadata = {}) => addEntry({
+  type: 'action', timestamp, relativeTime: timestamp - startTime,
+  name, params: formatValue(params), status, ...metadata, id: generateId()
+});
 
-function generateKeyVariations(pattern) {
-  const base = pattern.replace('.', '');
+const wrapExecute = originalExecute => async (name, params = {}) => {
+  const start = performance.now();
+  const timestamp = Date.now();
+  recordAction(name, params, 'started', timestamp);
   
-  // Generate likely key variations based on existing patterns
-  const variations = [
-    pattern + 'status',
-    pattern + 'data',
-    pattern + 'lastNight.hours',
-    pattern + 'lastNight.quality', 
-    pattern + 'today.calories',
-    pattern + 'current.bpm',
-    pattern + 'visible',
-    pattern + 'notify.queue',
-    pattern + 'modules',
-    pattern + 'errors',
-    pattern + 'watching',
-    pattern + 'logCount'
-  ];
-  
-  return variations;
-}
-
-async function logStateChange(key, value) {
-  logCount++;
-  
-  const timestamp = new Date().toLocaleTimeString();
-  const valueStr = formatValue(value);
-  
-  console.log(`[Debug] 🔄 [${timestamp}] State changed: ${key} = ${valueStr}`);
-  
-  // Update log count in state
   try {
-    // Get current state reference if available
-    if (typeof globalThis.cognitionState?.write === 'function') {
-      await globalThis.cognitionState.write('debug.logCount', logCount);
-    }
+    const result = await originalExecute(name, params);
+    recordAction(name, params, 'completed', timestamp, { duration: performance.now() - start, result });
+    return result;
   } catch (error) {
-    // Ignore errors updating log count
+    recordAction(name, params, 'failed', timestamp, { duration: performance.now() - start, error: error.message });
+    throw error;
   }
-}
+};
 
-function formatValue(value) {
-  if (value === null) return 'null';
-  if (value === undefined) return 'undefined';
-  if (typeof value === 'string') return `"${value}"`;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return `Array(${value.length})`;
-  if (typeof value === 'object') {
-    try {
-      const str = JSON.stringify(value);
-      return str.length > 100 ? `Object{${Object.keys(value).length} keys}` : str;
-    } catch {
-      return '[Object]';
-    }
-  }
-  return String(value);
-}
+export const initialize = async (state, config) => {
+  const stored = await state.read('debug.timeline');
+  stored && timeline.push(...stored);
+  
+  state.watch('*', (key, value) => !key.startsWith('debug.') && recordState(key, value));
+  state.actions.execute = wrapExecute(state.actions.execute.bind(state.actions));
+  
+  await state.write('debug.settings', {
+    realTime: config.realTime || false,
+    maxEntries: config.maxEntries || 10000,
+    timeScale: config.timeScale || 20
+  });
+};
 
-// Cleanup function
-export async function cleanup() {
-  if (isWatching) {
-    // Clear all watchers
-    for (const [key, unwatchFn] of watchers) {
-      try {
-        unwatchFn();
-      } catch (error) {
-        console.error(`[Debug] Error cleaning up watcher for ${key}:`, error);
-      }
-    }
-    watchers.clear();
-  }
-  
-  console.log('[Debug] Module cleaned up');
-}
+export const openTimeline = async state => {
+  const settings = await state.read('debug.settings');
+  const html = generateTimelineHTML(timeline, settings);
+  await state.write('ui.content', html);
+  await state.actions.execute('ui.show');
+  return { success: true, entries: timeline.length };
+};
 
-// Tests
-export const tests = [
-  {
-    name: 'initializes with correct default state',
-    fn: async () => {
-      const mockState = createMockState();
-      
-      await initialize(mockState, { autoStart: false });
-      
-      const watching = await mockState.read('debug.watching');
-      const logCount = await mockState.read('debug.logCount');
-      
-      assert(watching === false, 'Should not auto-start when disabled');
-      assert(logCount === 0, 'Should initialize log count to 0');
-    }
-  },
-  
-  {
-    name: 'starts and stops watching correctly',
-    fn: async () => {
-      const mockState = createMockState();
-      
-      // Start watching
-      const result1 = await startWatching(mockState);
-      assert(result1.success === true, 'Should start watching successfully');
-      
-      const watching1 = await mockState.read('debug.watching');
-      assert(watching1 === true, 'Should set watching state to true');
-      
-      // Stop watching
-      const result2 = await stopWatching(mockState);
-      assert(result2.success === true, 'Should stop watching successfully');
-      
-      const watching2 = await mockState.read('debug.watching');
-      assert(watching2 === false, 'Should set watching state to false');
-    }
-  },
-  
-  {
-    name: 'logs current state without errors',
-    fn: async () => {
-      const mockState = createMockState();
-      
-      // Add some test data
-      await mockState.write('system.status', 'ready');
-      await mockState.write('sleep.lastNight.hours', 7.5);
-      
-      const result = await logCurrentState(mockState);
-      assert(result.success === true, 'Should log state successfully');
-    }
-  },
-  
-  {
-    name: 'formats values correctly',
-    fn: async () => {
-      assert(formatValue(null) === 'null');
-      assert(formatValue(undefined) === 'undefined');
-      assert(formatValue('test') === '"test"');
-      assert(formatValue(42) === '42');
-      assert(formatValue(true) === 'true');
-      assert(formatValue([1, 2, 3]) === 'Array(3)');
-      assert(formatValue({ a: 1 }) === '{"a":1}');
-    }
-  }
-];
+export const clearHistory = async state => (
+  timeline.length = 0,
+  await state.write('debug.timeline', []),
+  { success: true, message: 'Timeline cleared' }
+);
 
-// Mock state helper for testing
-function createMockState() {
-  const data = {};
-  const watchers = new Map();
-  
-  return {
-    async read(key) { 
-      return data[key]; 
-    },
-    async write(key, value) { 
-      data[key] = value;
-      
-      // Simulate watchers being called
-      if (watchers.has(key)) {
-        for (const callback of watchers.get(key)) {
-          try {
-            callback(value);
-          } catch (error) {
-            // Ignore callback errors in tests
-          }
-        }
-      }
-    },
-    watch(key, callback) {
-      if (!watchers.has(key)) {
-        watchers.set(key, new Set());
-      }
-      watchers.get(key).add(callback);
-      
-      // Return unwatch function
-      return () => {
-        watchers.get(key)?.delete(callback);
-      };
-    }
-  };
-}
+export const toggleRealTime = async state => (
+  realTimeEnabled = !realTimeEnabled,
+  await state.write('debug.realtime', realTimeEnabled),
+  { success: true, realTime: realTimeEnabled }
+);
 
-// Simple assertion helper
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message || 'Assertion failed');
-  }
-}
+const generateTimelineHTML = (data, settings) => !data?.length ? '<div class="debug-empty">No timeline data</div>' : `
+  <div class="debug-timeline-container">
+    <div class="debug-header">
+      <h2>Debug Timeline (${data.length} entries)</h2>
+      <div class="debug-controls">
+        <button data-action="debug.clearHistory" data-params='{}'>Clear</button>
+        <button data-action="debug.toggleRealTime" data-params='{}'>${realTimeEnabled ? 'Disable' : 'Enable'} Real-time</button>
+      </div>
+    </div>
+    <div class="debug-timeline">
+      <div class="debug-time-ruler">${generateTimeRuler(data, settings.timeScale)}</div>
+      <div class="debug-events">${data.map(entry => generateTimelineEntry(entry, settings)).join('')}</div>
+    </div>
+  </div>
+  <style>${generateTimelineCSS()}</style>
+`;
+
+const generateTimeRuler = (data, timeScale) => {
+  if (!data.length) return '';
+  const duration = data[data.length - 1].relativeTime;
+  const intervals = Math.ceil(duration / 1000); // 1 second intervals
+  return Array.from({ length: intervals }, (_, i) => 
+    `<div class="time-mark" style="top: ${i * timeScale * 10}px">${formatTime(i * 1000)}</div>`
+  ).join('');
+};
+
+const generateTimelineEntry = (entry, settings) => {
+  const topPos = (entry.relativeTime / 100) * settings.timeScale; // 100ms = timeScale pixels
+  const typeClass = `debug-${entry.type}`;
+  const statusClass = entry.status ? `status-${entry.status}` : '';
+  
+  return `
+    <div class="debug-entry ${typeClass} ${statusClass}" style="top: ${topPos}px" data-id="${entry.id}">
+      <div class="debug-dot"></div>
+      <div class="debug-content">
+        <div class="debug-title">${formatEntryTitle(entry)}</div>
+        <div class="debug-details">${formatEntryDetails(entry)}</div>
+        <div class="debug-time">${formatTime(entry.relativeTime)}</div>
+      </div>
+    </div>
+  `;
+};
+
+const formatEntryTitle = entry => entry.type === 'action' ? 
+  `${entry.name} (${entry.status})` : 
+  `${entry.key} = ${entry.value}`;
+
+const formatEntryDetails = entry => entry.type === 'action' ?
+  `Params: ${entry.params}${entry.duration ? ` | ${entry.duration.toFixed(1)}ms` : ''}` :
+  `From: ${entry.caller}`;
+
+const formatTime = ms => {
+  const seconds = Math.floor(ms / 1000);
+  const milliseconds = ms % 1000;
+  return `${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
+};
+
+const generateTimelineCSS = () => `
+  .debug-timeline-container { padding: 20px; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; }
+  .debug-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+  .debug-header h2 { margin: 0; color: #fff; font-size: 16px; }
+  .debug-controls button { margin-left: 8px; padding: 4px 12px; background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.5); color: #fff; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .debug-controls button:hover { background: rgba(99,102,241,0.3); }
+  
+  .debug-timeline { position: relative; margin-left: 80px; }
+  .debug-time-ruler { position: absolute; left: -80px; top: 0; width: 70px; }
+  .time-mark { position: absolute; color: rgba(255,255,255,0.4); font-size: 10px; border-right: 1px solid rgba(255,255,255,0.1); width: 70px; padding-right: 8px; text-align: right; }
+  
+  .debug-events { position: relative; min-height: 400px; }
+  .debug-entry { position: absolute; left: 0; width: 100%; display: flex; align-items: flex-start; margin: 2px 0; }
+  .debug-dot { width: 8px; height: 8px; border-radius: 50%; margin: 6px 12px 0 0; flex-shrink: 0; }
+  .debug-content { flex: 1; padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.05); border-left: 2px solid; }
+  
+  .debug-action .debug-dot { background: #3b82f6; }
+  .debug-action .debug-content { border-left-color: #3b82f6; }
+  .debug-state .debug-dot { background: #10b981; }
+  .debug-state .debug-content { border-left-color: #10b981; }
+  
+  .status-started .debug-dot { background: #f59e0b; }
+  .status-failed .debug-dot { background: #ef4444; }
+  
+  .debug-title { font-weight: 600; color: #fff; margin-bottom: 2px; }
+  .debug-details { color: rgba(255,255,255,0.7); font-size: 11px; }
+  .debug-time { color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 2px; }
+  .debug-empty { text-align: center; color: rgba(255,255,255,0.4); padding: 40px; }
+`;
