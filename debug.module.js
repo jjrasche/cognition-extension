@@ -12,13 +12,11 @@ export const manifest = {
     writes: ["debug.timeline", "debug.settings", "debug.realtime"]
   }
 };
-
 const timeline = [];
 const startTime = Date.now();
 const maxSize = 10 * 1024 * 1024;
 let realTimeEnabled = false;
 
-const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 const formatValue = v => !v ? String(v) : typeof v === 'string' ? (v.length > 100 ? v.substring(0, 100) + '...' : v) : typeof v === 'object' ? JSON.stringify(v).substring(0, 200) + '...' : String(v);
 
@@ -61,7 +59,7 @@ export const initialize = async (state, config) => {
   const stored = await state.read('debug.timeline');
   stored && timeline.push(...stored);
   
-  state.watch('*', (key, value) => !key.startsWith('debug.') && recordState(key, value));
+  state.watch('*', (value, key) => !key.startsWith('debug.') && recordState(key, value));
   state.actions.execute = wrapExecute(state.actions.execute.bind(state.actions));
   
   await state.write('debug.settings', {
@@ -73,9 +71,9 @@ export const initialize = async (state, config) => {
 
 export const openTimeline = async state => {
   const settings = await state.read('debug.settings');
-  const html = generateTimelineHTML(timeline, settings);
-  await state.write('ui.content', html);
-  await state.actions.execute('ui.show');
+  const html = generateFullPageHTML(timeline, settings);
+  const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  await chrome.tabs.create({ url: dataUrl });
   return { success: true, entries: timeline.length };
 };
 
@@ -91,21 +89,113 @@ export const toggleRealTime = async state => (
   { success: true, realTime: realTimeEnabled }
 );
 
-const generateTimelineHTML = (data, settings) => !data?.length ? '<div class="debug-empty">No timeline data</div>' : `
-  <div class="debug-timeline-container">
-    <div class="debug-header">
-      <h2>Debug Timeline (${data.length} entries)</h2>
-      <div class="debug-controls">
-        <button data-action="debug.clearHistory" data-params='{}'>Clear</button>
-        <button data-action="debug.toggleRealTime" data-params='{}'>${realTimeEnabled ? 'Disable' : 'Enable'} Real-time</button>
-      </div>
-    </div>
-    <div class="debug-timeline">
-      <div class="debug-time-ruler">${generateTimeRuler(data, settings.timeScale)}</div>
-      <div class="debug-events">${data.map(entry => generateTimelineEntry(entry, settings)).join('')}</div>
+const generateFullPageHTML = (data, settings) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Cognition Debug Timeline</title>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f0f17; color: #fff; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; }
+    .page-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(17,17,27,0.8); position: sticky; top: 0; z-index: 100; }
+    .page-title { font-size: 24px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    .page-subtitle { color: rgba(255,255,255,0.6); font-size: 14px; }
+    .debug-controls { margin-top: 16px; }
+    .debug-controls button { 
+      margin-right: 12px; padding: 8px 16px; background: rgba(99,102,241,0.2); 
+      border: 1px solid rgba(99,102,241,0.5); color: #fff; border-radius: 6px; 
+      cursor: pointer; font-size: 12px; font-family: inherit; 
+    }
+    .debug-controls button:hover { background: rgba(99,102,241,0.3); }
+    .timeline-container { padding: 40px; max-width: 1200px; margin: 0 auto; }
+    .timeline-wrapper { position: relative; margin-left: 100px; }
+    .time-ruler { position: absolute; left: -100px; top: 0; width: 90px; }
+    .time-mark { 
+      position: absolute; color: rgba(255,255,255,0.4); font-size: 11px; 
+      border-right: 2px solid rgba(255,255,255,0.1); width: 90px; 
+      padding-right: 12px; text-align: right; height: 1px;
+    }
+    .timeline-events { position: relative; min-height: 600px; border-left: 2px solid rgba(255,255,255,0.1); }
+    .timeline-entry { 
+      position: absolute; left: -1px; width: calc(100% + 1px); 
+      display: flex; align-items: flex-start; 
+    }
+    .entry-dot { 
+      width: 12px; height: 12px; border-radius: 50%; 
+      margin: 4px 16px 0 -6px; flex-shrink: 0; border: 2px solid #0f0f17;
+    }
+    .entry-content { 
+      flex: 1; padding: 8px 16px 12px 0; border-radius: 6px; 
+      background: rgba(255,255,255,0.03); border-left: 3px solid; 
+      margin-top: 2px; min-height: 44px;
+    }
+    .entry-title { font-weight: 600; color: #fff; margin-bottom: 4px; font-size: 14px; }
+    .entry-details { color: rgba(255,255,255,0.7); font-size: 12px; line-height: 1.4; }
+    .entry-time { color: rgba(255,255,255,0.4); font-size: 11px; margin-top: 4px; }
+    .entry-meta { color: rgba(255,255,255,0.5); font-size: 11px; margin-top: 2px; }
+    
+    .debug-action .entry-dot { background: #3b82f6; }
+    .debug-action .entry-content { border-left-color: #3b82f6; }
+    .debug-state .entry-dot { background: #10b981; }
+    .debug-state .entry-content { border-left-color: #10b981; }
+    
+    .status-started .entry-dot { background: #f59e0b; }
+    .status-failed .entry-dot { background: #ef4444; }
+    .status-completed .entry-dot { background: #10b981; }
+    
+    .empty-timeline { 
+      text-align: center; color: rgba(255,255,255,0.4); 
+      padding: 80px 20px; font-size: 16px; 
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <div class="page-title">Cognition Debug Timeline</div>
+    <div class="page-subtitle">${data?.length || 0} events tracked • ${formatDuration(data)}</div>
+    <div class="debug-controls">
+      <button onclick="toggleTimeScale()">Zoom Timeline</button>
+      <button onclick="filterByType('action')">Actions Only</button>
+      <button onclick="filterByType('state')">State Only</button>
+      <button onclick="clearFilters()">Show All</button>
     </div>
   </div>
-  <style>${generateTimelineCSS()}</style>
+  
+  <div class="timeline-container">
+    ${!data?.length ? '<div class="empty-timeline">No timeline data available</div>' : `
+      <div class="timeline-wrapper">
+        <div class="time-ruler">${generateTimeRuler(data, settings.timeScale)}</div>
+        <div class="timeline-events">${data.map(entry => generateTimelineEntry(entry, settings)).join('')}</div>
+      </div>
+    `}
+  </div>
+  
+  <script>
+    let currentScale = ${settings.timeScale};
+    let currentFilter = 'all';
+    
+    function toggleTimeScale() {
+      currentScale = currentScale === 20 ? 40 : 20;
+      location.reload();
+    }
+    
+    function filterByType(type) {
+      currentFilter = type;
+      document.querySelectorAll('.timeline-entry').forEach(entry => {
+        entry.style.display = entry.classList.contains('debug-' + type) ? 'flex' : 'none';
+      });
+    }
+    
+    function clearFilters() {
+      currentFilter = 'all';
+      document.querySelectorAll('.timeline-entry').forEach(entry => {
+        entry.style.display = 'flex';
+      });
+    }
+  </script>
+</body>
+</html>
 `;
 
 const generateTimeRuler = (data, timeScale) => {
@@ -118,17 +208,18 @@ const generateTimeRuler = (data, timeScale) => {
 };
 
 const generateTimelineEntry = (entry, settings) => {
-  const topPos = (entry.relativeTime / 100) * settings.timeScale; // 100ms = timeScale pixels
+  const topPos = (entry.relativeTime / 100) * settings.timeScale;
   const typeClass = `debug-${entry.type}`;
   const statusClass = entry.status ? `status-${entry.status}` : '';
   
   return `
-    <div class="debug-entry ${typeClass} ${statusClass}" style="top: ${topPos}px" data-id="${entry.id}">
-      <div class="debug-dot"></div>
-      <div class="debug-content">
-        <div class="debug-title">${formatEntryTitle(entry)}</div>
-        <div class="debug-details">${formatEntryDetails(entry)}</div>
-        <div class="debug-time">${formatTime(entry.relativeTime)}</div>
+    <div class="timeline-entry ${typeClass} ${statusClass}" style="top: ${topPos}px" data-id="${entry.id}">
+      <div class="entry-dot"></div>
+      <div class="entry-content">
+        <div class="entry-title">${formatEntryTitle(entry)}</div>
+        <div class="entry-details">${formatEntryDetails(entry)}</div>
+        <div class="entry-time">${formatTime(entry.relativeTime)}</div>
+        <div class="entry-meta">ID: ${entry.id}</div>
       </div>
     </div>
   `;
@@ -148,32 +239,8 @@ const formatTime = ms => {
   return `${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
 };
 
-const generateTimelineCSS = () => `
-  .debug-timeline-container { padding: 20px; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; }
-  .debug-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
-  .debug-header h2 { margin: 0; color: #fff; font-size: 16px; }
-  .debug-controls button { margin-left: 8px; padding: 4px 12px; background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.5); color: #fff; border-radius: 4px; cursor: pointer; font-size: 11px; }
-  .debug-controls button:hover { background: rgba(99,102,241,0.3); }
-  
-  .debug-timeline { position: relative; margin-left: 80px; }
-  .debug-time-ruler { position: absolute; left: -80px; top: 0; width: 70px; }
-  .time-mark { position: absolute; color: rgba(255,255,255,0.4); font-size: 10px; border-right: 1px solid rgba(255,255,255,0.1); width: 70px; padding-right: 8px; text-align: right; }
-  
-  .debug-events { position: relative; min-height: 400px; }
-  .debug-entry { position: absolute; left: 0; width: 100%; display: flex; align-items: flex-start; margin: 2px 0; }
-  .debug-dot { width: 8px; height: 8px; border-radius: 50%; margin: 6px 12px 0 0; flex-shrink: 0; }
-  .debug-content { flex: 1; padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.05); border-left: 2px solid; }
-  
-  .debug-action .debug-dot { background: #3b82f6; }
-  .debug-action .debug-content { border-left-color: #3b82f6; }
-  .debug-state .debug-dot { background: #10b981; }
-  .debug-state .debug-content { border-left-color: #10b981; }
-  
-  .status-started .debug-dot { background: #f59e0b; }
-  .status-failed .debug-dot { background: #ef4444; }
-  
-  .debug-title { font-weight: 600; color: #fff; margin-bottom: 2px; }
-  .debug-details { color: rgba(255,255,255,0.7); font-size: 11px; }
-  .debug-time { color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 2px; }
-  .debug-empty { text-align: center; color: rgba(255,255,255,0.4); padding: 40px; }
-`;
+const formatDuration = data => {
+  if (!data?.length) return '0s';
+  const duration = data[data.length - 1].relativeTime;
+  return duration > 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`;
+};

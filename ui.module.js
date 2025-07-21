@@ -71,7 +71,7 @@ const setContentScript = async (state) => {
 };
 async function contentFunction() {
   if (window && '__cognitionUI' in window) return; // Prevent re-injection
-  // const { ContentStore } = await import(...)
+  console.log('[CognitionUI] Injecting UI content script');
   const modalTemplate = `
     <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
     <div class="cog-modal-content">
@@ -83,6 +83,7 @@ async function contentFunction() {
       </div>
     </div>
   `;
+  
   const mainTemplate = `
     <div class="cog-header">
       <span class="cog-title">Cognition</span>
@@ -92,15 +93,18 @@ async function contentFunction() {
       <div class="cog-empty">No content</div>
     </div>
   `;
+  
   const notificationTemplate = (data) => `
     <div class="cog-notif-content">
       ${data.from ? `<span class="cog-notif-from">${data.from}:</span>` : ''}
       <span class="cog-notif-message">${data.message}</span>
     </div>
-`;
+  `;
+
   let elements = {};
   const notifications = new Map();
   const state = new window.ContentStore();
+  
   const createElements = () => {
     const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
     const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });
@@ -111,51 +115,72 @@ async function contentFunction() {
     elements.modalTitle = modal.querySelector('.cog-modal-title');
     elements.modalText = modal.querySelector('.cog-modal-text');
   }
+  
   const setupStateListener = () => {
     state.watch('ui.visible', (value) => value ? show() : hide());
     state.watch('ui.content', (html) => updateContent(html));
     state.watch('ui.notify', (data) => addNotification(data));
     state.watch('ui.modal', (data) => showModal(data));
   }
-  const getElementDataset = (element, key) => {
-      const responseEl = element instanceof HTMLElement ? element.closest(key) : null;
-      if (responseEl && responseEl instanceof HTMLElement) {
-        return responseEl.dataset;
-      }
-      throw new Error(`Element ${key} not found`);
+  
+  // FIXED: Return null instead of throwing error
+  const getElementDataset = (element, selector) => {
+    const targetEl = element instanceof HTMLElement ? element.closest(selector) : null;
+    return targetEl?.dataset || null;
   }
+  
   const setupActionClickHandlers = () => {
     document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
       const dataSet = getElementDataset(e.target, '[data-action]');
-      await state.write('ui.action.request', { action: dataSet.action, params: JSON.parse(dataSet.params ?? '{}') });
+      if (dataSet?.action) {
+        debugger;
+        await state.write('ui.action.request', { 
+          action: dataSet.action, 
+          params: JSON.parse(dataSet.params || '{}') 
+        });
+      }
     });
   }
+  
   const setupModalResponseClickHandlers = () => {
     document.addEventListener('click', async (e) => {
       const dataSet = getElementDataset(e.target, '[data-modal-response]');
-      state.write(dataSet.responseAction, { response: dataSet.modalResponse === 'true' });
+      if (!dataSet || !dataSet.modalResponse) return;      
+      const responseAction = elements.modal?.dataset?.responseAction;
+      if (responseAction) {
+        await state.write(responseAction, { response: dataSet.modalResponse === 'true' });
+      }
       hideModal();
     });
   }
+  
   const show = () => {
     elements.container.classList.add('visible');
     elements.notifications.classList.add('visible');
   }
+  
   const hide = () => {
     elements.container.classList.remove('visible');
     elements.notifications.classList.remove('visible');
     elements.modal.classList.remove('visible');
   }
+  
   const updateContent = (html) => {
     elements.content.innerHTML = html || '<div class="cog-empty">No content</div>';
   }
+  
   const addNotification = (data) => {
     const id = Date.now();
-    const notif = Object.assign(document.createElement('div'), { className: `cog-notification ${data.type || 'info'}`, innerHTML: notificationTemplate(data) });
+    const notif = Object.assign(document.createElement('div'), { 
+      className: `cog-notification ${data.type || 'info'}`, 
+      innerHTML: notificationTemplate(data) 
+    });
     elements.notifications.appendChild(notif);
     notifications.set(id, notif);
+    
     // Animate in
     requestAnimationFrame(() => notif.classList.add('visible'));
+    
     // Auto remove
     setTimeout(() => {
       notif.classList.remove('visible');
@@ -167,16 +192,19 @@ async function contentFunction() {
       }, 300);
     }, data.duration || 5000);
   }
+  
   const showModal = (data) => {
     elements.modalTitle.textContent = data.title || 'Confirm';
     elements.modalText.textContent = data.text;
     elements.modal.dataset.responseAction = data.responseAction || '';
     elements.modal.classList.add('visible');
   }
+  
   const hideModal = () => {
     elements.modal.classList.remove('visible');
     delete elements.modal.dataset.responseAction;
   }
+  
   // Initialize UI
   (async () => {
     createElements();

@@ -24,7 +24,7 @@ export class StateStore {
     // Pattern matching (e.g., "ui.*")
     for (const [pattern, callbacks] of this.watchers) {
       if (pattern.includes('*') && key.startsWith(pattern.replace('*', ''))) {
-        callbacks.forEach(cb => cb(value));
+        callbacks.forEach(cb => cb(value, key));
       }
     }
   }

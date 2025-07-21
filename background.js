@@ -51,6 +51,7 @@ function registerModuleOauth() {
 function registerModuleContentScripts() {
   for (const module of modules) {
     if (module && 'contentScript' in module) {
+      console.log(`[Background] content script registered for: ${module.manifest.name}`);
       extensionState.actions.execute("content-script-handler.register", {
         moduleName: module.manifest.name,
         ...module.contentScript

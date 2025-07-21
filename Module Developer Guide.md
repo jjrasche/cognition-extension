@@ -93,7 +93,7 @@ await state.write('sleep.lastNight.hours', 7.5);
 const steps = await state.read('activity.today.steps');
 
 // Or watch for changes
-state.watch('activity.*', (value) => {
+state.watch('activity.*', (key, value) => {
   console.log('Activity data changed:', value);
 });
 ```
@@ -117,25 +117,6 @@ Only ONE module writes to each domain:
 
 For cross-module communication, use append-only queues:
 
-```javascript
-// Fitbit module adds notification
-const current = await state.read('ui.notify.queue') || [];
-await state.write('ui.notify.queue', [...current, {
-  message: 'Fitbit sync complete',
-  type: 'success',
-  timestamp: Date.now()
-}]);
-
-// UI module watches and displays
-state.watch('ui.notify.queue', async (queue) => {
-  if (queue?.length > 0) {
-    const notification = queue[0];
-    showNotification(notification);
-    // Remove after showing
-    await state.write('ui.notify.queue', queue.slice(1));
-  }
-});
-```
 
 ## Service Worker Lifecycle
 
