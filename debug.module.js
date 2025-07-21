@@ -85,7 +85,7 @@ export const clearHistory = async state => (
 
 export const toggleRealTime = async state => (
   realTimeEnabled = !realTimeEnabled,
-  await state.write('debug.realtime', realTimeEnabled),
+  // await state.write('debug.realtime', realTimeEnabled),
   { success: true, realTime: realTimeEnabled }
 );
 

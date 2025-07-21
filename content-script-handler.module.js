@@ -12,9 +12,8 @@ let registrations = new Set();
 const getRegistration = async (moduleName) => [...registrations].find(reg => reg.moduleName === moduleName) || (() => { throw new Error(`Module ${moduleName} not registered`); })();
 const addRegistration = (moduleName, contentFunction, css, options) => registrations.add({ moduleName, contentFunction, css, options });
 // track which modules are injected into which tabs
-let injectedTabIds = new Map();
-const isInjected = (tab, moduleName) => injectedTabIds.get(tab.id) && (!moduleName || injectedTabIds.get(tab.id).has(moduleName));
-const addInjectedTabId = (tab, moduleName) => injectedTabIds.set(tab.id, (injectedTabIds.get(tab.id) || new Set()).add(moduleName));
+let tabInjectionState = new Map()
+const isInjected = (tab, moduleName) => tabInjectionState.get(tab.id) && (!moduleName || tabInjectionState.get(tab.id).has(moduleName));
 
 export async function initialize() {
   await injectContentIntoExistingTabs();
@@ -69,7 +68,7 @@ const handleTabNavigation = async (tab) => {
   await removeTabFromInjected(tab);
   await injectAllPatternModules(tab);
 }
-const removeTabFromInjected = async (tab) => isInjected(tab) && injectedTabIds.delete(tab.id);
+const removeTabFromInjected = async (tab) => isInjected(tab) && tabInjectionState.delete(tab.id);
 
 // register a new content script module
 const defaultOptions = { pattern: 'all' };
@@ -89,14 +88,17 @@ export async function register(state, params) {
 // Inject content scripts
 const injectIntoAllTabs = async (moduleName) => await forAllValidTabs((tab) => injectModuleScript(moduleName, tab));
 async function injectModuleScript(moduleName, tab) {
-  const registration = await getRegistration(moduleName);
-  ensure(!isInjected(tab, moduleName), `Module ${moduleName} already injected into tab ${tab.title || tab.id}`);
+  if (!shouldInjectIntoTab(tab)) return { success: false, error: 'Cannot inject into restricted tab' };
   try {
-    if (!shouldInjectIntoTab(tab)) return { success: false, error: 'Cannot inject into restricted tab' };
-    await insertState(tab);
-    await insertContent(registration.contentFunction, tab);
-    if (registration.css) await insertCSS(registration.css, tab);
-    addInjectedTabId(tab, moduleName);
+    const registration = await getRegistration(moduleName);
+    const tabState = tabInjectionState.get(tab.id) || {};
+    // if (!tabState.state)
+      await insertState(tab);
+    if (!tabState[moduleName]) {
+      await insertContent(registration.contentFunction, tab);
+      if (registration.css) await insertCSS(registration.css, tab);
+    }
+    tabInjectionState.set(tab.id, { ...tabState, state: true, [moduleName]: true});
     console.log(`[ContentHandler] Injected ${moduleName} into tab ${tab.title || tab.id}`);
     return { success: true };
   } catch (error) {
