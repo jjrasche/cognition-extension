@@ -50,8 +50,13 @@ async function build() {
     .replace(/export class StateStore/g, 'class StateStore')
     .replace(/import.*from.*;\n/g, ''); // Remove imports
 
-  await fs.writeFile('build/content-state.js', stateStoreContent + '\nwindow.ContentStore = StateStore;');
-
+  // In build script, change the last line to:
+  await fs.writeFile('build/content-state.js', stateStoreContent + `
+  (function() {
+    window.ContentStore = StateStore;
+    console.log('[ContentState] ContentStore loaded and available');
+  })();
+  `);
   // Add dev-reload in development mode
   const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');
   if (isDev) {

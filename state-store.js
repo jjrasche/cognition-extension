@@ -73,5 +73,5 @@ export class StateStore {
     await chrome.storage.local.remove(COGNITION_STATE);
   }
 }
-
+// console.log('StateStore initialized. Using chrome.storage.local for state management.');
 globalThis.ContentStore = StateStore;

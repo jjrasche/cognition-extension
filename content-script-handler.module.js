@@ -105,7 +105,10 @@ async function injectModuleScript(moduleName, tabId) {
   }
 }
 const insertContent = async (contentFunction, tabId) => await chrome.scripting.executeScript({ target: { tabId }, func: contentFunction, world: 'ISOLATED' });
-const insertState = async (tabId) => await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', files: ['./content-state.js'] });
+const insertState = async (tabId) => {
+  await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', files: ['./content-state.js'] });
+  await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: ['./content-state.js'] }); // enable access in dev console
+}
 const insertCSS = async (css, tabId) => await chrome.scripting.insertCSS({ target: { tabId }, css });
 const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
 const debugLog = (message, ...args) => null//console.log('[ContentHandler]', message, ...args);
