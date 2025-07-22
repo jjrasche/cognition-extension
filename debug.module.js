@@ -59,8 +59,8 @@ export const initialize = async (state, config) => {
   const stored = await state.read('debug.timeline');
   stored && timeline.push(...stored);
   
-  state.watch('*', (value, key) => !key.startsWith('debug.') && recordState(key, value));
-  state.actions.execute = wrapExecute(state.actions.execute.bind(state.actions));
+  // state.watch('*', (value, key) => !key.startsWith('debug.') && recordState(key, value));
+  // state.actions.execute = wrapExecute(state.actions.execute.bind(state.actions));
   
   await state.write('debug.settings', {
     realTime: config.realTime || false,

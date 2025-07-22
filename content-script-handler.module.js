@@ -8,52 +8,44 @@ export const manifest = {
 
 const restrictedPatterns = [ 'chrome://', 'chrome-extension://', 'edge://', 'about:', 'file:///', 'view-source:', 'chrome-devtools://', 'moz-extension://', 'webkit-extension://', 'chrome-search://', 'chrome-native://'];
 // tracks which modules registered for content script injection
-let registrations = new Set();
-const getRegistration = async (moduleName) => [...registrations].find(reg => reg.moduleName === moduleName) || (() => { throw new Error(`Module ${moduleName} not registered`); })();
+const registrations = new Set();
+const getRegistration = (moduleName) => [...registrations].find(reg => reg.moduleName === moduleName) || (() => { throw new Error(`Module ${moduleName} not registered`); })();
 const addRegistration = (moduleName, contentFunction, css, options) => registrations.add({ moduleName, contentFunction, css, options });
 // track which modules are injected into which tabs
-let tabInjectionState = new Map()
-const isInjected = (tab, moduleName) => tabInjectionState.get(tab.id) && (!moduleName || tabInjectionState.get(tab.id).has(moduleName));
+const tabInjectionState = new Map()
 
-export async function initialize() {
-  await injectContentIntoExistingTabs();
-  await setupTabListeners();
+export async function initialize(state) {
+  await injectContentIntoExistingTabs(state);
+  await setupTabListeners(state);
 }
 
-// Set up tab lifecycle listeners
-async function setupTabListeners() {
-  newTabListener();
-  tabNavigationListener();
-  tabRemovedListener();
+// Set up tab state listeners
+async function setupTabListeners(state) {
+  state.watch('tabs.events', handleTabEvent);
 }
-const newTabListener = () => chrome.tabs.onCreated.addListener(async (tab) => {
-  if (tab && shouldInjectIntoTab(tab)) {
-    setTimeout(() => handleNewTab(tab), 100);
+const handleTabEvent = async (event) => {
+  if (event.type === 'created' && shouldInjectIntoTab(event.tab)) {
+    setTimeout(() => handleNewTab(event.tab), 100);
+  } else if (event.type === 'updated' && shouldInjectIntoTab(event.tab)) {
+    await handleTabNavigation(event.tab);
+  } else if (event.type === 'removed') {
+    await removeTabFromInjected(event.tab);
   }
-});
-const tabNavigationListener = () => chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && shouldInjectIntoTab(tab)) {
-    await handleTabNavigation(tab);
-  }
-});
-const tabRemovedListener = () => chrome.tabs.onRemoved.addListener(async (tabId) => await removeTabFromInjected(tabId) );
-const tabs = async (query = {}) => await chrome.tabs.query(query);
-const createNewTab = async () => await chrome.tabs.create({ url: 'about:blank' });
-const getCurrentTab = async () => (await tabs({ active: true, currentWindow: true }))[0];
-const newTabPattern = async (registration) => registration.options.pattern === 'new' ? (await createNewTab()).id : null;
+};
+const requestNewTab = async (state) => await state.write('tabs.createRequest', { url: 'about:blank', timestamp: Date.now() });
 
-const hasTabAndUrl = (tab) => logAndReturn(!!(tab && tab.url), '❌ No tab or URL:', tab);
-const isAllowedUrl = (tab) => logAndReturn(!restrictedPatterns.some(pattern => tab.url.startsWith(pattern)), '❌ Restricted URL:', tab);
-const isNotAuthUrl = (tab) => logAndReturn(!(tab.url.includes('oauth') || tab.url.includes('login') || tab.url.includes('auth')), '❌ Auth URL:', tab);
-const isNotErrorPage = (tab) => logAndReturn(!(tab.status === 'error' || tab.url.includes('chrome-error://')), '❌ Error page:', tab);
+const hasTabAndUrl = (tab) => !!(tab && tab.url);
+const isAllowedUrl = (tab) => !restrictedPatterns.some(pattern => tab.url.startsWith(pattern));
+const isNotAuthUrl = (tab) => !(tab.url.includes('oauth') || tab.url.includes('login') || tab.url.includes('auth'));
+const isNotErrorPage = (tab) => !(tab.status === 'error' || tab.url.includes('chrome-error://'));
 const shouldInjectIntoTab = (tab) => hasTabAndUrl(tab) 
   && isAllowedUrl(tab)
   && isNotAuthUrl(tab)
-  && isNotErrorPage(tab)
-  && (debugLog('✅ Valid tab for injection:', tab.url), true);
+  && isNotErrorPage(tab);
 
-const forAllValidTabs = async (operation) => {
-  for (const tab of await tabs()) {
+const forAllValidTabs = async (state, operation) => {
+  const tabs = await state.read('tabs.all') || [];
+  for (const tab of tabs) {
     if (shouldInjectIntoTab(tab)) await operation(tab);
   }
 };
@@ -62,37 +54,46 @@ const injectAllPatternModules = async (tab) => {
     if (registration.options.pattern === 'all') await injectModuleScript(registration.moduleName, tab);
   }
 };
-const injectContentIntoExistingTabs = async () => await forAllValidTabs((tab) => injectAllPatternModules(tab));
+const injectContentIntoExistingTabs = async (state) => await forAllValidTabs(state, (tab) => injectAllPatternModules(tab));
 const handleNewTab = async (tab) => await injectAllPatternModules(tab);
 const handleTabNavigation = async (tab) => {
   await removeTabFromInjected(tab);
   await injectAllPatternModules(tab);
 }
-const removeTabFromInjected = async (tab) => isInjected(tab) && tabInjectionState.delete(tab.id);
+const removeTabFromInjected = async (tab) => tabInjectionState.has(tab.id) && tabInjectionState.delete(tab.id);
 
 // register a new content script module
 const defaultOptions = { pattern: 'all' };
-const validatePattern = (pattern) => ensure(['all', 'current', 'new'].includes(pattern), 'Invalid pattern');
-const validateModuleName = (moduleName) => ensure(moduleName, 'Module name is required');
-const validateContentFunction = (contentFunction) => ensure(typeof contentFunction === 'function', 'Content function must be a function');
+const validatePattern = (pattern) => ['all', 'current', 'new'].includes(pattern) || (() => { throw new Error('Invalid pattern'); })();
+const validateModuleName = (moduleName) => moduleName || (() => { throw new Error('Module name is required'); })();
+const validateContentFunction = (contentFunction) => typeof contentFunction === 'function' || (() => { throw new Error('Content function must be a function'); })();
 export async function register(state, params) {
   const { moduleName, contentFunction, css, options = { pattern: 'all' } } = params;
   validateModuleName(moduleName);
   validateContentFunction(contentFunction);
   validatePattern(options.pattern);
   addRegistration(moduleName, contentFunction, css, options);
-  await injectIntoAllTabs(moduleName);
+  
+  if (options.pattern === 'all') {
+    await injectIntoAllTabs(state, moduleName);
+  } else if (options.pattern === 'current') {
+    const currentTab = await state.read('tabs.current');
+    if (currentTab) await injectModuleScript(moduleName, currentTab);
+  } else if (options.pattern === 'new') {
+    await requestNewTab(state);
+  }
+  
   return { success: true, moduleName };
 }
 
 // Inject content scripts
-const injectIntoAllTabs = async (moduleName) => await forAllValidTabs((tab) => injectModuleScript(moduleName, tab));
+const injectIntoAllTabs = async (state, moduleName) => await forAllValidTabs(state, (tab) => injectModuleScript(moduleName, tab));
 async function injectModuleScript(moduleName, tab) {
   if (!shouldInjectIntoTab(tab)) return { success: false, error: 'Cannot inject into restricted tab' };
   try {
-    const registration = await getRegistration(moduleName);
+    const registration = getRegistration(moduleName);
     const tabState = tabInjectionState.get(tab.id) || {};
-    // if (!tabState.state)
+    if (!tabState.state)
       await insertState(tab);
     if (!tabState[moduleName]) {
       await insertContent(registration.contentFunction, tab);
@@ -112,6 +113,3 @@ const insertState = async (tab) => {
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', files: ['./content-state.js'] }); // enable access in dev console
 }
 const insertCSS = async (css, tab) => await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css });
-const ensure = (condition, message) => condition || (() => { throw new Error(message); })();
-const debugLog = (message, ...args) => null; //  console.log('[ContentHandler]', message, ...args);
-const logAndReturn = (condition, message, tab) => { if (!condition) debugLog(message, tab.url || tab); return condition; };
