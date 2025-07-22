@@ -8,9 +8,11 @@ import * as contentScriptHandlerModule from './content-script-handler.module.js'
 import * as contextAssemblerModule from './context-assembler.module.js';
 import * as groqInferenceModule from './groq-inference.module.js';
 import * as debugModule from './debug.module.js';
+import * as tabManagerModule from './tab-manager.module.js';
 
 export const modules = [
-    contentScriptHandlerModule, // is core module, must load first
+    tabManagerModule,
+    contentScriptHandlerModule,
     globalHelpers,
     fitbitModule,
     uiModule,
