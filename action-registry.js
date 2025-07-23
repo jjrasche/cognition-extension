@@ -1,11 +1,11 @@
 export class ActionRegistry {
   constructor() {
     this.actions = new Map();
+    if (isDevelopmentMode()) createActionShortcuts();
   }
-  
-  register(name, handler, metadata = {}) {
-    this.actions.set(name, { handler, metadata, name});
-  }
+
+  register = (moduleName, actionName, handler) => this.actions.set(`${moduleName}.${actionName}`, { handler, moduleName, actionName });
+  has = (name) => this.actions.has(name);
   
   async execute(name, params = {}) {
     const action = this.actions.get(name);
@@ -13,23 +13,25 @@ export class ActionRegistry {
     
     try {
       const result = await action.handler(params);
-      console.log(`[ActionRegistry] Executing action: ${name}`, params);
       return { success: true, result };
     } catch (error) {
-      console.error(`[ActionRegistry] Action ${name} failed:`, error);
       return { success: false, error: error.message };
     }
   }
 
-  list = () => Array.from(this.actions.entries()).map(([name, action]) => ({ name, ...action.metadata }));
-  has = (name) => this.actions.has(name);
-
-  readableList() {
-    const moduleMap = {};
-    this.list().forEach(action => {
-      if (!moduleMap[action.module]) moduleMap[action.module] = [];
-      moduleMap[action.module].push(action.name);
-    });
-    return Object.entries(moduleMap).map(([module, actionList]) => `- ${module}: ${actionList.join(', ')}`).join('\n');
+  extractFunctionSignature = (func) => {
+    const funcString = func.toString();
+    const paramMatch = funcString.match(/\(([^)]*)\)/);
+    const params = paramMatch ? paramMatch[1].split(',').map(p => p.trim()).filter(Boolean) : [];
+    return params
   }
+
+  prettyPrint = () => console.table(Array.from(this.actions.entries()).map(([name, action]) => [
+      name, 
+      {
+        module: action.moduleName,
+        action: action.actionName,
+        signature: this.extractFunctionSignature(action.handler).join(', ')
+      }
+    ]));
 }

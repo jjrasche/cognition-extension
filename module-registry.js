@@ -9,6 +9,7 @@ import * as contextAssemblerModule from './context-assembler.module.js';
 import * as groqInferenceModule from './groq-inference.module.js';
 import * as debugModule from './debug.module.js';
 import * as tabManagerModule from './tab-manager.module.js';
+import * as developmentModule from './dev.module.js';
 
 export const modules = [
     tabManagerModule,
@@ -21,4 +22,5 @@ export const modules = [
     contextAssemblerModule,
     groqInferenceModule,
     debugModule,
+    developmentModule,
 ];

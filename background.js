@@ -1,21 +1,19 @@
 // background.js - Service Worker Entry Point
 // This file bootstraps the module system and initializes the extension
 import './dev-reload.js';
-import './dev-console-helper.js';
-import { ExtensionState } from './extension-state.js';
+import { ExtensionStore } from './extension-state.js';
 import { modules } from './module-registry.js';
 
-const _state = new ExtensionState();
+const _state = new ExtensionStore();
 const loaded = [];
 const errors = [];
 chrome.runtime.onInstalled.addListener(async () => await initialize());
-const isDevelopmentMode = () => !chrome.runtime.getManifest().update_url;
 
 async function initialize() {
   try {
     console.log('[Background] Extension Initializing...');
-    await _state.write('system.status', 'initializing');
     await _state.write('system.modules', []);
+    await _state.write('system.status', 'initializing');
     await registerModules();
     registerModuleOauth();
     registerModuleContentScripts();
@@ -26,7 +24,6 @@ async function initialize() {
     if (errors.length > 0) {
       console.log('[Background] Errors:', errors);
     }
-    if (isDevelopmentMode()) createActionShortcuts();
   } catch (error) {
     console.error('[Background] Failed to initialize extension:', error);
     await _state.write('system.status', 'error');
@@ -74,32 +71,10 @@ async function registerModules() {
   }
 }
 
-// Register a module's actions with the state store
-function registerModuleActions(name, module) {
-  const actions = Object.getOwnPropertyNames(module)
-    .filter((action) => !['initialize', 'manifest', 'tests', 'default'].includes(action));
-  for (const action of actions) {
-    const fn = module[action];
-    if (typeof fn === 'function') {
-      if (_state.actions) {
-        const method = async (params) => await fn(_state, params);
-        _state.actions.register(`${name}.${action}`, method, { module: name, description: `${name} ${action}` });
-      }
-    }
-  }
-}
-
-const createActionShortcuts = () => {
-  const actions = _state.actions.list();
-  for (const action of actions) {
-    const moduleName = action.module.replace(/-/g, "");
-    const actionName = action.name.replace(`${moduleName}.`, "");
-    if (!globalThis[moduleName]) globalThis[moduleName] = {};
-    globalThis[moduleName][actionName] = (params) => _state.actions.execute(action.name, params);
-  }
-  globalThis.state = _state;
-  console.log('[Dev] Created action shortcuts:', actions.map(a => a.name).filter(Boolean));
-}
+const registerModuleActions = (moduleName, moduleObject) => Object.getOwnPropertyNames(moduleObject)
+    .filter((prop) => typeof moduleObject[prop] === 'function')
+    .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))
+    .forEach(actionName => _state.actions.register(moduleName, actionName, moduleObject[actionName]));
 
 // Handle extension icon click - toggle UI
 chrome.action.onClicked.addListener(() => _state.actions.execute('ui.toggle'));

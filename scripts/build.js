@@ -10,7 +10,14 @@ const buildDir = path.join(rootDir, 'build');
 
 async function build() {
   console.log('Building Cognition Extension...');
-  
+  // Clean build directory
+  try {
+    await fs.rm(buildDir, { recursive: true, force: true });
+    console.log('🧹 Cleaned build directory');
+  } catch (error) {
+    // Directory might not exist, that's fine
+    console.log('📁 Build directory didn\'t exist (creating fresh)');
+  }
   // Create build directory
   await fs.mkdir(buildDir, { recursive: true });
 
@@ -45,9 +52,7 @@ async function build() {
   const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');
   if (isDev) {
     files.push('dev-reload.js');
-    files.push('dev-console-helper.js');
     console.log('📦 Including dev-reload client for auto-reload');
-    console.log('🛠️  Including console helpers for debugging');
   }
   
   // Copy each file

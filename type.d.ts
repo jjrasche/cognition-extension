@@ -36,7 +36,7 @@ interface ActionRegistry {
     list(): Array<any>;
     has(name: string): boolean;
 }
-interface StateStore {
+interface ExtensionStore {
     read(key: string): Promise<any>;
     write(key: string, value: any): Promise<void>;
     writeMany(updates: Record<string, any>): Promise<void>;
