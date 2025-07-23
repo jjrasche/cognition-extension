@@ -8,7 +8,8 @@ export const manifest = {
 };
 
 export const initialize = async () => {
-  globalThis.escapeHtml = (str) => {
+  globalThis.cognition =  {};
+  globalThis.cognition.escapeHtml = (str) => {
     if (!str) return '';
     return str.replace(/[&<>"']/g, m => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -16,6 +17,6 @@ export const initialize = async () => {
   };
   
   // Add other shared utilities here
-  globalThis.formatCurrency = (amount) => `$${amount.toFixed(2)}`;
-  globalThis.formatDate = (date) => new Date(date).toLocaleDateString();
+  globalThis.cognition.formatCurrency = (amount) => `$${amount.toFixed(2)}`;
+  globalThis.cognition.formatDate = (date) => new Date(date).toLocaleDateString();
 };

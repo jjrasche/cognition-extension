@@ -166,12 +166,12 @@ export async function showRecentEmail(state) {
     <div style="padding: 20px;">
       <h3 style="margin: 0 0 12px 0; color: #fff;">Most Recent Email</h3>
       <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
-        <div style="font-weight: 600; margin-bottom: 8px;">${globalThis.escapeHtml(recent.subject)}</div>
+        <div style="font-weight: 600; margin-bottom: 8px;">${globalThis.cognition.escapeHtml(recent.subject)}</div>
         <div style="color: rgba(255,255,255,0.7); font-size: 13px; margin-bottom: 12px;">
-          From: ${globalThis.escapeHtml(recent.fromName)}
+          From: ${globalThis.cognition.escapeHtml(recent.fromName)}
         </div>
         <div style="color: rgba(255,255,255,0.8); line-height: 1.5;">
-          ${globalThis.escapeHtml(recent.preview)}
+          ${globalThis.cognition.escapeHtml(recent.preview)}
         </div>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
           <button 

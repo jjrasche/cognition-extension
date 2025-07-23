@@ -26,31 +26,31 @@ const getCaller = () => {
   return moduleMatch?.[1] || stack.find(line => line.match(/at (\w+)/))?.match(/at (\w+)/)?.[1] || 'unknown';
 };
 
-const addEntry = entry => (timeline.push(entry), enforceLimit(), updateRealTime());
+const addEntry = (state, entry) => (timeline.push(entry), enforceLimit(), updateRealTime(state));
 const enforceLimit = () => JSON.stringify(timeline).length > maxSize && timeline.splice(0, Math.floor(timeline.length * 0.25));
-const updateRealTime = () => realTimeEnabled && globalThis.state?.write('debug.timeline', timeline);
+const updateRealTime = (state) => realTimeEnabled && state.write('debug.timeline', timeline);
 
-const recordState = (key, value) => addEntry({
+const recordState = (state, key, value) => addEntry(state, {
   type: 'state', timestamp: Date.now(), relativeTime: Date.now() - startTime,
   key, value: formatValue(value), caller: getCaller(), id: generateId()
 });
 
-const recordAction = (name, params, status, timestamp, metadata = {}) => addEntry({
+const recordAction = (state, name, params, status, timestamp, metadata = {}) => addEntry(state, {
   type: 'action', timestamp, relativeTime: timestamp - startTime,
   name, params: formatValue(params), status, ...metadata, id: generateId()
 });
 
-const wrapExecute = originalExecute => async (name, params = {}) => {
+const wrapExecute = (state, originalExecute) => async (name, params = {}) => {
   const start = performance.now();
   const timestamp = Date.now();
-  recordAction(name, params, 'started', timestamp);
-  
+  recordAction(state, name, params, 'started', timestamp);
+
   try {
     const result = await originalExecute(name, params);
-    recordAction(name, params, 'completed', timestamp, { duration: performance.now() - start, result });
+    recordAction(state, name, params, 'completed', timestamp, { duration: performance.now() - start, result });
     return result;
   } catch (error) {
-    recordAction(name, params, 'failed', timestamp, { duration: performance.now() - start, error: error.message });
+    recordAction(state, name, params, 'failed', timestamp, { duration: performance.now() - start, error: error.message });
     throw error;
   }
 };
@@ -58,9 +58,9 @@ const wrapExecute = originalExecute => async (name, params = {}) => {
 export const initialize = async (state, config) => {
   const stored = await state.read('debug.timeline');
   stored && timeline.push(...stored);
-  
-  // state.watch('*', (value, key) => !key.startsWith('debug.') && recordState(key, value));
-  // state.actions.execute = wrapExecute(state.actions.execute.bind(state.actions));
+
+  state.watch('*', (value, key) => !key.startsWith('debug.') && recordState(state, key, value));
+  state.actions.execute = wrapExecute(state, state.actions.execute.bind(state.actions));
   
   await state.write('debug.settings', {
     realTime: config.realTime || false,

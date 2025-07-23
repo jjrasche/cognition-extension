@@ -73,5 +73,3 @@ export class StateStore {
     await chrome.storage.local.remove(COGNITION_STATE);
   }
 }
-
-globalThis.ContentStore = StateStore;

@@ -3,6 +3,11 @@ export const manifest = {
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["prompt", "listModels", "setModel", "getUsage"],
+  dependencies: { 
+    "global-helpers.module": "1.0.0",
+    "context-assembler.module": "1.0.0",
+    "ui.module": "1.0.0"
+  },
   state: {
     reads: [],
     writes: ["groq.model.current", "groq.model.available", "groq.response.latest", "groq.history", "groq.usage.tokens"]
@@ -63,14 +68,14 @@ const updateHistory = async (state, entry) => {
   await state.write('groq.history', history);
 };
 
-const formatResponse = (text) => !text ? '' : globalThis.escapeHtml(text).replace(/\n/g, '<br>');
+const formatResponse = (text) => !text ? '' : globalThis.cognition.escapeHtml(text).replace(/\n/g, '<br>');
 
 const buildResponseUI = (userText, response) => `
   <div style="padding: 20px;">
     <div style="margin-bottom: 16px;">
       <strong style="color: rgba(255,255,255,0.7);">You:</strong>
       <div style="margin: 8px 0; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 6px;">
-        ${globalThis.escapeHtml(userText)}
+        ${globalThis.cognition.escapeHtml(userText)}
       </div>
     </div>
     <div>
@@ -90,10 +95,10 @@ const buildResponseUI = (userText, response) => `
 const buildErrorUI = (userText, error) => `
   <div style="padding: 20px;">
     <div style="color: #ff6b6b; margin-bottom: 12px;">
-      <strong>Error:</strong> ${globalThis.escapeHtml(error)}
+      <strong>Error:</strong> ${globalThis.cognition.escapeHtml(error)}
     </div>
     <div style="color: rgba(255,255,255,0.7);">
-      Your prompt: "${globalThis.escapeHtml(userText)}"
+      Your prompt: "${globalThis.cognition.escapeHtml(userText)}"
     </div>
   </div>
 `;
