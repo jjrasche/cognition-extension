@@ -1,7 +1,6 @@
 export class ActionRegistry {
   constructor() {
     this.actions = new Map();
-    if (isDevelopmentMode()) createActionShortcuts();
   }
 
   register = (moduleName, actionName, handler) => this.actions.set(`${moduleName}.${actionName}`, { handler, moduleName, actionName });

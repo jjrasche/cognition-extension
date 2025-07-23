@@ -1,9 +1,17 @@
+self.addEventListener('error', (event) => {
+  console.error('Service Worker Error:', event.error);
+  console.error('Stack:', event.error.stack);
+});
+
+self.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled Promise Rejection:', event.reason);
+});
+
 // background.js - Service Worker Entry Point
 // This file bootstraps the module system and initializes the extension
 import './dev-reload.js';
 import { ExtensionStore } from './extension-state.js';
 import { modules } from './module-registry.js';
-
 const _state = new ExtensionStore();
 const loaded = [];
 const errors = [];

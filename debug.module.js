@@ -21,9 +21,10 @@ const generateId = () => Date.now().toString(36) + Math.random().toString(36).su
 const formatValue = v => !v ? String(v) : typeof v === 'string' ? (v.length > 100 ? v.substring(0, 100) + '...' : v) : typeof v === 'object' ? JSON.stringify(v).substring(0, 200) + '...' : String(v);
 
 const getCaller = () => {
-  const stack = new Error().stack.split('\n').slice(2, 8);
-  const moduleMatch = stack.find(line => line.includes('.module.js'))?.match(/(\w+)\.module\.js/);
-  return moduleMatch?.[1] || stack.find(line => line.match(/at (\w+)/))?.match(/at (\w+)/)?.[1] || 'unknown';
+  const error = new Error();
+  const stack = error.stack ? error.stack.split('\n').slice(2, 8) : [];
+  const moduleMatch = stack.find(line => line?.includes('.module.js'))?.match(/(\w+)\.module\.js/);
+  return moduleMatch?.[1] || stack.find(line => line?.match(/at (\w+)/))?.match(/at (\w+)/)?.[1] || 'unknown';
 };
 
 const addEntry = (state, entry) => (timeline.push(entry), enforceLimit(), updateRealTime(state));
