@@ -12,7 +12,10 @@ export const manifest = {
 
 const simplifyTab = (tab) => ({  id: tab.id,  url: tab.url,  title: tab.title,  windowId: tab.windowId,  status: tab.status,  index: tab.index, favIconUrl: tab.favIconUrl, incognito: tab.incognito, pinned: tab.pinned, audible: tab.audible, mutedInfo: tab.mutedInfo, openerTabId: tab.openerTabId, lastAccessed: tab.lastAccessed });
 const getAllSimplifiedTabs = async () => (await chrome.tabs.query({})).map(simplifyTab);
-const getCurrentSimplifiedTab = async () => simplifyTab((await chrome.tabs.query({ active: true, currentWindow: true }))[0]);
+const getCurrentSimplifiedTab = async () => {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs.length > 0 ? simplifyTab(tabs[0]) : null;
+};
 
 export async function initialize(state) {
   await state.write('tabs.all', await getAllSimplifiedTabs());

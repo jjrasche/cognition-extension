@@ -103,6 +103,10 @@ async function injectModuleScript(moduleName, tab) {
     console.log(`[ContentHandler] Injected ${moduleName} into tab ${tab.title || tab.id}`);
     return { success: true };
   } catch (error) {
+    if (error.message.includes('Cannot access contents')) {
+      console.log(`[ContentHandler] Cannot inject into ${tab.url} (CSP/permissions)`);
+      return { success: false, error: 'Blocked by site policy', silent: true };
+    }
     console.error(`[ContentHandler] Failed to inject ${moduleName} into tab ${tab.title || tab.id}:`, error);
     return { success: false, error: error.message };
   }
