@@ -13,7 +13,7 @@ export class OAuthManager {
   async register(provider, config) {
     this.verifyConfig(config);
     this.providers.set(provider, config);
-    await this.loadStoredTokens(provider);
+    //await this.loadStoredTokens(provider);
     console.log(`[OAuthManager] Registered ${provider} with scopes:`, config.scopes);
   }
 
