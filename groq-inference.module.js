@@ -20,15 +20,17 @@ const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 let apiKey = null;
 
 const loadApiKey = async () => (await chrome.storage.sync.get(['groq.apiKey']))['groq.apiKey'];
-const setCurrentModel = async (state, model) => await state.write('groq.model.current', model);
-const initHistory = async (state) => !(await state.read('groq.history')) && await state.write('groq.history', []);
-const getHistory = async (state) => await state.read('groq.history') || [];
-const getCurrentModel = async (state) => await state.read('groq.model.current') || DEFAULT_MODEL;
+const setCurrentModel = async (model) => await _state.write('groq.model.current', model);
+const initHistory = async () => !(await _state.read('groq.history')) && await _state.write('groq.history', []);
+const getHistory = async () => await _state.read('groq.history') || [];
+const getCurrentModel = async () => await _state.read('groq.model.current') || DEFAULT_MODEL;
 
+let _state
 export const initialize = async (state) => {
+  _state = state;
   apiKey = await loadApiKey();
-  await setCurrentModel(state, DEFAULT_MODEL);
-  await initHistory(state);
+  await setCurrentModel(DEFAULT_MODEL);
+  await initHistory();
 };
 
 const validatePrompt = (params) => params?.text ? null : 'Prompt text required';
@@ -47,12 +49,10 @@ const callGroqAPI = async (prompt, model) => {
       temperature: 0.7, max_tokens: 1024, stream: false
     })
   });
-  
   if (!response.ok) {
     const errorData = await response.text();
     throw new Error(`Groq API error: ${response.status} - ${errorData}`);
   }
-  
   const data = await response.json();
   return { content: data.choices[0]?.message?.content || 'No response', usage: data.usage };
 };
@@ -62,10 +62,10 @@ const createHistoryEntry = (userText, response, model) => ({
   timestamp: new Date().toISOString(), tokens: response.usage
 });
 
-const updateHistory = async (state, entry) => {
-  const history = await getHistory(state);
+const updateHistory = async (entry) => {
+  const history = await getHistory();
   history.push(entry);
-  await state.write('groq.history', history);
+  await _state.write('groq.history', history);
 };
 
 const formatResponse = (text) => !text ? '' : globalThis.cognition.escapeHtml(text).replace(/\n/g, '<br>');
@@ -103,51 +103,43 @@ const buildErrorUI = (userText, error) => `
   </div>
 `;
 
-const updateUI = async (state, content) => {
-  await state.write('ui.content', content);
-  await state.actions.execute('ui.show');
+const updateUI = async (content) => {
+  await _state.write('ui.content', content);
+  await _state.actions.execute('ui.show');
 };
 
-export const prompt = async (state, params) => {
+export const prompt = async (params) => {
   const validation = validatePrompt(params) || validateApiKey();
   if (validation) return { success: false, error: validation };
-  
   try {
-    const model = await getCurrentModel(state);
-    const context = await getContext(state);
+    const model = await getCurrentModel();
+    const context = await getContext();
     const response = await callGroqAPI(context.messages, model);
-    
     const entry = createHistoryEntry(params.text, response, model);
-    await updateHistory(state, entry);
-    await state.write('groq.response.latest', response.content);
-    response.usage && await state.write('groq.usage.tokens', response.usage);
-    
-    await updateUI(state, buildResponseUI(params.text, response));
-    
+    await updateHistory(entry);
+    await _state.write('groq.response.latest', response.content);
+    response.usage && await _state.write('groq.usage.tokens', response.usage);
+    await updateUI(buildResponseUI(params.text, response));
     return { success: true, response: response.content, tokens: response.usage };
-    
   } catch (error) {
     console.error('[Groq] Prompt error:', error);
-    await updateUI(state, buildErrorUI(params.text, error.message));
+    await updateUI(buildErrorUI(params.text, error.message));
     return { success: false, error: error.message };
   }
 };
 
-export const listModels = async (state) => {
+export const listModels = async () => {
   const validation = validateApiKey();
   if (validation) return { success: false, error: validation };
-  
   try {
     const response = await fetch(`${GROQ_API_BASE}/models`, {
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
     });
-    
     if (!response.ok) throw new Error(`Groq API error: ${response.status}`);
-    
     const data = await response.json();
     const models = data.data?.map(model => model.id) || [];
-    await state.write('groq.model.available', models);
-    
+    await _state.write('groq.model.available', models);
+
     return { success: true, models };
   } catch (error) {
     console.error('[Groq] List models error:', error);
@@ -161,15 +153,13 @@ export const setModel = async (state, params) => {
   return { success: true, model: params.model };
 };
 
-export const getUsage = async (state) => {
-  const history = await getHistory(state);
+export const getUsage = async () => {
+  const history = await getHistory();
   const totalTokens = history.reduce((sum, entry) => sum + (entry.tokens?.total_tokens || 0), 0);
-  
   const usage = {
     totalConversations: history.length,
     totalTokens,
     lastUsed: history.length > 0 ? history[history.length - 1].timestamp : null
   };
-  
   return { success: true, usage };
 };

@@ -28,11 +28,9 @@ const createActionShortcuts = () => {
       globalThis[moduleName] ??= {};
       globalThis[moduleName][actionName] = (params) => _state.actions
           .execute(name, params)
-          .then(res => console.log(`[Dev] ${moduleName}.${actionName} →`, res))
+          .then(res => console.log(`[Dev] ${moduleName}.${actionName} →`, res.result))
           .catch(err => console.error(`[Dev] ${moduleName}.${actionName} ✗`, err));
     }
-      // if (!globalThis[moduleName]) globalThis[moduleName] = {};
-      // globalThis[moduleName][actionName] = (params) => _state.actions.execute(name, params);
     globalThis.state = _state;
     globalThis.printActions = () => _state.actions.prettyPrint();
     console.log('[Dev] Created action shortcuts:', Array.from(_state.actions.actions.keys()));
