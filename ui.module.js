@@ -10,31 +10,33 @@ export const manifest = {
   }
 };
 
+let _state = {};
 export async function initialize(state, config) {
-  watchUIActions(state);
-  await initializeUIConfig(state, config);
-  setContentScript(state);
+  _state = state;
+  watchUIActions();
+  await initializeUIConfig(config);
+  setContentScript();
 };
-const initializeUIConfig = async (state, config) => {
+const initializeUIConfig = async (config) => {
   const uiConfig = { position: config.position || 'right', size: config.size || '20%', ...config };
-  await state.write('ui.config', uiConfig);
+  await _state.write('ui.config', uiConfig);
 };
 
 // Module Actions - These run in the service worker context and communicate with content scripts via state changes
-export const watchUIActions = state => state.watch('ui.action.request', (request) => state.actions.execute(request.action, request.params));
-export const show = state => state.write('ui.visible', true).then(() => ({ success: true }));
-export const hide = state => state.write('ui.visible', false).then(() => ({ success: true }));
-export const toggle = async state => {
-  const currentValue = await state.read('ui.visible');
+export const watchUIActions = () => _state.watch('ui.action.request', (request) => _state.actions.execute(request.action, request.params));
+export const show = () => _state.write('ui.visible', true).then(() => ({ success: true }));
+export const hide = () => _state.write('ui.visible', false).then(() => ({ success: true }));
+export const toggle = async () => {
+  const currentValue = await _state.read('ui.visible');
   const newValue = !currentValue;
-  await state.write('ui.visible', newValue);
+  await _state.write('ui.visible', newValue);
   return { success: true, value: newValue };
 };
-export const notify = (state, params) => {
+export const notify = (params) => {
   if (!params?.message) {
     return { success: false, error: 'Notification requires a message' };
   }
-  return state.write('ui.notify', {
+  return _state.write('ui.notify', {
     id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     message: params.message,
     type: params.type || 'info',
@@ -43,11 +45,11 @@ export const notify = (state, params) => {
     timestamp: Date.now(),
   }).then(() => ({ success: true }));
 }
-export const modal = (state, params) => {
+export const modal = (params) => {
   if (!params?.text) {
     return { success: false, error: 'Modal requires text' };
   }
-  return state.write('ui.modal', {
+  return _state.write('ui.modal', {
     title: params.title || 'Confirm',
     text: params.text,
     responseAction: params.responseAction || '',
@@ -60,10 +62,10 @@ export const modal = (state, params) => {
  */
 export let contentScript;
 
-const setContentScript = async (state) => {
+const setContentScript = async () => {
   contentScript = {
     contentFunction,
-    css: cssFunction(await state.read('ui.config')),
+    css: cssFunction(await _state.read('ui.config')),
     options: {
       pattern: 'all',
     }

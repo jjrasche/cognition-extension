@@ -15,8 +15,8 @@ export const initialize = async () => {
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[m]));
   };
-  
-  // Add other shared utilities here
+
+  globalThis.cognition.kebabToCamel = (str) =>  str.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
   globalThis.cognition.formatCurrency = (amount) => `$${amount.toFixed(2)}`;
   globalThis.cognition.formatDate = (date) => new Date(date).toLocaleDateString();
 };

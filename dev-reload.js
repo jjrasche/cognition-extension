@@ -44,23 +44,23 @@
         };
         
         ws.onerror = (error) => {
-          console.error('[Dev Reload] WebSocket error:', error);
+          // console.error('[Dev Reload] WebSocket error:', error);
         };
         
         ws.onclose = () => {
-          console.log('[Dev Reload] Disconnected from watch server');
+          // console.log('[Dev Reload] Disconnected from watch server');
           
           // Try to reconnect with exponential backoff
           if (reconnectAttempts < maxReconnectAttempts) {
             const delay = reconnectDelay * Math.pow(2, reconnectAttempts);
-            console.log(`[Dev Reload] Reconnecting in ${delay}ms... (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+            // console.log(`[Dev Reload] Reconnecting in ${delay}ms... (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
             
             reconnectTimer = setTimeout(() => {
               reconnectAttempts++;
               connect();
             }, delay);
           } else {
-            console.log('[Dev Reload] Max reconnection attempts reached. Run "npm run watch" to enable auto-reload.');
+            // console.log('[Dev Reload] Max reconnection attempts reached. Run "npm run watch" to enable auto-reload.');
           }
         };
         

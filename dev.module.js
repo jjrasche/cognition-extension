@@ -23,12 +23,17 @@ export async function initialize(state, config) {
 }
 
 const createActionShortcuts = () => {
-    for (const [name, action] of _state.actions.actions.entries()) {
-    if (!globalThis[action.metadata.module]) globalThis[action.metadata.module] = {};
-    const actionName = name.split('.').pop();
-    globalThis[action.metadata.module][actionName] = (params) => _state.actions.execute(name, params);
+    for (let [name, { actionName, moduleName }] of _state.actions.actions.entries()) {
+      moduleName = globalThis.cognition.kebabToCamel(moduleName);
+      globalThis[moduleName] ??= {};
+      globalThis[moduleName][actionName] = (params) => _state.actions
+          .execute(name, params)
+          .then(res => console.log(`[Dev] ${moduleName}.${actionName} →`, res))
+          .catch(err => console.error(`[Dev] ${moduleName}.${actionName} ✗`, err));
     }
+      // if (!globalThis[moduleName]) globalThis[moduleName] = {};
+      // globalThis[moduleName][actionName] = (params) => _state.actions.execute(name, params);
     globalThis.state = _state;
-    globalThis.printActions = () => _state.actions.readableList();
+    globalThis.printActions = () => _state.actions.prettyPrint();
     console.log('[Dev] Created action shortcuts:', Array.from(_state.actions.actions.keys()));
 };
