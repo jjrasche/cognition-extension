@@ -53,8 +53,9 @@ const defaultOptions = { pattern: 'all' };
 const validatePattern = (pattern) => ['all', 'current', 'new'].includes(pattern) || (() => { throw new Error('Invalid pattern'); })();
 const validateModuleName = (moduleName) => moduleName || (() => { throw new Error('Module name is required'); })();
 const validateContentFunction = (contentFunction) => typeof contentFunction === 'function' || (() => { throw new Error('Content function must be a function'); })();
-export async function register(params) {
-  const { moduleName, contentFunction, css, options = { pattern: 'all' } } = params;
+export async function register(module) {
+  const {contentFunction, css, options = { pattern: 'all' } } = module.contentScript;
+  const moduleName = module.manifest.name;
   validateModuleName(moduleName);
   validateContentFunction(contentFunction);
   validatePattern(options.pattern);

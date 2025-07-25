@@ -9,12 +9,12 @@ export class OAuthManager {
     this.pkceVerifiers = new Map();
     this.setupListeners();
   }
-  
-  async register(provider, config) {
-    this.verifyConfig(config);
-    this.providers.set(provider, config);
+
+  async register(module) {
+    this.verifyConfig(module.oauth);
+    this.providers.set(module.manifest.name, module.oauth);
     //await this.loadStoredTokens(provider);
-    console.log(`[OAuthManager] Registered ${provider} with scopes:`, config.scopes);
+    console.log(`[OAuthManager] Registered ${module.manifest.name} with scopes:`, module.oauth.scopes);
   }
 
 //   const promptUserForAPIKey = async () => {

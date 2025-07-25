@@ -1,5 +1,6 @@
 // background.js - Service Worker Entry Point
 // This file bootstraps the module system and initializes the extension
+import './dev-reload.js';
 import { ExtensionStore } from './extension-state.js';
 import { modules } from './module-registry.js';
 const _state = new ExtensionStore();
@@ -11,9 +12,10 @@ async function initialize() {
   try {
     await beginInitialization()
     await registerModules();
-    await registerModuleOauth();
-    registerModuleActions();
-    await registerModuleContentScripts();
+    await registerOauth();
+    registerActions();
+    await registerInference();
+    await registerContentScripts();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -28,9 +30,10 @@ const registerModules = async () => forAllModules("module", async (module) => {
   await module.initialize(_state, await getModuleConfig(module));
   loaded.push({ name: module.manifest.name, version: module.manifest?.version, status: 'active' });
 });
-const registerModuleOauth = async () => forAllModules('oauth', async (module) => 'oauth' in module && await _state.oauthManager.register(module.oauth.provider, module.oauth) );
-const registerModuleContentScripts = async () => forAllModules("contentScript", async (module) => 'contentScript' in module && await _state.actions.execute("content-script-handler.register", { moduleName: module.manifest.name, ...module.contentScript }));
-const registerModuleActions = (module) => forAllModules("actions", async (module) => Object.getOwnPropertyNames(module)
+const registerOauth = async () => forAllModules('oauth', async (module) => 'oauth' in module && await _state.oauthManager.register(module) );
+const registerContentScripts = async () => forAllModules("contentScript", async (module) => 'contentScript' in module && await _state.actions.execute("content-script-handler.register", module));
+const registerInference = async () => forAllModules("inference", async (module) => 'getModels' in module && await _state.actions.execute("inference.register", module));
+const registerActions = () => forAllModules("actions", async (module) => Object.getOwnPropertyNames(module)
   .filter((prop) => typeof module[prop] === 'function')
   .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))
   .forEach(actionName => _state.actions.register(module.manifest.name, actionName, module[actionName]))

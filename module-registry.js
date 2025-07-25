@@ -26,3 +26,17 @@ export const modules = [
     developmentModule,
     claudeApiModule
 ];
+
+export const coreFiles = [
+  'manifest.json',
+  'background.js',
+  'state-store.js',
+  'extension-state.js',
+  'action-registry.js',
+  'oauth-manager.js',
+  'module-registry.js'
+];
+
+export const devFiles = [
+  'dev-reload.js',
+];

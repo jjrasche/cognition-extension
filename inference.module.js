@@ -24,14 +24,13 @@ const updateStreamContent = async (state, content) => await state.write('inferen
 const addToHistory = async (state, entry) => await state.write('inference.history', [...(await state.read('inference.history') || []), entry]);
 const getHistoryEntries = async (state, count = 10) => (await state.read('inference.history') || []).slice(-count);
 // Provider registry
-const providers = new Map();
-export const registerProvider = (name, implementation) => providers.set(name, implementation);
-const getProvider = (name) => providers.get(name) || null;
-const getAllProviders = () => Array.from(providers.keys());
+const providers = new Set();
+export const registerProvider = (module) => providers.add({module});
+const getProvider = (name) => Array.from(providers).find(provider => provider.module.manifest.name === name) || null;
 
-// Module initialization
+let _state
 export async function initialize(state, config) {
-  // Set default provider and model if not already set
+  _state = state;
   if (!(await getCurrentProvider(state))) {
     await setCurrentProvider(state, config.defaultProvider || 'claude');
   }
@@ -94,10 +93,6 @@ export async function prompt(state, params) {
 }
 
 // Provider management
-export async function getProviders(state) {
-  return { success: true, providers: getAllProviders() };
-}
-
 export async function setProvider(state, params) {
   if (!params?.provider) return { success: false, error: 'No provider specified' };
   if (!getProvider(params.provider)) return { success: false, error: `Provider ${params.provider} not available` };
