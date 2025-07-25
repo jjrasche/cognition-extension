@@ -1,3 +1,7 @@
+/*
+Context window limitations demand active management
+strategic context management.
+*/
 export const manifest = {
   name: "context-assembler",
   version: "1.0.0",
