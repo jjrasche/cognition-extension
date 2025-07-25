@@ -135,7 +135,6 @@ async function contentFunction() {
     document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
       const dataSet = getElementDataset(e.target, '[data-action]');
       if (dataSet?.action) {
-        debugger;
         await state.write('ui.action.request', { 
           action: dataSet.action, 
           params: JSON.parse(dataSet.params || '{}') 

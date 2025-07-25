@@ -10,6 +10,7 @@ import * as groqInferenceModule from './groq-inference.module.js';
 import * as debugModule from './debug.module.js';
 import * as tabManagerModule from './tab-manager.module.js';
 import * as developmentModule from './dev.module.js';
+import * as claudeApiModule from './claude-api.module.js';
 
 export const modules = [
     tabManagerModule,
@@ -23,4 +24,5 @@ export const modules = [
     groqInferenceModule,
     debugModule,
     developmentModule,
+    claudeApiModule
 ];

@@ -1,12 +1,3 @@
-self.addEventListener('error', (event) => {
-  console.error('Service Worker Error:', event.error);
-  console.error('Stack:', event.error.stack);
-});
-
-self.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled Promise Rejection:', event.reason);
-});
-
 // background.js - Service Worker Entry Point
 // This file bootstraps the module system and initializes the extension
 import './dev-reload.js';
@@ -23,12 +14,12 @@ async function initialize() {
     await _state.write('system.modules', []);
     await _state.write('system.status', 'initializing');
     await registerModules();
-    registerModuleOauth();
-    registerModuleContentScripts();
+    await registerModuleOauth();
+    await registerModuleContentScripts();
     console.log('[Background] Extension initialized successfully');
     await _state.write('system.modules', loaded);
     await _state.write('system.errors', errors);
-    await _state.write('system.status', 'ready');
+    await _state.write('system.status', 'ready'); 
     if (errors.length > 0) {
       console.log('[Background] Errors:', errors);
     }
@@ -39,11 +30,11 @@ async function initialize() {
   }
 };
 
-function registerModuleOauth() {
+const registerModuleOauth = async () => {
   for (const module of modules) {
     if (module && 'oauth' in module) {
       try {
-        _state.oauthManager.register(module.oauth.provider, module.oauth);
+        await _state.oauthManager.register(module.oauth.provider, module.oauth);
       } catch (error) {
         console.error(`[Background] Failed to register OAuth for ${module.manifest.name}:`, error);
         errors.push({ module: module.manifest.name, error: `OAuth registration: ${error.message}` });
@@ -52,11 +43,11 @@ function registerModuleOauth() {
   }
 }
 
-function registerModuleContentScripts() {
+const registerModuleContentScripts = async () => {
   for (const module of modules) {
     if (module && 'contentScript' in module) {
       console.log(`[Background] content script registered for: ${module.manifest.name}`);
-      _state.actions.execute("content-script-handler.register", {
+      await _state.actions.execute("content-script-handler.register", {
         moduleName: module.manifest.name,
         ...module.contentScript
       });

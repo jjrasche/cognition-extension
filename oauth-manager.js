@@ -17,6 +17,18 @@ export class OAuthManager {
     console.log(`[OAuthManager] Registered ${provider} with scopes:`, config.scopes);
   }
 
+//   const promptUserForAPIKey = async () => {
+//   await _state.actions.execute('ui.modal', {text: "Enter API key:", inputType: "text", responseAction: "saveApiKey"});
+//   _state.watch('input.text.current', async (value) => {
+    
+//     if (value?.startsWith('sk-ant-')) {
+//       await saveApiKey(value);
+//       await _state.actions.execute('text-input.hide');
+//     }
+//     });
+// }
+
+
   verifyConfig(config) {
     if (!config.provider || !config.clientId || !config.authUrl || !config.tokenUrl) 
       throw new Error(`Invalid OAuth config for ${config.provider}`);
