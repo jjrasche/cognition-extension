@@ -2,46 +2,38 @@ export const manifest = {
   name: "claude-api",
   version: "1.0.0",
   permissions: ["storage"],
-  actions: ["prompt"],
+  actions: ["prompt", "getModels"],
   state: {
     reads: [],
     writes: ["claude.lastResponse"]
   }
 };
 
-let apiKey = null;
-
+let _state = {};
+let _apiKey = null;
+const defaultModel = "claude-3-5-sonnet-20241022";
+const buildModelsHeaders = () => ({ 'x-api-key': _apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
 const loadApiKey = async () => (await chrome.storage.sync.get(['claudeApiKey']))['claudeApiKey'];
 // const validateAPIKey = (key) => key && key.startsWith('sk-ant-') || (() => { throw new Error('Invalid API key'); })();
+const setAPIKey = async () => ( _apiKey = await loadApiKey(), !!_apiKey || (() => { throw new Error('No API key configured'); })() );
 
-let _state = {};
 export const initialize = async (state) => {
   _state = state;
-  apiKey = await loadApiKey();
-  if (!apiKey) {
-  }
+  await setAPIKey()
 };
 
-const callClaude = async (text, model = 'claude-3-sonnet-20240229') => {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: text }] })
-  });
-  const resp = await response.json();
-  return response.ok ? resp : Promise.reject(`API error: ${response.status}`);
+const call = async (urlSuffix, method, body, successResult) => {
+  const message = { body, method, headers: buildModelsHeaders() }
+  let resp = await fetch(`https://api.anthropic.com/v1/${urlSuffix}`, message);
+  resp.json = await resp.json();
+  await _state.write('claude.lastResponse', resp);
+  return resp.ok ? { success: true, result: successResult(resp) }
+  : { success: false, result: `${resp.status}:\t${JSON.stringify(resp.json)}` };
 };
 
 export const prompt = async (params) => {
   if (!params?.text) return { success: false, error: 'No text provided' };
-  if (!apiKey) return { success: false, error: 'No API key configured' };
-  
-  try {
-    const response = await callClaude(params.text, params.model);
-    const content = response.content[0].text;
-    await _state.write('claude.lastResponse', content);
-    return { success: true, response: content };
-  } catch (error) {
-    return { success: false, error: error.message || error };
-  }
+  const body = JSON.stringify({ model: params.model ?? defaultModel, max_tokens: 1024, messages: [{ role: 'user', content: params.text }] });
+  return await call("messages", "POST", body, (resp) => resp.json.content[0].text);
 };
+export const models = async () => call("models", "GET", null, (resp) => resp.json.data);
