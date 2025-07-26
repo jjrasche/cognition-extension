@@ -14,6 +14,7 @@ export class ActionRegistry {
       const result = await action.handler(params);
       return { success: true, result };
     } catch (error) {
+      throw new Error(`Error executing action ${name}: ${error.message}`);
       return { success: false, error: error.message };
     }
   }

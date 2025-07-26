@@ -1,155 +1,95 @@
-// inference-manager.module.js
 export const manifest = {
-  name: "inference-manager",
+  name: "inference",
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
   permissions: ["storage"],
-  actions: ["prompt", "getProviders", "setProvider", "getModels", "setModel", "getHistory"],
+  actions: ["prompt", "getProviders", "setProvider", "getHistory"],
   state: {
     reads: [],
-    writes: [ "inference.provider.current", "inference.model.current",  "inference.history", "inference.stream.active", "inference.stream.content"]
+    writes: [ "inference.provider", "inference.history", "inference.stream.content"]
   }
 };
 
-// Provider state management
-const getCurrentProvider = async (state) => await state.read('inference.provider.current');
-const setCurrentProvider = async (state, provider) => await state.write('inference.provider.current', provider);
-const getCurrentModel = async (state) => await state.read('inference.model.current');
-const setCurrentModel = async (state, model) => await state.write('inference.model.current', model);
-// Streaming state management
-const startStream = async (state) => await state.write('inference.stream.active', true);
-const endStream = async (state) => await state.write('inference.stream.active', false);
-const updateStreamContent = async (state, content) => await state.write('inference.stream.content', content);
-// History management
-const addToHistory = async (state, entry) => await state.write('inference.history', [...(await state.read('inference.history') || []), entry]);
-const getHistoryEntries = async (state, count = 10) => (await state.read('inference.history') || []).slice(-count);
-// Provider registry
-const providers = new Set();
-export const registerProvider = (module) => providers.add({module});
-const getProvider = (name) => Array.from(providers).find(provider => provider.module.manifest.name === name) || null;
+const providers = []; // all inference providers
+export const register = (module) => {
+  module.model = module.manifest.defaultModel;
+  providers.push(module);
+  module.models.forEach(validateModel);
+};
+export const getProviders = () => providers;
+export const setProvider = async (module) => await _state.write('inference.provider', module);
+const getProvider = async () => await _state.read('inference.provider') || providers[0];
 
-let _state
-export async function initialize(state, config) {
-  _state = state;
-  if (!(await getCurrentProvider(state))) {
-    await setCurrentProvider(state, config.defaultProvider || 'claude');
-  }
-  
-  // Initialize history if not present
-  if (!(await state.read('inference.history'))) {
-    await state.write('inference.history', []);
-  }
-  
-  // Register available providers from imports
-  // These will be dynamically added by the module registry
-}
+let _state;
+export const initialize = (state) => _state = state;
 
-// Main inference action
-export async function prompt(state, params) {
-  if (!params?.text) return { success: false, error: 'No prompt text provided' };
-  
-  const provider = await getCurrentProvider(state);
-  const model = await getCurrentModel(state) || await getProviderDefaultModel(state, provider);
-  const implementation = getProvider(provider);
-  
-  if (!implementation) return { success: false, error: `Provider ${provider} not available` };
-  
-  const messages = formatMessages(params.text);
-  
+export async function prompt(text) {
+  if (!text) return { success: false, error: 'No prompt text provided' };
+  const provider = await getProvider();
+  const messages = [{ role: 'user', content: text }];
   try {
-    // Start streaming
-    await startStream(state);
     let content = '';
-    
-    // Create history entry placeholder
-    const historyEntry = createHistoryEntry(provider, model, messages);
-    
-    // Stream processor - will be called for each chunk
-    const processChunk = async (chunk) => {
-      content += chunk;
-      await updateStreamContent(state, content);
-    };
-    
-    // Make the request with streaming
-    const result = await implementation.makeRequest(state, messages, model, processChunk);
-    
-    // Complete the history entry
-    historyEntry.response = {
-      content: result.content,
-      metadata: result.metadata
-    };
-    
-    // Add to history
-    await addToHistory(state, historyEntry);
-    
-    // End stream
-    await endStream(state);
-    
-    return { success: true, result };
-  } catch (error) {
-    await endStream(state);
-    return { success: false, error: error.message };
-  }
+    const processChunk = async (chunk) => await updateStreamContent((content += chunk))
+    const response = await provider.makeRequest(messages, provider.model, processChunk);
+    await addToHistory(createHistoryEntry({ provider , messages, response }));
+    return { success: true, result: response };
+  } catch (error) { return { success: false, error: error.message } };
 }
+const updateStreamContent = async (content) => await _state.write('inference.content', content);
 
-// Provider management
-export async function setProvider(state, params) {
-  if (!params?.provider) return { success: false, error: 'No provider specified' };
-  if (!getProvider(params.provider)) return { success: false, error: `Provider ${params.provider} not available` };
-  
-  await setCurrentProvider(state, params.provider);
-  return { success: true, provider: params.provider };
-}
+const createHistoryEntry = (obj) => ({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), ...obj });
+const addToHistory = async (entry) => await _state.write('inference.history', [...(await _state.read('inference.history') || []), entry]);
+const getHistoryEntries = async (count = 10) => (await _state.read('inference.history') || []).slice(-count);
+export const getHistory = async (params) => ({ success: true, result: await getHistoryEntries(params?.count) });
 
-// Model management
-export async function getModels(state) {
-  const provider = await getCurrentProvider(state);
-  const implementation = getProvider(provider);
-  
-  if (!implementation) return { success: false, error: `Provider ${provider} not available` };
-  
-  try {
-    const models = await implementation.getModels(state);
-    return { success: true, models };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function setModel(state, params) {
-  if (!params?.model) return { success: false, error: 'No model specified' };
-  
-  await setCurrentModel(state, params.model);
-  return { success: true, model: params.model };
-}
-
-// History access
-export async function getHistory(state, params) {
-  const count = params?.count || 10;
-  const history = await getHistoryEntries(state, count);
-  return { success: true, history };
-}
-
-// Helper functions
-const formatMessages = (text) => [{ role: 'user', content: text }];
-
-const createHistoryEntry = (provider, model, messages) => ({
-  id: crypto.randomUUID(),
-  timestamp: new Date().toISOString(),
-  provider,
-  model,
-  messages
-});
-
-const getProviderDefaultModel = async (state, provider) => {
-  const implementation = getProvider(provider);
-  if (!implementation) return null;
-  
-  try {
-    const models = await implementation.getModels(state);
-    return models[0] || null;
-  } catch (error) {
-    console.error(`Failed to get default model for ${provider}:`, error);
-    return null;
-  }
-}
+// model validation
+// Valid enum values
+const VALID_CAPABILITIES = ["text", "vision", "function-calling", "code", "reasoning", "web-search", "file-upload", "streaming"];
+const VALID_INPUT_TYPES = ["text", "image", "audio", "video", "document"];
+const VALID_OUTPUT_TYPES = ["text", "image", "audio", "code"];
+const VALID_BEST_FOR = ["complex-reasoning", "code-generation", "document-analysis", "creative-writing", "conversation", "summarization", "translation", "math", "science"];
+// Type validation helpers
+const isString = (val) => typeof val === 'string' && val.length > 0;
+const isNumber = (val) => typeof val === 'number' && val > 0;
+const isArray = (val) => Array.isArray(val);
+const isObject = (val) => val && typeof val === 'object' && !Array.isArray(val);
+const isValidDate = (val) => isString(val) && !isNaN(Date.parse(val));
+const isValidEnum = (val, validValues) => isArray(val) && val.every(v => validValues.includes(v));
+// Validation functions
+const validateTimestamp = (timestamp) => !timestamp || isValidDate(timestamp) || (() => { throw new Error('Timestamp must be valid ISO date string'); })();
+const validateContextVsOutput = (contextWindow, maxOutput) => !contextWindow || !maxOutput || contextWindow > maxOutput || (() => { throw new Error('Context window must be larger than max output'); })();
+const validateRateLimitLogic = (limits) => !limits || validateDailyVsMinute(limits) || (() => { throw new Error('Daily limits should be higher than minute limits × 1440'); })();
+const validateDailyVsMinute = (limits) => !limits.requestsPerDay || !limits.requestsPerMinute || limits.requestsPerDay >= (limits.requestsPerMinute * 10) || (() => { throw new Error('Daily request limit seems too low compared to per-minute limit'); })();
+const validateRateLimitFields = (limits) => Object.values(limits).every(val => !val || isNumber(val));
+const validateCapabilityConsistency = (capabilities, inputTypes) => !capabilities || !inputTypes || validateVisionConsistency(capabilities, inputTypes) || (() => { throw new Error('Vision capability requires image input type'); })();
+const validateVisionConsistency = (capabilities, inputTypes) => !capabilities.includes('vision') || inputTypes.includes('image');
+const validatePricingLogic = (pricing) => !pricing || !pricing.input || !pricing.output || pricing.output >= pricing.input || (() => { throw new Error('Output tokens typically cost more than input tokens'); })();
+const validatePricingFields = (pricing) => (!pricing.input || isNumber(pricing.input)) && (!pricing.output || isNumber(pricing.output));
+export const validators = {
+  id: (id) => isString(id) || (() => { throw new Error('Model ID must be non-empty string'); })(),
+  name: (name) => isString(name) || (() => { throw new Error('Model name must be non-empty string'); })(),
+  family: (family) => !family || isString(family) || (() => { throw new Error('Model family must be string or null'); })(),
+  releaseDate: (date) => !date || isValidDate(date) || (() => { throw new Error('Release date must be valid ISO date string'); })(),
+  capabilities: (caps) => !caps || isValidEnum(caps, VALID_CAPABILITIES) || (() => { throw new Error(`Capabilities must be array from: ${VALID_CAPABILITIES.join(', ')}`); })(),
+  inputTypes: (types) => !types || isValidEnum(types, VALID_INPUT_TYPES) || (() => { throw new Error(`Input types must be array from: ${VALID_INPUT_TYPES.join(', ')}`); })(),
+  outputTypes: (types) => !types || isValidEnum(types, VALID_OUTPUT_TYPES) || (() => { throw new Error(`Output types must be array from: ${VALID_OUTPUT_TYPES.join(', ')}`); })(),
+  bestFor: (bestFor) => !bestFor || isValidEnum(bestFor, VALID_BEST_FOR) || (() => { throw new Error(`Best for must be array from: ${VALID_BEST_FOR.join(', ')}`); })(),
+  contextWindow: (window) => !window || isNumber(window) || (() => { throw new Error('Context window must be positive number'); })(),
+  maxOutput: (output) => !output || isNumber(output) || (() => { throw new Error('Max output must be positive number'); })(),
+  pricing: (pricing) => !pricing || (isObject(pricing) && validatePricingFields(pricing)) || (() => { throw new Error('Pricing must be object with input/output numbers'); })(),
+  rateLimits: (limits) => !limits || (isObject(limits) && validateRateLimitFields(limits)) || (() => { throw new Error('Rate limits must be object with numeric values'); })(),
+  discoveredAt: validateTimestamp,
+  lastSeen: validateTimestamp
+};
+export const validateModel = (model) => {
+  if (!isObject(model)) throw new Error('Model must be an object');
+  Object.keys(model).forEach(key => {
+    const validator = validators[key];
+    if (validator) validator(model[key]);
+  });
+  validateContextVsOutput(model.contextWindow, model.maxOutput);
+  validatePricingLogic(model.pricing);
+  validateRateLimitLogic(model.rateLimits);
+  validateCapabilityConsistency(model.capabilities, model.inputTypes);
+  return true;
+};

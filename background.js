@@ -11,11 +11,11 @@ chrome.runtime.onInstalled.addListener(async () => await initialize());
 async function initialize() {
   try {
     await beginInitialization()
-    await registerModules();
     await registerOauth();
     registerActions();
-    await registerInference();
     await registerContentScripts();
+    await registerInference();
+    await registerModules();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -32,7 +32,11 @@ const registerModules = async () => forAllModules("module", async (module) => {
 });
 const registerOauth = async () => forAllModules('oauth', async (module) => 'oauth' in module && await _state.oauthManager.register(module) );
 const registerContentScripts = async () => forAllModules("contentScript", async (module) => 'contentScript' in module && await _state.actions.execute("content-script-handler.register", module));
-const registerInference = async () => forAllModules("inference", async (module) => 'getModels' in module && await _state.actions.execute("inference.register", module));
+const registerInference = async () => forAllModules("inference", async (module) => {
+  if (module.manifest.defaultModel) {
+    await _state.actions.execute("inference.register", module);
+  }
+});
 const registerActions = () => forAllModules("actions", async (module) => Object.getOwnPropertyNames(module)
   .filter((prop) => typeof module[prop] === 'function')
   .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))

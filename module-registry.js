@@ -11,6 +11,7 @@ import * as debugModule from './debug.module.js';
 import * as tabManagerModule from './tab-manager.module.js';
 import * as developmentModule from './dev.module.js';
 import * as claudeApiModule from './claude-api.module.js';
+import * as inferenceManager from './inference.module.js';
 
 export const modules = [
     tabManagerModule,
@@ -24,7 +25,8 @@ export const modules = [
     groqInferenceModule,
     debugModule,
     developmentModule,
-    claudeApiModule
+    claudeApiModule,
+    inferenceManager
 ];
 
 export const coreFiles = [
