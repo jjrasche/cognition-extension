@@ -12,21 +12,27 @@ export const manifest = {
 
 const providers = []; // all inference providers
 export const register = (module) => {
-  module.model = module.manifest.defaultModel;
-  providers.push(module);
+  providers.push({module, model: module.manifest.defaultModel });
   module.models.forEach(validateModel);
 };
 export const getProviders = () => providers;
-export const setProvider = async (module) => await _state.write('inference.provider', module);
+/*
+let m = (await inference.getProviders())[0]
+await inference.setProvider(m, m.models[2].id)
+*/
+export const setProvider = async (params) => {
+  const { module, model } = params;
+  await _state.write('inference.provider', { module, model: (model ?? module.manifest.defaultModel) });
+}
 const getProvider = async () => await _state.read('inference.provider') || providers[0];
 
 let _state;
 export const initialize = (state) => _state = state;
 
-export async function prompt(text) {
-  if (!text) return { success: false, error: 'No prompt text provided' };
+export async function prompt(params) {
+  if (!params.text) return { success: false, error: 'No prompt text provided' };
   const provider = await getProvider();
-  const messages = [{ role: 'user', content: text }];
+  const messages = [{ role: 'user', content: params.text }];
   try {
     let content = '';
     const processChunk = async (chunk) => await updateStreamContent((content += chunk))

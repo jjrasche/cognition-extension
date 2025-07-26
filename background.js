@@ -11,11 +11,11 @@ chrome.runtime.onInstalled.addListener(async () => await initialize());
 async function initialize() {
   try {
     await beginInitialization()
+    await registerModules();
     await registerOauth();
     registerActions();
     await registerContentScripts();
     await registerInference();
-    await registerModules();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };

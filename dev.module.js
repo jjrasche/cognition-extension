@@ -34,13 +34,15 @@ const addModuleActionsToConsole = () => {
   for (let [name, { actionName, moduleName }] of _state.actions.actions.entries()) {
     moduleName = globalThis.cognition.kebabToCamel(moduleName);
     globalThis[moduleName] ??= {};
-    globalThis[moduleName][actionName] = (params) => _state.actions
+    globalThis[moduleName][actionName] = (params = {}) => {
+      return _state.actions
         .execute(name, params)
         .then(res => {
           console.log(`[Dev] ${moduleName}.${actionName} →`, res.result)
           return res.result;
         })
         .catch(err => console.error(`[Dev] ${moduleName}.${actionName} ✗`, err));
+    }
   }
 };
 const addEasyAccessVariablesToConsole = () => {

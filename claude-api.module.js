@@ -49,11 +49,10 @@ const buildHeaders = (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2
 const getApiKey = async () => (await chrome.storage.sync.get(['claudeApiKey']))['claudeApiKey'] || (() => { throw new Error('Claude API key not configured'); })()
 
 let _apiKey;
-let model; // placeholder to be set by the inference module
 export const initialize = async () => _apiKey = await getApiKey();
 
 // Provider interface implementation
-export const makeRequest = async (messages, onChunk) => {
+export const makeRequest = async (messages, model, onChunk) => {
   const body = JSON.stringify({ model, messages, stream: true });
   const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(_apiKey), body });
   if (!resp.ok) throw new Error(`Claude API error: ${resp.status} - ${await resp.text()}`);
