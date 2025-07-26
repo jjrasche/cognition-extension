@@ -12,7 +12,7 @@ export const manifest = {
 
 const providers = []; // all inference providers
 export const register = (module) => {
-  providers.push({module, model: module.manifest.defaultModel });
+  providers.push(module);
   module.models.forEach(validateModel);
 };
 export const getProviders = () => providers;
@@ -22,9 +22,13 @@ await inference.setProvider(m, m.models[2].id)
 */
 export const setProvider = async (params) => {
   const { module, model } = params;
-  await _state.write('inference.provider', { module, model: (model ?? module.manifest.defaultModel) });
+  await _state.write('inference.provider', { moduleName: module.manifest.name, model });
 }
-const getProvider = async () => await _state.read('inference.provider') || providers[0];
+const getProvider = async () => {
+  const provider = await _state.read('inference.provider');
+  const providerModule = providers.find(async p => p.manifest.name === provider.moduleName);
+  return { name: provider.moduleName, module: providerModule, model: provider.model ?? providerModule.manifest.defaultModel };
+};
 
 let _state;
 export const initialize = (state) => _state = state;
@@ -36,8 +40,8 @@ export async function prompt(params) {
   try {
     let content = '';
     const processChunk = async (chunk) => await updateStreamContent((content += chunk))
-    const response = await provider.makeRequest(messages, provider.model, processChunk);
-    await addToHistory(createHistoryEntry({ provider , messages, response }));
+    const response = await provider.module.makeRequest(messages, provider.model, processChunk);
+    await addToHistory(createHistoryEntry({ provider: provider.name, messages, response }));
     return { success: true, result: response };
   } catch (error) { return { success: false, error: error.message } };
 }

@@ -16,6 +16,7 @@
 // const loadApiKey = async () => (await chrome.storage.sync.get(['claudeApiKey']))['claudeApiKey'];
 // // const validateAPIKey = (key) => key && key.startsWith('sk-ant-') || (() => { throw new Error('Invalid API key'); })();
 // const setAPIKey = async () => ( _apiKey = await loadApiKey(), !!_apiKey || (() => { throw new Error('No API key configured'); })() );
+// const fetchModels = async () => await fetch('https://api.anthropic.com/v1/models', { method: 'GET', headers: buildModelsHeaders() });
 
 // export const initialize = async (state) => {
 //   _state = state;
@@ -47,13 +48,14 @@ export const manifest = {
 
 const buildHeaders = (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
 const getApiKey = async () => (await chrome.storage.sync.get(['claudeApiKey']))['claudeApiKey'] || (() => { throw new Error('Claude API key not configured'); })()
+export const fetchModels = async () => (await (await fetch('https://api.anthropic.com/v1/models', { method: 'GET', headers: buildHeaders(_apiKey) })).json()).data;
 
 let _apiKey;
 export const initialize = async () => _apiKey = await getApiKey();
 
 // Provider interface implementation
 export const makeRequest = async (messages, model, onChunk) => {
-  const body = JSON.stringify({ model, messages, stream: true });
+  const body = JSON.stringify({ model, max_tokens: 4096, messages, stream: true });
   const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(_apiKey), body });
   if (!resp.ok) throw new Error(`Claude API error: ${resp.status} - ${await resp.text()}`);
   return await processStream(resp, onChunk);
@@ -94,7 +96,7 @@ export const models = [{
   "pricing": { "input": 3, "output": 15 },
   "rateLimits": { "requestsPerMinute": 150, "tokensPerMinute": 100000, "requestsPerDay": 15000 }
 }, {
-  "id": "claude-sonnet-3-7-20250219",
+  "id": "claude-3-7-sonnet-20250219",
   "name": "Claude 3.7 Sonnet",
   "releaseDate": "2025-02-19",
   "capabilities": ["text", "vision", "function-calling", "code", "reasoning", "web-search"],
