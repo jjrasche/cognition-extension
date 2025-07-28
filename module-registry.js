@@ -12,6 +12,7 @@ import * as tabManagerModule from './tab-manager.module.js';
 import * as developmentModule from './dev.module.js';
 import * as claudeApiModule from './claude-api.module.js';
 import * as inferenceManager from './inference.module.js';
+import * as inferenceModelValidation from './inference-model-validation.module.js';
 
 export const modules = [
     tabManagerModule,
@@ -26,7 +27,8 @@ export const modules = [
     debugModule,
     developmentModule,
     claudeApiModule,
-    inferenceManager
+    inferenceManager,
+    inferenceModelValidation
 ];
 
 export const coreFiles = [

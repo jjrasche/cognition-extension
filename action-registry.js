@@ -10,13 +10,12 @@ export class ActionRegistry {
     const action = this.actions.get(name);
     if (!action) throw new Error(`Action not found: ${name}`);
     
-    try {
+    // try {
       const result = await action.handler(params);
       return { success: true, result };
-    } catch (error) {
-      throw new Error(`Error executing action ${name}: ${error.message}`);
-      return { success: false, error: error.message };
-    }
+    // } catch (error) {
+    //   throw new Error(`Error executing action ${name}`, error);
+    // }
   }
 
   extractFunctionSignature = (func) => {
