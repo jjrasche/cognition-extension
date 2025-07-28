@@ -19,7 +19,7 @@ const createTabStateStoreFile = async () => await fs.writeFile('build/content-st
   `${(await fs.readFile('state-store.js', 'utf8'))
     .replace(/export class StateStore/g, 'class StateStore')
     .replace(/import.*from.*;\n/g, '')}
-    \n(() => ( window.ContentStore = StateStore,console.log('[ContentState] ContentStore loaded and available') )();`
+    \n(() => ( window.ContentStore = StateStore,console.log('[ContentState] ContentStore loaded and available') ))();`
 );
 const moduleFiles = () => modules
   .map(module => `${module.manifest?.name}.module.js`)

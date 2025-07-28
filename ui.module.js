@@ -196,7 +196,7 @@ async function contentFunction() {
   
   const showModal = (data) => {
     elements.modalTitle.textContent = data.title || 'Confirm';
-    elements.modalText.textContent = data.text;
+    elements.modalText.innerHTML = data.text;
     elements.modal.dataset.responseAction = data.responseAction || '';
     elements.modal.classList.add('visible');
   }

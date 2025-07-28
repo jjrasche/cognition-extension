@@ -65,7 +65,7 @@ const buildModalHTML = async (config) => [
   createModalContainer([
     createModalHeader(),
     initializeProviderDropdown(config),
-    // initializeModelDropdown(config),
+    initializeModelDropdown(config),
     createModalButtons()
   ]),
   createModalScript(config)
@@ -73,7 +73,6 @@ const buildModalHTML = async (config) => [
 const createModalContainer = (children) => `<div style="padding: 24px; min-width: 400px;">${children.join('')}</div>`;
 const createModalHeader = () => `<h3 style="margin: 0 0 20px 0;">Select Inference Provider & Model</h3>`;
 const initializeProviderDropdown = (config) => createDropdown('provider-select', 'Provider:', config.providers.map(p => ({ value: p.name, text: p.name, selected: p.name === config.providerName })));
-// const createModelDropdown = (config) => createDropdown('model-select', 'Model:', config.models.map(m => ({ value: m.id, text: m.name, selected: m.id === config.currentModel })));
 const initializeModelDropdown = (config) => {
   const currentProviderObj = config.providers.find(p => p.name === config.providerName);
   const models = currentProviderObj?.models || [];
