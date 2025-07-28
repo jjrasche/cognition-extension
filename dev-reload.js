@@ -13,8 +13,11 @@
     
     function connect() {
       try {
-        const ws = new WebSocket('ws://localhost:9222');
-        
+        let ws;
+        try {
+          ws = new WebSocket('ws://localhost:9222');
+        } catch (error) { return; }
+
         ws.onopen = () => {
           console.log('[Dev Reload] Connected to watch server');
           reconnectAttempts = 0;

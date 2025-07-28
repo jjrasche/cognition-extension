@@ -26,12 +26,16 @@ export class ActionRegistry {
     return params
   }
 
-  prettyPrint = () => console.table(Array.from(this.actions.entries()).map(([name, action]) => [
-      name, 
-      {
-        module: action.moduleName,
-        action: action.actionName,
-        signature: this.extractFunctionSignature(action.handler).join(', ')
-      }
-    ]));
+  prettyPrint = () => console.table(
+    Object.fromEntries(
+      Array.from(this.actions.entries()).map(([name, action]) => [
+        name,
+        {
+          module: action.moduleName,
+          action: action.actionName,
+          signature: this.extractFunctionSignature(action.handler).join(', ')
+        }
+      ])
+    )
+  );
 }

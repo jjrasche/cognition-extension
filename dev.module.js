@@ -44,11 +44,11 @@ const addModuleActionsToConsole = () => {
         .catch(err => console.error(`[Dev] ${moduleName}.${actionName} ✗`, err));
     }
   }
+  console.log('[Dev] Created action shortcuts:', Array.from(_state.actions.actions.keys()));
 };
 const addEasyAccessVariablesToConsole = () => {
   globalThis.state = _state;
   globalThis.modules = modules;
   globalThis.printActions = () => _state.actions.prettyPrint();
   globalThis.printState = () => _state.getAll()
-  console.log('[Dev] Created action shortcuts:', Array.from(_state.actions.actions.keys()));
 }
