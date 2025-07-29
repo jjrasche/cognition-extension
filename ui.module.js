@@ -17,27 +17,17 @@ export async function initialize(state, config) {
   await initializeUIConfig(config);
   setContentScript();
 };
-const initializeUIConfig = async (config) => {
-  const uiConfig = { position: config.position || 'right', size: config.size || '20%', ...config };
-  await _state.write('ui.config', uiConfig);
-};
+const initializeUIConfig = async (config) => await _state.write('ui.config', { position: config.position || 'right', size: config.size || '20%', ...config });
 
 // Module Actions - These run in the service worker context and communicate with content scripts via state changes
 export const watchUIActions = () => _state.watch('ui.action.request', (request) => _state.actions.execute(request.action, request.params));
-export const show = () => _state.write('ui.visible', true).then(() => ({ success: true }));
-export const hide = () => _state.write('ui.visible', false).then(() => ({ success: true }));
-export const toggle = async () => {
-  const currentValue = await _state.read('ui.visible');
-  const newValue = !currentValue;
-  await _state.write('ui.visible', newValue);
-  return { success: true, value: newValue };
-};
+export const show = async () => _state.write('ui.visible', true);
+export const hide = async () => _state.write('ui.visible', false);
+export const toggle = async () => await _state.write('ui.visible', !(await _state.read('ui.visible')));
 export const notify = (params) => {
-  if (!params?.message) {
-    return { success: false, error: 'Notification requires a message' };
-  }
+  !params?.message && (() => { throw new Error('Notification requires a message'); })();
   return _state.write('ui.notify', {
-    id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    ...generateID('notif'),
     message: params.message,
     type: params.type || 'info',
     from: params.from || 'System',
@@ -45,28 +35,105 @@ export const notify = (params) => {
     timestamp: Date.now(),
   }).then(() => ({ success: true }));
 }
-
-
+const generateID = (prefix) => ({ id: `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}` });
+// Form stack management
+const getStack = async () => await _state.read('ui.formStack') || [];
+const setStack = async (stack) => await _state.write('ui.formStack', stack);
+export const pushForm = async (params) => {
+  (!params || typeof params !== 'object') && (() => { throw new Error("Form configuration required"); })();
+  const stack = await getStack();
+  const formWithId = { ...params, ...generateID('form') };
+  stack.push(formWithId);
+  await setStack(stack);
+  await show();
+  return { success: true, formId: formWithId.id };
+};
+export const popForm = async () => {
+  const stack = await getStack();
+  if (stack.length === 0) return { success: false, error: 'No forms to close' };
+  const removed = stack.pop();
+  await setStack(stack);
+  (stack.length === 0) && await hide();
+  return { success: true, removedForm: removed.id };
+};
+export const clearForms = async () => (await setStack([]), await hide());
 const validateText = (params) => !params?.text && (() => { throw new Error('Modal requires text'); })();
 const createModalConfig = (params) => ({ title: params.title || 'Confirm', text: params.text, timestamp: Date.now() });
 export const modal = (params) => (validateText(params), _state.write('ui.modal', createModalConfig(params)));
-
 /*
  * Content Script
  */
 export let contentScript;
 
-const setContentScript = async () => {
-  contentScript = {
-    contentFunction,
-    css: cssFunction(await _state.read('ui.config')),
-    options: {
-      pattern: 'all',
-    }
+  const setContentScript = async () => {
+    contentScript = {
+      contentFunction,
+      css: cssFunction(await _state.read('ui.config')),
+      options: {
+        pattern: 'all',
+      }
+    };
   };
-};
-async function contentFunction() {
-  console.log('[CognitionUI] Injecting UI content script');
+  async function contentFunction() {
+    console.log('[CognitionUI] Injecting UI content script');
+
+
+  // form
+  const escapeHtml = (str) => globalThis.cognition?.escapeHtml?.(str) || str;
+  const getElementValue = (ele) => (ele instanceof HTMLInputElement || ele instanceof HTMLSelectElement) ? ele.value : '';
+  const getFormValues = (config) => Object.fromEntries(config.fields.map(field => [field.id, getElementValue(getFieldElement(field))]));
+  const getDataset = (ele, sel) => (ele instanceof HTMLElement ? ele.closest(sel) : null).dataset || null;
+  const getFieldElement = (field) => document.getElementById(field.id) || (() => { throw new Error(`Field with id ${field.id} not found`); })();
+
+
+  const formTemplate = (config) => `
+    <div class="cog-form" data-form-id="${config.id}">
+      <h3 style="margin: 0 0 20px 0; color: #fff;">${escapeHtml(config.title)}</h3>
+      ${config.fields.map(field => inputTemplate(field)).join('')}
+      <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+        <button class="cog-btn cog-btn-secondary" data-action="ui.popForm">Cancel</button>
+        <button class="cog-btn cog-btn-primary" data-form-submit="${config.submitAction}">Submit</button>
+      </div>
+    </div>
+  `;
+  const inputTemplate = (field) => 
+    field.type === 'select' ? fieldWrapper(field, selectInput(field)) :
+    field.type === 'text' ? fieldWrapper(field, textInput(field)) : '';
+  const fieldWrapper = (field, inputHtml) => `
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; margin-bottom: 8px; color: rgba(255,255,255,0.9);">${escapeHtml(field.label)}</label>
+      ${inputHtml}
+    </div>
+  `;
+  const selectInput = (field) => `
+    <select id="${field.id}" data-field-id="${field.id}" class="cog-select">
+      ${(field.options || []).map(opt => `<option value="${escapeHtml(opt.value)}" ${opt.value === field.value ? 'selected' : ''}>${escapeHtml(opt.text)}</option>`).join('')}
+    </select>
+  `;
+  const textInput = (field) => `<input  type="${field.inputType || 'text'}"  id="${field.id}"  data-field-id="${field.id}"  class="cog-input"  value="${escapeHtml(field.value || '')}" ${field.placeholder ? `placeholder="${escapeHtml(field.placeholder)}"` : ''} ${field.required ? 'required' : ''} ${field.disabled ? 'disabled' : ''} />`;
+  // if (!stack?.length) return updateContent('');
+  const renderTopForm = (stack) => {
+    const form = stack[stack.length - 1];
+    updateContent(formTemplate(form));
+    setupFormHandlers(form);
+  };
+  const setupFormHandlers = (config) => ( setupFieldChangeHandlers(config), setupSubmitHandler(config) );
+  const setupFieldChangeHandlers = (config) => config.fields.forEach(field => setupFieldChangeHandler(field, config));
+  const setupFieldChangeHandler = (field, config) => getFieldElement(field)?.addEventListener('change', (e) => updateDepFields(field.id, getElementValue(e.target), config));
+  const setupSubmitHandler = (config) => document.querySelector('[data-form-submit]')?.addEventListener('click', async (e) => (e.preventDefault(), submitForm(e, config)));
+  const submitForm = async (ele, config) => await state.write('ui.action.request', { action: ele.target.dataset.formSubmit, params: getFormValues(config) });
+  
+  const updateDepFields = (changedId, value, config) => config.fields.filter(f => f.dependsOn?.includes(changedId)).forEach(e => updateDepField(e, value));
+  // todo: update for other input elements
+  const updateDepField = (field, value) => setSelectOptions(getFieldElement(field), field.options[value]);
+  const setSelectOptions = (sel, opts) => sel.innerHTML = opts.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.text)}</option>`).join('');
+
+
+
+
+
+
+
   (window.__Cognition ??= {}).ui = true;
   const modalTemplate = `
     <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
@@ -111,16 +178,12 @@ async function contentFunction() {
     state.watch('ui.content', updateContent);
     state.watch('ui.notify', addNotification);
     state.watch('ui.modal', showModal);
+    state.watch('ui.formStack', renderTopForm);
   }
-  
-  const getElementDataset = (element, selector) => {
-    const targetEl = element instanceof HTMLElement ? element.closest(selector) : null;
-    return targetEl?.dataset || null;
-  }
-  
+
   const setupActionClickHandlers = () => {
     document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
-      const dataSet = getElementDataset(e.target, '[data-action]');
+      const dataSet = getDataset(e.target, '[data-action]');
       if (dataSet?.action) {
         await state.write('ui.action.request', { 
           action: dataSet.action, 
@@ -437,6 +500,70 @@ function cssFunction (config) {
         min-width: 90vw;
         padding: 20px;
       }
+    }
+
+    /* Form styles */  
+    .cog-form { padding: 20px; }
+    .cog-select {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    .cog-select:focus {
+      border-color: rgba(99,102,241,0.6);
+      background: rgba(255,255,255,0.15);
+    }
+    .cog-btn {
+      padding: 8px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+      border: 1px solid;
+    }
+    .cog-btn-primary {
+      background: rgba(99,102,241,0.2);
+      border-color: rgba(99,102,241,0.5);
+      color: #fff;
+    }
+    .cog-btn-primary:hover {
+      background: rgba(99,102,241,0.3);
+      border-color: rgba(99,102,241,0.7);
+    }
+    .cog-btn-secondary {
+      background: none;
+      border-color: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+    .cog-btn-secondary:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .cog-input {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    .cog-input:focus {
+      border-color: rgba(99,102,241,0.6);
+      background: rgba(255,255,255,0.15);
+    }
+    .cog-input::placeholder {
+      color: rgba(255,255,255,0.4);
+    }
+    .cog-input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   `;
 }

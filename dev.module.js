@@ -50,5 +50,18 @@ const addEasyAccessVariablesToConsole = () => {
   globalThis.state = _state;
   globalThis.modules = modules;
   globalThis.printActions = () => _state.actions.prettyPrint();
-  globalThis.printState = () => _state.getAll()
+  globalThis.printState = async () => {
+    const state = await _state.getAll();
+    console.table(
+      Object.fromEntries(
+        Object.entries(state).map(([key, value]) => [
+          key,
+          {
+            value: JSON.stringify(value),
+            type: typeof value
+          }
+        ])
+      )
+    );
+  };
 }

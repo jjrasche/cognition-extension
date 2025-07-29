@@ -40,7 +40,7 @@ const injectAllPatternModules = async (tab) => {
 };
 const injectContentIntoExistingTabs = async () => await forAllValidTabs((tab) => injectAllPatternModules(tab));
 const handleNewTab = async (tab) => await injectAllPatternModules(tab);
-const handleTabNavigation = async (event) => (console.log(event), await injectAllPatternModules(event.tab));
+const handleTabNavigation = async (event) => await injectAllPatternModules(event.tab);
 
 // register a new content script module
 const defaultOptions = { pattern: 'all' };
@@ -75,7 +75,7 @@ async function injectModuleScript(moduleName, tab) {
       if (registration.css) await insertCSS(registration.css, tab);
     }
     if (!stateLoaded || !moduleLoaded) console.log(`[ContentHandler] Injecting ${moduleName} into tab ${tab.title || tab.id} ${stateLoaded ? '' : '(state)'}${moduleLoaded ? '' : '(module)'}`);
-    else console.log(`[ContentHandler] ${moduleName} already loaded in tab ${tab.title || tab.id}`);
+    // else console.log(`[ContentHandler] ${moduleName} already loaded in tab ${tab.title || tab.id}`);
     return { success: true };
   } catch (error) {
     if (error.message.includes('Cannot access contents')) {
