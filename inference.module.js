@@ -34,11 +34,6 @@ export async function prompt(params) {
     return { success: true, result: response };
   } catch (error) { return { success: false, error: error.message } };
 }
-// const getProvider = async () => {
-//   const provider = await getCurrentProvider();
-//   const providerModule = providers.find(async p => p.manifest.name === provider.providerName);
-//   return { name: provider.providerName, module: providerModule, model: provider.model ?? providerModule.manifest.defaultModel };
-// };
 const updateStreamContent = async (content) => await _state.write('inference.content', content);
 // history management
 const createHistoryEntry = (obj) => ({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), ...obj });
@@ -59,7 +54,6 @@ const getProvider = (providerName) => providers.find(p => p.manifest.name === pr
 const getModel = (providerModule, modelName) => providerModule.manifest.models?.find(m => m.id === modelName) || (() => { throw new Error(`Model ${modelName} not found for provider ${providerModule.manifest.name}`); })();
 
 export const showModelSelector = async () => await _state.actions.execute('ui.modal', { text: await buildModalHTML(await createModalConfig()) });
-// {model: 'claude-3-7-sonnet-20250219', moduleName: 'claude-api'}
 const createModalConfig = async () => ({ providers: providers.map(p => ({ name: p.manifest.name, models: p.manifest.models || [] })), ...await getCurrent() });
 const buildModalHTML = async (config) => [
   createModalContainer([

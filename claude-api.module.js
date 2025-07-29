@@ -9,6 +9,7 @@ const buildHeaders = (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2
 const getApiKey = async () => (await chrome.storage.sync.get(['claudeApiKey']))['claudeApiKey'] || (() => { throw new Error('Claude API key not configured'); })()
 const fetchModels = async () => (await (await fetch(`https://api.anthropic.com/v1/models`, { method: 'GET', headers: buildHeaders(_apiKey) })).json()).data;
 export const viewModels = async () => console.table(Object.fromEntries((await fetchModels()).map(({ display_name, id, created_at }) => [display_name, { id, created_at }])));
+export const setApiKey = async (key) => (_apiKey = key, await chrome.storage.sync.set({ claudeApiKey: key }));
 
 let _apiKey;
 export const initialize = async () => _apiKey = await getApiKey();
