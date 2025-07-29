@@ -68,7 +68,6 @@ const buildModalHTML = async (config) => [
     initializeModelDropdown(config),
     createModalButtons()
   ]),
-  createModalScript(config)
 ].join('');
 const createModalContainer = (children) => `<div style="padding: 24px; min-width: 400px;">${children.join('')}</div>`;
 const createModalHeader = () => `<h3 style="margin: 0 0 20px 0;">Select Inference Provider & Model</h3>`;

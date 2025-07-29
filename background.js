@@ -12,10 +12,10 @@ async function initialize() {
   try {
     await beginInitialization()
     await registerModules();
-    await registerOauth();
     registerActions();
-    await registerContentScripts();
+    await registerOauth();
     await registerInference();
+    await registerContentScripts();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -30,8 +30,8 @@ const registerModules = async () => forAllModules("module", async (module) => {
   await module.initialize(_state, await getModuleConfig(module));
   loaded.push({ name: module.manifest.name, version: module.manifest?.version, status: 'active' });
 });
-const registerOauth = async () => forAllModules('oauth', async (module) => 'oauth' in module && await _state.oauthManager.register(module) );
-const registerContentScripts = async () => forAllModules("contentScript", async (module) => 'contentScript' in module && await _state.actions.execute("content-script-handler.register", module));
+const registerOauth = async () => forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
+const registerContentScripts = async () => forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);
 const registerInference = async () => forAllModules("inference", async (module) => {
   if (module.manifest.defaultModel) {
     await _state.actions.execute("inference.register", module);
@@ -43,8 +43,8 @@ const registerActions = () => forAllModules("actions", async (module) => Object.
   .forEach(actionName => _state.actions.register(module.manifest.name, actionName, module[actionName]))
 );
 
-const forAllModules = async (action, operation) => {
-  for (const module of modules) {
+const forAllModules = async (action, operation, filter = () => true) => {
+  for (const module of modules.filter(filter)) {
     try { await operation(module) }
     catch (err) { 
       console.error(`[Background] Failed to register ${action} for ${module.manifest.name}:`, err);

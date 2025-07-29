@@ -10,8 +10,6 @@ export const manifest = {
 const registrations = new Set();
 const getRegistration = (moduleName) => [...registrations].find(reg => reg.moduleName === moduleName) || (() => { throw new Error(`Module ${moduleName} not registered`); })();
 const addRegistration = (moduleName, contentFunction, css, options) => registrations.add({ moduleName, contentFunction, css, options });
-// track which modules are injected into which tabs
-const tabInjectionState = new Map()
 
 let _state;
 export async function initialize(state) {
@@ -22,9 +20,9 @@ export async function initialize(state) {
 
 const setupTabListeners = async() => _state.watch('tabs.events', handleTabEvent);
 const handleTabEvent = async (event) => {
+  if (event.changeInfo?.status !== "complete") return;
   if (event.type === 'created') setTimeout(() => handleNewTab(event.tab), 100);
-  else if (event.type === 'updated') await handleTabNavigation(event.tab);
-  else if (event.type === 'removed') await removeTabFromInjected(event.tab);
+  else if (event.type === 'updated') await handleTabNavigation(event);
 };
 const requestNewTab = async () => await _state.write('tabs.createRequest', { url: 'about:blank', timestamp: Date.now() });
 
@@ -42,11 +40,7 @@ const injectAllPatternModules = async (tab) => {
 };
 const injectContentIntoExistingTabs = async () => await forAllValidTabs((tab) => injectAllPatternModules(tab));
 const handleNewTab = async (tab) => await injectAllPatternModules(tab);
-const handleTabNavigation = async (tab) => {
-  await removeTabFromInjected(tab);
-  await injectAllPatternModules(tab);
-}
-const removeTabFromInjected = async (tab) => tabInjectionState.has(tab.id) && tabInjectionState.delete(tab.id);
+const handleTabNavigation = async (event) => (console.log(event), await injectAllPatternModules(event.tab));
 
 // register a new content script module
 const defaultOptions = { pattern: 'all' };
@@ -61,14 +55,11 @@ export async function register(module) {
   validatePattern(options.pattern);
   addRegistration(moduleName, contentFunction, css, options);
   
-  if (options.pattern === 'all') {
-    await injectIntoAllTabs(moduleName);
-  } else if (options.pattern === 'current') {
+  if (options.pattern === 'all') await injectIntoAllTabs(moduleName);
+  else if (options.pattern === 'current') {
     const currentTab = await _state.read('tabs.current');
     if (currentTab) await injectModuleScript(moduleName, currentTab);
-  } else if (options.pattern === 'new') {
-    await requestNewTab();
-  }
+  } else if (options.pattern === 'new') await requestNewTab();
   return { success: true, moduleName };
 }
 
@@ -77,15 +68,14 @@ const injectIntoAllTabs = async (moduleName) => await forAllValidTabs((tab) => i
 async function injectModuleScript(moduleName, tab) {
   try {
     const registration = getRegistration(moduleName);
-    const tabState = tabInjectionState.get(tab.id) || {};
-    if (!tabState.state)
-      await insertState(tab);
-    if (!tabState[moduleName]) {
+    const [stateLoaded, moduleLoaded] = await Promise.all([(await ModuleLoadedInDOM(manifest.name, tab)), (await ModuleLoadedInDOM(moduleName, tab))]);
+    if (!stateLoaded) await insertState(tab);
+    if (!moduleLoaded) {
       await insertContent(registration.contentFunction, tab);
       if (registration.css) await insertCSS(registration.css, tab);
     }
-    tabInjectionState.set(tab.id, { ...tabState, state: true, [moduleName]: true});
-    console.log(`[ContentHandler] Injected ${moduleName} into tab ${tab.title || tab.id}`);
+    if (!stateLoaded || !moduleLoaded) console.log(`[ContentHandler] Injecting ${moduleName} into tab ${tab.title || tab.id} ${stateLoaded ? '' : '(state)'}${moduleLoaded ? '' : '(module)'}`);
+    else console.log(`[ContentHandler] ${moduleName} already loaded in tab ${tab.title || tab.id}`);
     return { success: true };
   } catch (error) {
     if (error.message.includes('Cannot access contents')) {
@@ -96,9 +86,12 @@ async function injectModuleScript(moduleName, tab) {
     return { success: false, error: error.message };
   }
 }
-const insertContent = async (contentFunction, tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: contentFunction, world: 'ISOLATED' });
-const insertState = async (tab) => {
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'ISOLATED', files: ['./content-state.js'] });
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', files: ['./content-state.js'] }); // enable access in dev console
-}
+const world = 'MAIN'; // use MAIN to debug in devtools
+const insertContent = async (contentFunction, tab) => { await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, func: contentFunction }); }
+const insertState = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, files: ['./content-state.js'] });
 const insertCSS = async (css, tab) => await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css });
+const getExtensionObject = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, func: () => window.__Cognition })
+const ModuleLoadedInDOM  = async (moduleName, tab) => {
+  try {return (await getExtensionObject(tab))[0].result[moduleName] }
+  catch(error) { return false; }
+};

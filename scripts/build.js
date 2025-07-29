@@ -16,10 +16,14 @@ async function build() {
 }
 // helpers
 const createTabStateStoreFile = async () => await fs.writeFile('build/content-state.js',
-  `${(await fs.readFile('state-store.js', 'utf8'))
-    .replace(/export class StateStore/g, 'class StateStore')
-    .replace(/import.*from.*;\n/g, '')}
-    \n(() => ( window.ContentStore = StateStore,console.log('[ContentState] ContentStore loaded and available') ))();`
+  `(function() {
+    if (window.__Cognition) return; // Already loaded
+    ${(await fs.readFile('state-store.js', 'utf8'))
+      .replace(/export class StateStore/g, 'class StateStore')
+      .replace(/import.*from.*;\n/g, '')}
+    window.ContentStore = StateStore;
+    window.__Cognition = { "content-script-handler": true };
+  })();`
 );
 const moduleFiles = () => modules
   .map(module => `${module.manifest?.name}.module.js`)

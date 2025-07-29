@@ -11,7 +11,7 @@ export class StateStore {
         const oldState = changes[COGNITION_STATE].oldValue || {};
         const newState = changes[COGNITION_STATE].newValue || {};
         for (const [key, value] of Object.entries(newState)) {
-          if (oldState[key] !== value) {
+          if (JSON.stringify(oldState[key]) != JSON.stringify(value)) {
             this.notifyWatchers(key, value);
           }
         }
@@ -37,6 +37,7 @@ export class StateStore {
   write = async (key, value) => {
     const stored = await chrome.storage.local.get(COGNITION_STATE);
     const state = stored[COGNITION_STATE] || {};
+    if (JSON.stringify(state[key]) === JSON.stringify(value)) return;
     state[key] = value;
     await chrome.storage.local.set({ [COGNITION_STATE]: state });
   }

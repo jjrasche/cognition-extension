@@ -45,17 +45,11 @@ export const notify = (params) => {
     timestamp: Date.now(),
   }).then(() => ({ success: true }));
 }
-export const modal = (params) => {
-  if (!params?.text) {
-    return { success: false, error: 'Modal requires text' };
-  }
-  return _state.write('ui.modal', {
-    title: params.title || 'Confirm',
-    text: params.text,
-    responseAction: params.responseAction || '',
-    timestamp: Date.now()
-  }).then(() => ({ success: true }));
-}
+
+
+const validateText = (params) => !params?.text && (() => { throw new Error('Modal requires text'); })();
+const createModalConfig = (params) => ({ title: params.title || 'Confirm', text: params.text, timestamp: Date.now() });
+export const modal = (params) => (validateText(params), _state.write('ui.modal', createModalConfig(params)));
 
 /*
  * Content Script
@@ -72,17 +66,11 @@ const setContentScript = async () => {
   };
 };
 async function contentFunction() {
-  if (window && '__cognitionUI' in window) return; // Prevent re-injection
   console.log('[CognitionUI] Injecting UI content script');
+  (window.__Cognition ??= {}).ui = true;
   const modalTemplate = `
     <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
     <div class="cog-modal-content">
-      <h3 class="cog-modal-title"></h3>
-      <p class="cog-modal-text"></p>
-      <div class="cog-modal-buttons">
-        <button class="cog-modal-btn" data-modal-response="true">Yes</button>
-        <button class="cog-modal-btn" data-modal-response="false">No</button>
-      </div>
     </div>
   `;
   
@@ -120,12 +108,11 @@ async function contentFunction() {
   
   const setupStateListener = () => {
     state.watch('ui.visible', (value) => value ? show() : hide());
-    state.watch('ui.content', (html) => updateContent(html));
-    state.watch('ui.notify', (data) => addNotification(data));
-    state.watch('ui.modal', (data) => showModal(data));
+    state.watch('ui.content', updateContent);
+    state.watch('ui.notify', addNotification);
+    state.watch('ui.modal', showModal);
   }
   
-  // FIXED: Return null instead of throwing error
   const getElementDataset = (element, selector) => {
     const targetEl = element instanceof HTMLElement ? element.closest(selector) : null;
     return targetEl?.dataset || null;
@@ -140,18 +127,6 @@ async function contentFunction() {
           params: JSON.parse(dataSet.params || '{}') 
         });
       }
-    });
-  }
-  
-  const setupModalResponseClickHandlers = () => {
-    document.addEventListener('click', async (e) => {
-      const dataSet = getElementDataset(e.target, '[data-modal-response]');
-      if (!dataSet || !dataSet.modalResponse) return;      
-      const responseAction = elements.modal?.dataset?.responseAction;
-      if (responseAction) {
-        await state.write(responseAction, { response: dataSet.modalResponse === 'true' });
-      }
-      hideModal();
     });
   }
   
@@ -194,16 +169,11 @@ async function contentFunction() {
     }, data.duration || 5000);
   }
   
-  const showModal = (data) => {
+  const showModal = async (data) => {
     elements.modalTitle.textContent = data.title || 'Confirm';
     elements.modalText.innerHTML = data.text;
-    elements.modal.dataset.responseAction = data.responseAction || '';
     elements.modal.classList.add('visible');
-  }
-  
-  const hideModal = () => {
-    elements.modal.classList.remove('visible');
-    delete elements.modal.dataset.responseAction;
+    await setTimeout(async () => { await _state.remove('ui.modal'); }, 5000);
   }
   
   // Initialize UI
@@ -211,10 +181,7 @@ async function contentFunction() {
     createElements();
     setupStateListener();
     setupActionClickHandlers();
-    setupModalResponseClickHandlers();
-    const uiVisible = await state.read('ui.visible');
-    if (uiVisible) show();
-    window['__cognitionUI'] = {};
+    if (await state.read('ui.visible')) show();
   })();
 }
 
