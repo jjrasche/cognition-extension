@@ -65,18 +65,17 @@ export const modal = (params) => (validateText(params), _state.write('ui.modal',
  */
 export let contentScript;
 
-  const setContentScript = async () => {
-    contentScript = {
-      contentFunction,
-      css: cssFunction(await _state.read('ui.config')),
-      options: {
-        pattern: 'all',
-      }
-    };
+const setContentScript = async () => {
+  contentScript = {
+    contentFunction,
+    css: cssFunction(await _state.read('ui.config')),
+    options: {
+      pattern: 'all',
+    }
   };
-  async function contentFunction() {
-    console.log('[CognitionUI] Injecting UI content script');
-
+};
+async function contentFunction() {
+  console.log('[CognitionUI] Injecting UI content script');
 
   // form
   const escapeHtml = (str) => globalThis.cognition?.escapeHtml?.(str) || str;
@@ -129,11 +128,6 @@ export let contentScript;
   const setSelectOptions = (sel, opts) => sel.innerHTML = opts.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.text)}</option>`).join('');
 
 
-
-
-
-
-
   (window.__Cognition ??= {}).ui = true;
   const modalTemplate = `
     <div class="cog-modal-backdrop" data-action="ui.modal.close"></div>
@@ -160,8 +154,7 @@ export let contentScript;
 
   let elements = {};
   const notifications = new Map();
-  const state = new window.ContentStore();
-  
+  const state = new window.ContentStore();  
   const createElements = () => {
     const container = Object.assign(document.createElement('div'), { id: 'cognition-container', className: 'cognition-ui', innerHTML: mainTemplate });
     const notifications = Object.assign(document.createElement('div'), { id: 'cognition-notifications', className: 'cognition-ui' });

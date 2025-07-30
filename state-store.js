@@ -11,6 +11,9 @@ export class StateStore {
         const oldState = changes[COGNITION_STATE].oldValue || {};
         const newState = changes[COGNITION_STATE].newValue || {};
         for (const [key, value] of Object.entries(newState)) {
+          if (!!self && !!self.__Cognition) {
+            debugger;
+          }
           if (JSON.stringify(oldState[key]) != JSON.stringify(value)) {
             this.notifyWatchers(key, value);
           }
