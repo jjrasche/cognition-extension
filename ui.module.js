@@ -113,6 +113,7 @@ async function contentFunction() {
   // if (!stack?.length) return updateContent('');
   const renderTopForm = (stack) => {
     const form = stack[stack.length - 1];
+    debugger;
     updateContent(formTemplate(form));
     setupFormHandlers(form);
   };

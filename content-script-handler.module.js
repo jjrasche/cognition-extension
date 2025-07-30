@@ -86,12 +86,11 @@ async function injectModuleScript(moduleName, tab) {
     return { success: false, error: error.message };
   }
 }
-// MAIN to have access in devtools, ISOLATED to access chrome APIs
-const world = 'ISOLATED'; 
-const insertContent = async (contentFunction, tab) => { await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", func: contentFunction }); }
-const insertState = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", files: ['./content-state.js'] });
+const world = 'ISOLATED'; // use MAIN to debug in devtools
+const insertContent = async (contentFunction, tab) => { await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, func: contentFunction }); }
+const insertState = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, files: ['./content-state.js'] });
 const insertCSS = async (css, tab) => await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css });
-const getExtensionObject = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", func: () => window.__Cognition }) || await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", func: () => window.__Cognition })
+const getExtensionObject = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, func: () => window.__Cognition })
 const ModuleLoadedInDOM  = async (moduleName, tab) => {
   try {return (await getExtensionObject(tab))[0].result[moduleName] }
   catch(error) { return false; }

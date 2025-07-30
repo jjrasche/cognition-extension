@@ -55,7 +55,7 @@ const getProvider = (providerName) => providers.find(p => p.manifest.name === pr
 const getModel = (providerModule, modelName) => providerModule.manifest.models?.find(m => m.id === modelName) || (() => { throw new Error(`Model ${modelName} not found for provider ${providerModule.manifest.name}`); })();
 const createModelSelectorForm = async () => {
   const current = await getCurrent();
-  const modelOptions = Object.fromEntries(providers.map(p => [p.name, (p.manifest.models || []).map(m => ({ value: m.id, text: m.name }))]));
+  const modelOptions = Object.fromEntries(providers.map(p => [p.manifest.name, (p.manifest.models || []).map(m => ({ value: m.id, text: m.name }))]));
   const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.manifest.name }));
   return {
     title: "Select Inference Provider & Model",
