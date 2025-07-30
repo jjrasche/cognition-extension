@@ -113,7 +113,7 @@ async function contentFunction() {
   // if (!stack?.length) return updateContent('');
   const renderTopForm = (stack) => {
     const form = stack[stack.length - 1];
-    debugger;
+    setTimeout(() => initializeDependentFields(form), 100);
     updateContent(formTemplate(form));
     setupFormHandlers(form);
   };
@@ -123,11 +123,23 @@ async function contentFunction() {
   const setupSubmitHandler = (config) => document.querySelector('[data-form-submit]')?.addEventListener('click', async (e) => (e.preventDefault(), submitForm(e, config)));
   const submitForm = async (ele, config) => await state.write('ui.action.request', { action: ele.target.dataset.formSubmit, params: getFormValues(config) });
   
-  const updateDepFields = (changedId, value, config) => config.fields.filter(f => f.dependsOn?.includes(changedId)).forEach(e => updateDepField(e, value));
+  const updateDepFields = (changedId, value, config) => config.fields.filter(f => f.dependsOn == changedId).forEach(e => updateDepField(e, value));
   // todo: update for other input elements
-  const updateDepField = (field, value) => setSelectOptions(getFieldElement(field), field.options[value]);
+  const updateDepField = (field, value) => {
+    if (field.optionsByDependency && field.optionsByDependency[value]) {
+      const newOptions = field.optionsByDependency[value];
+      setSelectOptions(getFieldElement(field), newOptions);
+      field.options = newOptions;
+    }
+  }
+  const initializeDependentFields = (config) => {
+      config.fields.filter(field => (field.dependsOn && field.optionsByDependency)).forEach(field => {
+        const dependentField = config.fields.find(f => f.id === field.dependsOn);
+        const dependentOptions = field.optionsByDependency[dependentField.value];
+        if (dependentField.value && dependentOptions) field.options = dependentOptions;
+    });
+  }
   const setSelectOptions = (sel, opts) => sel.innerHTML = opts.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.text)}</option>`).join('');
-
 
   (window.__Cognition ??= {}).ui = true;
   const modalTemplate = `
@@ -176,15 +188,15 @@ async function contentFunction() {
   }
 
   const setupActionClickHandlers = () => {
-    document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
-      const dataSet = getDataset(e.target, '[data-action]');
-      if (dataSet?.action) {
-        await state.write('ui.action.request', { 
-          action: dataSet.action, 
-          params: JSON.parse(dataSet.params || '{}') 
-        });
-      }
-    });
+    // document.getElementById("cognition-container")?.addEventListener('click', async (e) => {
+    //   const dataSet = getDataset(e.target, '[data-action]');
+    //   if (dataSet?.action) {
+    //     await state.write('ui.action.request', { 
+    //       action: dataSet.action, 
+    //       params: JSON.parse(dataSet.params || '{}') 
+    //     });
+    //   }
+    // });
   }
   
   const show = () => {

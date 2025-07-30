@@ -61,7 +61,7 @@ const createModelSelectorForm = async () => {
     title: "Select Inference Provider & Model",
     fields: [
       { id: "provider", type: "select", label: "Provider:", options: providerOptions, value: current.providerName },
-      { id: "model",    type: "select", label: "Model:",    options: modelOptions,    value: current.modelName, dependsOn: ["provider"] }
+      { id: "model", type: "select", label: "Model:", options: [], optionsByDependency: modelOptions, value: current.modelName, dependsOn: "provider" }
     ],
     submitAction: "inference.setProviderAndModel",
   };
