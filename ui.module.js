@@ -136,7 +136,10 @@ async function contentFunction() {
       config.fields.filter(field => (field.dependsOn && field.optionsByDependency)).forEach(field => {
         const dependentField = config.fields.find(f => f.id === field.dependsOn);
         const dependentOptions = field.optionsByDependency[dependentField.value];
-        if (dependentField.value && dependentOptions) field.options = dependentOptions;
+        // if (dependentField.value && dependentOptions) {
+        //   field.options = dependentOptions;
+        //   setSelectOptions(getFieldElement(field), field.options || []);
+        // }
     });
   }
   const setSelectOptions = (sel, opts) => sel.innerHTML = opts.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.text)}</option>`).join('');

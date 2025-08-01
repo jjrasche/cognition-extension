@@ -66,6 +66,7 @@ export async function register(module) {
 // Inject content scripts
 const injectIntoAllTabs = async (moduleName) => await forAllValidTabs((tab) => injectModuleScript(moduleName, tab));
 async function injectModuleScript(moduleName, tab) {
+  console.log(`[ContentHandler] Injecting ${moduleName} into tab ${tab.title || tab.id}`);
   try {
     const registration = getRegistration(moduleName);
     const [stateLoaded, moduleLoaded] = await Promise.all([(await ModuleLoadedInDOM(manifest.name, tab)), (await ModuleLoadedInDOM(moduleName, tab))]);
@@ -74,8 +75,8 @@ async function injectModuleScript(moduleName, tab) {
       await insertContent(registration.contentFunction, tab);
       if (registration.css) await insertCSS(registration.css, tab);
     }
-    if (!stateLoaded || !moduleLoaded) console.log(`[ContentHandler] Injecting ${moduleName} into tab ${tab.title || tab.id} ${stateLoaded ? '' : '(state)'}${moduleLoaded ? '' : '(module)'}`);
-    // else console.log(`[ContentHandler] ${moduleName} already loaded in tab ${tab.title || tab.id}`);
+    if (!stateLoaded || !moduleLoaded) console.log(`[ContentHandler] Injected ${moduleName} into tab ${tab.title || tab.id} ${stateLoaded ? '' : '(state)'}${moduleLoaded ? '' : '(module)'}`);
+    else console.log(`[ContentHandler] ${moduleName} already loaded in tab ${tab.title || tab.id}`);
     return { success: true };
   } catch (error) {
     if (error.message.includes('Cannot access contents')) {
@@ -92,6 +93,6 @@ const insertState = async (tab) => await chrome.scripting.executeScript({ target
 const insertCSS = async (css, tab) => await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css });
 const getExtensionObject = async (tab) => await chrome.scripting.executeScript({ target: { tabId: tab.id }, world, func: () => window.__Cognition })
 const ModuleLoadedInDOM  = async (moduleName, tab) => {
-  try {return (await getExtensionObject(tab))[0].result[moduleName] }
+  try { return (await getExtensionObject(tab))[0].result[moduleName] }
   catch(error) { return false; }
 };
