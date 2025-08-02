@@ -3,10 +3,10 @@ export const manifest = {
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
   permissions: ["storage"],
-  actions: ["prompt", "setProvider", "getHistory"],
+  actions: ["prompt", "setProvider"],
   state: {
     reads: [],
-    writes: [ "inference.current", "inference.history", "inference.stream.content"]
+    writes: ["inference.current", "inference.stream.content"]
   }
 };
 
@@ -22,24 +22,19 @@ export const register = (module) => {
 };
 // handle prompt
 export async function prompt(params) {
-  if (!params.text) return { success: false, error: "No prompt text provided" };
+  const { userPrompt } = params;
   const { providerName, modelName } = await getCurrent();
   const provider = await getProvider(providerName);
-  const messages = [{ role: "user", content: params.text }];
+  const assembledPrompt = await _state.actions.execute("context.assemble");
   try {
     let content = "";
     const processChunk = async (chunk) => await updateStreamContent((content += chunk))
-    const response = await provider.module.makeRequest(messages, modelName, processChunk);
-    await addToHistory(createHistoryEntry({ providerName, modelName, messages, response }));
+    const response = await provider.module.makeRequest(assembledPrompt, modelName, processChunk);
+    storeInteractionInGraph({ userPrompt, assembledPrompt, response });
     return { success: true, result: response };
   } catch (error) { return { success: false, error: error.message } };
 }
 const updateStreamContent = async (content) => await _state.write("inference.content", content);
-// history management
-const createHistoryEntry = (obj) => ({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), ...obj });
-const addToHistory = async (entry) => await _state.write("inference.history", [...(await _state.read("inference.history") || []), entry]);
-const getHistoryEntries = async (count = 10) => (await _state.read("inference.history") || []).slice(-count);
-export const getHistory = async (params) => ({ success: true, result: await getHistoryEntries(params?.count) });
 // update state
 export const showModelSelector = async () => await _state.actions.execute("ui.pushForm", await createModelSelectorForm());
 export const setProviderAndModel = async (params) => {
@@ -67,6 +62,22 @@ const createModelSelectorForm = async () => {
   };
 };
 
+const storeInteractionInGraph = async (params) => {
+  const { userPrompt, assembledPrompt, response } = params;
+  const { providerName, modelName } = await getCurrent();
+  try {
+    const graphNodeId = await _state.actions.execute('graph-db.addInferenceNode', {
+      userPrompt,
+      assembledPrompt,
+      response,
+      model: `${providerName} - ${modelName}`,
+      timestamp: new Date().toISOString()
+    });
+    console.log(`[Inference] Stored interaction in graph: ${graphNodeId.result}`);
+  } catch (graphError) {
+    console.error('[Inference] Failed to store interaction in graph:', graphError);
+  }
+};
 
 // export const setProviderAndModel = async (params) => {
 //   const { providerName, modelName } = (params.providerName && params.modelName) ? params : (() => { throw new Error("Provider and model required"); })()
@@ -94,7 +105,7 @@ const createModelSelectorForm = async () => {
 // const initializeModelDropdown = (config) => {
 //   const currentProviderObj = config.providers.find(p => p.name === config.providerName);
 //   const models = currentProviderObj?.models || [];
-//   return createDropdown("model-select", "Model:", 
+//   return createDropdown("model-select", "Model:",
 //     models.map(m => ({ value: m.id, text: m.name, selected: m.id === config.model }))
 //   );
 // };

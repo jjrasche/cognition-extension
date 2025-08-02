@@ -6,6 +6,7 @@
 // Module manifest
 export const manifest = {
   name: "fitbit",
+  keywords: ["health", "fitness", "wearable"],
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["refreshAllData"],

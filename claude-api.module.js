@@ -1,5 +1,6 @@
 export let manifest = {
   name: "claude-api",
+  keywords: ["claude", "anthropic"],
   version: "1.0.0",
   permissions: ["storage"],
   defaultModel: "claude-3-5-sonnet-20241022"

@@ -28,7 +28,7 @@ const getModuleConfig = async (module) => await _state.read(`modules.${module.ma
 
 const registerModules = async () => forAllModules("module", async (module) => {
   await module.initialize(_state, await getModuleConfig(module));
-  loaded.push({ name: module.manifest.name, version: module.manifest?.version, status: 'active' });
+  loaded.push(module.manifest);
 });
 const registerOauth = async () => forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
 const registerContentScripts = async () => forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);

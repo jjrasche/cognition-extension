@@ -33,10 +33,10 @@ export const findSimilarNodes = async (params) => {
 };
 
 export const searchByText = async (params) => {
-    const { query } = params;
-    const embedding = await generateEmbedding(query);
+    const { text, threshold = 0.5 } = params;
+    const embedding = await generateEmbedding(text);
     return (await getAllNodesWithEmbeddings()).map(node => ({ node, similarity: cosineSimilarity(embedding, node.embedding) }))
-        .filter(({ similarity }) => similarity >= 0.5)
+        .filter(({ similarity }) => similarity >= threshold)
         .sort((a, b) => b.similarity - a.similarity)
         .map(({ node }) => node);
 };

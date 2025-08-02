@@ -5,7 +5,7 @@ import * as uiModule from './ui.module.js';
 import * as textInputModule from './text-input.module.js';
 import * as emailModule from './outlook-email.module.js';
 import * as contentScriptHandlerModule from './content-script-handler.module.js';
-import * as contextAssemblerModule from './context-assembler.module.js';
+import * as contextModule from './context.module.js';
 import * as groqInferenceModule from './groq-inference.module.js';
 import * as debugModule from './debug.module.js';
 import * as tabManagerModule from './tab-manager.module.js';
@@ -23,7 +23,7 @@ export const modules = [
     uiModule,
     emailModule,
     textInputModule,
-    contextAssemblerModule,
+    contextModule,
     groqInferenceModule,
     debugModule,
     developmentModule,
