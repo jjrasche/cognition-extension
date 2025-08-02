@@ -12,34 +12,34 @@ async function initialize() {
   try {
     await beginInitialization()
     await registerModules();
-    registerActions();
-    await registerOauth();
-    await registerInference();
-    await registerContentScripts();
+    await registerActions();
+    // await registerOauth();
+    // await registerInference();
+    // await registerContentScripts();
     await loadModels();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
 const logAndWrite = async (msg, update, err) => (console.log(`[Background] ${msg}`, err ?? ""), await _state.writeMany(update));
-const beginInitialization = async () => logAndWrite('Starting extension initialization...', {'system.status': 'initializing', 'system.modules': [], 'system.errors': []});
-const completeInitialization = async () => (logAndWrite('Extension initialization complete', {'system.status': 'ready', 'system.modules': loaded, 'system.errors': errors}), printErrors());
+const beginInitialization = async () => await logAndWrite('Starting extension initialization...', {'system.status': 'initializing', 'system.modules': [], 'system.errors': []});
+const completeInitialization = async () => (await logAndWrite('Extension initialization complete', {'system.status': 'ready', 'system.modules': loaded, 'system.errors': errors}), printErrors());
 const printErrors = async () => errors.length > 0 && console.log('[Background] Errors:', errors);
-const handleInitializationExceptions = async (err) => logAndWrite('Error during initialization', {'system.status': 'error', 'system.errors': errors, 'system.modules': loaded}, err);
+const handleInitializationExceptions = async (err) => await logAndWrite('Error during initialization', {'system.status': 'error', 'system.errors': errors, 'system.modules': loaded}, err);
 const getModuleConfig = async (module) => await _state.read(`modules.${module.manifest.name}.config`) || {};
 
-const registerModules = async () => forAllModules("module", async (module) => {
+const registerModules = async () => await forAllModules("module", async (module) => {
   await module.initialize(_state, await getModuleConfig(module));
   loaded.push(module.manifest);
 });
-const registerOauth = async () => forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
-const registerContentScripts = async () => forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);
-const registerInference = async () => forAllModules("inference", async (module) => module.manifest.defaultModel && await _state.actions.execute("inference.register", module));
-const registerActions = () => forAllModules("actions", async (module) => Object.getOwnPropertyNames(module)
+const registerOauth = async () => await forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
+const registerContentScripts = async () => await forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);
+const registerInference = async () => await forAllModules("inference", async (module) => module.manifest.defaultModel && await _state.actions.execute("inference.register", module));
+const registerActions = async() => await forAllModules("actions", (module) => Object.getOwnPropertyNames(module)
   .filter((prop) => typeof module[prop] === 'function')
   .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))
   .forEach(actionName => _state.actions.register(module.manifest.name, actionName, module[actionName]))
 );
-const loadModels = async () => forAllModules("models", async (module) => module.manifest.models && module.manifest.models.forEach(async (m) => await _state.actions.execute('transformer.loadModel', {modelId: m})));
+const loadModels = async () => await forAllModules("models", async (module) => module.manifest.models && module.manifest.models.forEach(async (m) => await _state.actions.execute('transformer.loadModel', {modelId: m})));
 
 const forAllModules = async (action, operation, filter = () => true) => {
   for (const module of modules.filter(filter)) {
