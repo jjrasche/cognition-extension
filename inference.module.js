@@ -25,13 +25,13 @@ export async function prompt(params) {
   const { userPrompt } = params;
   const { providerName, modelName } = await getCurrent();
   const provider = await getProvider(providerName);
-  const assembledPrompt = await _state.actions.execute("context.assemble");
+  const assembledPrompt = await _state.actions.execute("context.assemble", { userPrompt });
   try {
     let content = "";
     const processChunk = async (chunk) => await updateStreamContent((content += chunk))
-    const response = await provider.module.makeRequest(assembledPrompt, modelName, processChunk);
+    const response = await provider.makeRequest(assembledPrompt, modelName, processChunk);
     storeInteractionInGraph({ userPrompt, assembledPrompt, response });
-    return { success: true, result: response };
+    return response
   } catch (error) { return { success: false, error: error.message } };
 }
 const updateStreamContent = async (content) => await _state.write("inference.content", content);

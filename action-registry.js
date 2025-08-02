@@ -11,8 +11,7 @@ export class ActionRegistry {
     if (!action) throw new Error(`Action not found: ${name}`);
     
     // try {
-      const result = await action.handler(params);
-      return { success: true, result };
+      return await action.handler(params);
     // } catch (error) {
     //   throw new Error(`Error executing action ${name}`, error);
     // }

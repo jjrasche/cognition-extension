@@ -15,7 +15,7 @@ export const initialize = async (state) => ([_state, _db] = [state, await openDa
 export const addInferenceNode = async (params) => {
     const { userPrompt, assembledPrompt, response, model, context } = params;
     const node = { id: getNextId('inference'), timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
-    await getStore([NODES_STORE]).add(node);
+    await getStore(NODES_STORE).add(node);
     generateEmbedding(assembledPrompt).then(embedding => updateNodeEmbedding(node.id, embedding));
     updateStats();
     return node.id;
@@ -35,10 +35,11 @@ export const findSimilarNodes = async (params) => {
 export const searchByText = async (params) => {
     const { text, threshold = 0.5 } = params;
     const embedding = await generateEmbedding(text);
-    return (await getAllNodesWithEmbeddings()).map(node => ({ node, similarity: cosineSimilarity(embedding, node.embedding) }))
+    const ret = (await getAllNodesWithEmbeddings()).map(node => ({ node, similarity: cosineSimilarity(embedding, node.embedding) }))
         .filter(({ similarity }) => similarity >= threshold)
         .sort((a, b) => b.similarity - a.similarity)
         .map(({ node }) => node);
+    return ret;
 };
 
 export const getConnectedNodes = async (params) => {
@@ -107,10 +108,10 @@ const createEdgesStore = (db) => {
     store.createIndex('by-to', 'to');
 };
 const createCountersStore = (db) => db.createObjectStore(COUNTERS_STORE);
-const getStore = (storeNames, mode = 'readwrite') => _db.transaction(storeNames, mode).objectStore(NODES_STORE);
+const getStore = (storeName, mode = 'readwrite') => _db.transaction([storeName], mode).objectStore(storeName);
 const getIndex = (storeName, indexName) => getStore(storeName).index(indexName);
 const getNextId = async (type) => {
-    const store = getStore([COUNTERS_STORE]);
+    const store = getStore(COUNTERS_STORE);
     const current = (await promisify(store.get(type))) || 0;
     const next = current + 1;
     await promisify(store.put(next, type));

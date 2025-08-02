@@ -12,7 +12,7 @@ export const initialize = (state) => _state = state;
 
 export const assemble = async (params) => {
   const { userPrompt } = params;
-  const similarInteractions = await _state.actions.execute('graph-db.searchByText', { query: userPrompt, threshold: 0.5 });
+  const similarInteractions = await _state.actions.execute('graph-db.searchByText', { text: userPrompt, threshold: 0.5 });
   const conversationHistory = buildConversationHistory(similarInteractions);
   const mentionedModules = await getMentionedModules(userPrompt);
   const modulesContext = await buildModulesContext(mentionedModules);
@@ -26,7 +26,7 @@ const getMentionedModules = async (text) => {
   return allModules.filter(m => [...(m.keywords || []), m.name.toLowerCase()].some(w => lowerText.includes(w.toLowerCase())) );
 };
 
-const buildConversationHistory = (similarInteractions) => similarInteractions
+const buildConversationHistory = (similarInteractions = []) => similarInteractions
   .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
   .flatMap(interaction => [{ role: 'user', content: interaction.userPrompt }, { role: 'assistant', content: interaction.response }]);
 

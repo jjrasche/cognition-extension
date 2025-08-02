@@ -16,7 +16,18 @@ let _apiKey;
 export const initialize = async () => _apiKey = await getApiKey();
 
 export const makeRequest = async (messages, model, onChunk) => {
-  const body = JSON.stringify({ model, max_tokens: 4096, messages, stream: true });
+  const systemMessage = messages.find(m => m.role === 'system');
+  const chatMessages = messages.filter(m => m.role !== 'system');
+  
+  const body = JSON.stringify({
+    model,
+    max_tokens: 4096,
+    ...(systemMessage && { system: systemMessage.content }),
+    messages: chatMessages,
+    stream: true
+  });
+
+  // const body = JSON.stringify({ model, max_tokens: 4096, messages, stream: true });
   const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(_apiKey), body });
   if (!resp.ok) throw new Error(`Claude API error: ${resp.status} - ${await resp.text()}`);
   return await processStream(resp, onChunk);
