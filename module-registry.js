@@ -42,7 +42,11 @@ export const coreFiles = [
   'extension-state.js',
   'action-registry.js',
   'oauth-manager.js',
-  'module-registry.js'
+  'module-registry.js',
+];
+
+export const libFiles = [
+  'lib/transformers.min.js',
 ];
 
 export const devFiles = [
