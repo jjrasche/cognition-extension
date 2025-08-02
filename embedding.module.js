@@ -1,5 +1,6 @@
 export const manifest = {
   name: "embedding", 
+  name: "embedding", 
   version: "1.0.0",
   description: "Local text embedding generation using transformers.js with WebGPU",
   permissions: [],
