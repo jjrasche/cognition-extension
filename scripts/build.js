@@ -35,7 +35,7 @@ const cleanBuildDirectory = async () => {
   } catch (error) {}
   await fs.mkdir(buildDir, { recursive: true });
 };
-const copyFiles = async(files) => files.forEach(async file => await fs.copyFile(path.join(rootDir, file), path.join(buildDir, file)));
+const copyFiles = async(files) => files.forEach(async file => (console.log(file), await fs.copyFile(path.join(rootDir, file), path.join(buildDir, file))));
 const copyModels = async () => await fs.cp('models/', 'build/models/', { recursive: true });
 // Run build
 build().catch(console.error);

@@ -16,6 +16,7 @@ async function initialize() {
     await registerOauth();
     await registerInference();
     await registerContentScripts();
+    await loadModels();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -32,16 +33,13 @@ const registerModules = async () => forAllModules("module", async (module) => {
 });
 const registerOauth = async () => forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
 const registerContentScripts = async () => forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);
-const registerInference = async () => forAllModules("inference", async (module) => {
-  if (module.manifest.defaultModel) {
-    await _state.actions.execute("inference.register", module);
-  }
-});
+const registerInference = async () => forAllModules("inference", async (module) => module.manifest.defaultModel && await _state.actions.execute("inference.register", module));
 const registerActions = () => forAllModules("actions", async (module) => Object.getOwnPropertyNames(module)
   .filter((prop) => typeof module[prop] === 'function')
   .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))
   .forEach(actionName => _state.actions.register(module.manifest.name, actionName, module[actionName]))
 );
+const loadModels = async () => forAllModules("models", async (module) => module.manifest.models && module.manifest.models.forEach(async (m) => await _state.actions.execute('transformer.loadModel', {modelId: m})));
 
 const forAllModules = async (action, operation, filter = () => true) => {
   for (const module of modules.filter(filter)) {
