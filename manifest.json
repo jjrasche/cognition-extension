@@ -24,7 +24,7 @@
     "default_title": "Toggle Cognition UI"
   },
   "web_accessible_resources": [{
-    "resources": ["*.js"],
+    "resources": ["*.js", "models/*"],
     "matches": ["<all_urls>"]
   }]
 }
