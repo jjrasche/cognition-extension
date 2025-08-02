@@ -10,14 +10,14 @@ export const manifest = {
 let _state, _db;
 const similiarityThreshold = 0.7;
 const [DB_NAME, DB_VERSION, NODES_STORE, EDGES_STORE, COUNTERS_STORE] = ['CognitionGraph', 1, 'nodes', 'edges', 'counters'];
-export const initialize = async (state) => ([_state, _db] = [state, await openDatabase()], updateStats());
+export const initialize = async (state) => ([_state, _db] = [state, await openDatabase()], await updateStats());
 
 export const addInferenceNode = async (params) => {
     const { userPrompt, assembledPrompt, response, model, context } = params;
-    const node = { id: getNextId('inference'), timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
-    await getStore(NODES_STORE).add(node);
+    const node = { id: await getNextId('inference'), timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
+    await promisify(getStore(NODES_STORE).add(node));
     generateEmbedding(assembledPrompt).then(embedding => updateNodeEmbedding(node.id, embedding));
-    updateStats();
+    await updateStats();
     return node.id;
 };
 
@@ -57,14 +57,13 @@ export const getConnectedNodes = async (params) => {
 
 // stats
 const getStats = async () => {
-    const tx = _db.transaction([NODES_STORE, EDGES_STORE], 'readonly');
-    const nodeCount = await promisify(tx.objectStore(NODES_STORE).count());
-    const edgeCount = await promisify(tx.objectStore(EDGES_STORE).count());
+    const nodeCount = await promisify(getStore(NODES_STORE).count());
+    const edgeCount = await promisify(getStore(EDGES_STORE).count());
     return { nodeCount, edgeCount, lastUpdated: new Date().toISOString() };
 };
 const updateStats = async () => await _state.write('graph.stats', await getStats());
 // Node methods
-export const getNode = async (params) => getNodeById(params.nodeId);
+export const getNode = async (params) => await getNodeById(params.nodeId);
 const getNodeById = async (nodeId) => await promisify(getStore(NODES_STORE).get(nodeId));
 export const getRecentNodes = async (params) => await getRecentNodesInternal(params?.limit || 20);
 const getRecentNodesInternal = async (limit) => await iterateCursor(getIndex(NODES_STORE, 'by-timestamp').openCursor(null, 'prev'), () => true, limit);
@@ -117,16 +116,40 @@ const getNextId = async (type) => {
     await promisify(store.put(next, type));
     return `${type}-${next}`;
 };
+// const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
+//     const results = [];
+//     let cursor = await promisify(cursorRequest);
+//     while (cursor && results.length < limit) {
+//         const shouldContinue = await callback(cursor.value, cursor);
+//         if (shouldContinue === false) break;
+//         results.push(cursor.value);
+//         cursor = await promisify(cursor.continue());
+//     }
+//     return results;
+// };
 const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
     const results = [];
-    let cursor = await promisify(cursorRequest);
-    while (cursor && results.length < limit) {
-        const shouldContinue = await callback(cursor.value, cursor);
-        if (shouldContinue === false) break;
-        results.push(cursor.value);
-        cursor = await promisify(cursor.continue());
-    }
-    return results;
+    
+    return new Promise((resolve, reject) => {
+        cursorRequest.onsuccess = (event) => {
+            const cursor = event.target.result;
+            
+            if (cursor && results.length < limit) {
+                const shouldContinue = callback(cursor.value, cursor);
+                if (shouldContinue !== false) {
+                    results.push(cursor.value);
+                    cursor.continue(); // This doesn't return anything - it triggers the next onsuccess
+                } else {
+                    resolve(results);
+                }
+            } else {
+                // No more results or limit reached
+                resolve(results);
+            }
+        };
+        
+        cursorRequest.onerror = () => reject(cursorRequest.error);
+    });
 };
 // embedding
 // TODO: update mock embeddingCall embeddings API or create local embedding module
@@ -138,4 +161,35 @@ const updateNodeEmbedding = async (nodeId, embedding) => {
     node.embedding = embedding;
     await promisify(store.put(node));
     await findAndCreateSimilarEdges(nodeId);
+};
+
+
+export const printNodes = async (params = {}) => {
+    const { limit = 10, detailed = false } = params;
+    const nodes = await getRecentNodesInternal(limit);
+    
+    if (detailed) {
+        console.log(`=== ${nodes.length} Most Recent Nodes (Detailed) ===`);
+        nodes.forEach((node, index) => {
+            console.log(`\n--- Node ${index + 1}: ${node.id} ---`);
+            console.log('Timestamp:', node.timestamp);
+            console.log('User Prompt:', node.userPrompt);
+            console.log('Model:', node.model);
+            console.log('Response:', node.response?.substring(0, 100) + (node.response?.length > 100 ? '...' : ''));
+            console.log('Has Embedding:', !!node.embedding);
+            console.log('Context:', node.context);
+        });
+    } else {
+        console.log(`=== ${nodes.length} Most Recent Nodes ===`);
+        console.table(nodes.map(node => ({
+            id: node.id,
+            timestamp: new Date(node.timestamp).toLocaleString(),
+            userPrompt: node.userPrompt?.substring(0, 50) + (node.userPrompt?.length > 50 ? '...' : ''),
+            model: node.model,
+            hasEmbedding: !!node.embedding,
+            responseLength: node.response?.length || 0
+        })));
+    }
+    
+    return nodes;
 };
