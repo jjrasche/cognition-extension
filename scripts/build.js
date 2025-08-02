@@ -11,6 +11,7 @@ async function build() {
   console.log('Building Cognition Extension...');
   await cleanBuildDirectory();
   copyFiles([...coreFiles, ...moduleFiles(), ...(isDev() ? devFiles : [])]);
+  await copyModels();
   createTabStateStoreFile();
   console.log('Build complete!');
 }
@@ -35,5 +36,6 @@ const cleanBuildDirectory = async () => {
   await fs.mkdir(buildDir, { recursive: true });
 };
 const copyFiles = async(files) => files.forEach(async file => await fs.copyFile(path.join(rootDir, file), path.join(buildDir, file)));
+const copyModels = async () => await fs.cp('models/', 'build/models/', { recursive: true });
 // Run build
 build().catch(console.error);

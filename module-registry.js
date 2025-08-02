@@ -14,6 +14,7 @@ import * as claudeApiModule from './claude-api.module.js';
 import * as inferenceManager from './inference.module.js';
 import * as inferenceModelValidation from './inference-model-validation.module.js';
 import * as graphDbModule from './graph-db.module.js';
+import * as embeddingModule from './embedding.module.js';
 
 export const modules = [
     tabManagerModule,
@@ -30,7 +31,8 @@ export const modules = [
     claudeApiModule,
     inferenceManager,
     inferenceModelValidation,
-    graphDbModule
+    graphDbModule,
+    embeddingModule
 ];
 
 export const coreFiles = [

@@ -16,5 +16,8 @@
     "eslint-plugin-jsdoc": "^51.4.1",
     "ws": "^8.16.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "^3.7.1"
+  }
 }
