@@ -1,5 +1,5 @@
+import './global-helpers.js';
 import * as fitbitModule from './fitbit.module.js';
-import * as globalHelpers from './global-helpers.module.js';
 import * as uiModule from './ui.module.js';
 // import * as transcriptModule from './transcript.module.js';
 import * as textInputModule from './text-input.module.js';
@@ -20,7 +20,6 @@ import * as transformerModule from './transformer.module.js';
 export const modules = [
     tabManagerModule,
     contentScriptHandlerModule,
-    globalHelpers,
     fitbitModule,
     uiModule,
     emailModule,
@@ -38,6 +37,7 @@ export const modules = [
 ];
 
 export const coreFiles = [
+  'global-helpers.js',
   'manifest.json',
   'background.js',
   'state-store.js',

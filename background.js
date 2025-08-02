@@ -1,8 +1,9 @@
-// background.js - Service Worker Entry Point
-// This file bootstraps the module system and initializes the extension
+// background.js - Service Worker Entry Point : This file bootstraps the module system and initializes the extension
 import './dev-reload.js';
 import { ExtensionStore } from './extension-state.js';
 import { modules } from './module-registry.js';
+const { getId } = globalThis.cognition;
+
 const _state = new ExtensionStore();
 const loaded = [];
 const errors = [];
@@ -17,6 +18,7 @@ async function initialize() {
     // await registerInference();
     // await registerContentScripts();
     await loadModels();
+    await initializeOffscreenDocument();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -50,3 +52,21 @@ const forAllModules = async (action, operation, filter = () => true) => {
     }
   }
 }
+
+
+const initializeOffscreenDocument = async () => (createOffscreenDocument(), registerOffscreenModules());
+const createOffscreenDocument = async () => await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
+const offscreenModules = {
+  'transformer': ['loadModel', 'embedText', 'clearCache', 'getModel']
+};
+const registerOffscreenModules = () => {
+  for (const [moduleName, actions] of Object.entries(offscreenModules)) {
+    actions.forEach(action => registerProxy(moduleName, action));
+  }
+}
+const registerProxy = (moduleName, action) => _state.actions.register(moduleName, action, createOffscreenProxyAction(moduleName, action));
+const createOffscreenProxyAction = (moduleName, action) => async (params) => {
+  const id = getId();
+  await _state.write(`${moduleName}.requests`, { id, action, params });
+  return new Promise((resolve) => { const unwatch = _state.watch(`${moduleName}.responses`, (response) => response.id === id && (unwatch(), resolve(response.result))) });
+};

@@ -1,7 +1,4 @@
-/**
- * Enhanced Debug Module - Visual Timeline for State Changes and Actions
- */
-
+const { getId } = globalThis.cognition;
 export const manifest = {
   name: "debug",
   version: "2.0.0",
@@ -17,7 +14,6 @@ const startTime = Date.now();
 const maxSize = 10 * 1024 * 1024;
 let realTimeEnabled = false;
 
-const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 const formatValue = v => !v ? String(v) : typeof v === 'string' ? (v.length > 100 ? v.substring(0, 100) + '...' : v) : typeof v === 'object' ? JSON.stringify(v).substring(0, 200) + '...' : String(v);
 
 const getCaller = () => {
@@ -33,12 +29,12 @@ const updateRealTime = (state) => realTimeEnabled && state.write('debug.timeline
 
 const recordState = (state, key, value) => addEntry(state, {
   type: 'state', timestamp: Date.now(), relativeTime: Date.now() - startTime,
-  key, value: formatValue(value), caller: getCaller(), id: generateId()
+  key, value: formatValue(value), caller: getCaller(), id: getId()
 });
 
 const recordAction = (state, name, params, status, timestamp, metadata = {}) => addEntry(state, {
   type: 'action', timestamp, relativeTime: timestamp - startTime,
-  name, params: formatValue(params), status, ...metadata, id: generateId()
+  name, params: formatValue(params), status, ...metadata, id: getId()
 });
 
 const wrapExecute = (state, originalExecute) => async (name, params = {}) => {

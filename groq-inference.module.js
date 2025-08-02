@@ -4,7 +4,7 @@ export const manifest = {
   permissions: ["storage"],
   actions: ["prompt", "listModels", "setModel", "getUsage"],
   dependencies: { 
-    "global-helpers.module": "1.0.0",
+    "global-helpers": "1.0.0",
     "context-assembler.module": "1.0.0",
     "ui.module": "1.0.0"
   },

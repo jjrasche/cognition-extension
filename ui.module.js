@@ -1,3 +1,5 @@
+const { getId } = globalThis.cognition;
+
 export const manifest = {
   name: 'ui',
   version: '1.0.0',
@@ -27,7 +29,7 @@ export const toggle = async () => await _state.write('ui.visible', !(await _stat
 export const notify = (params) => {
   !params?.message && (() => { throw new Error('Notification requires a message'); })();
   return _state.write('ui.notify', {
-    ...generateID('notif'),
+    ...getId('notif'),
     message: params.message,
     type: params.type || 'info',
     from: params.from || 'System',
@@ -35,14 +37,13 @@ export const notify = (params) => {
     timestamp: Date.now(),
   }).then(() => ({ success: true }));
 }
-const generateID = (prefix) => ({ id: `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}` });
 // Form stack management
 const getStack = async () => await _state.read('ui.formStack') || [];
 const setStack = async (stack) => await _state.write('ui.formStack', stack);
 export const pushForm = async (params) => {
   (!params || typeof params !== 'object') && (() => { throw new Error("Form configuration required"); })();
   const stack = await getStack();
-  const formWithId = { ...params, ...generateID('form') };
+  const formWithId = { ...params, ...getId('form') };
   stack.push(formWithId);
   await setStack(stack);
   await show();

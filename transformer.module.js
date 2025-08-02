@@ -1,30 +1,37 @@
 export const manifest = {
   name: 'transformer',
+  offscreen: true,
   description: 'Hugging Face Transformers.js runtime for loading and caching ML pipelines',
-  actions: ['loadModel', 'getModel', 'listModels', 'clearCache']
 };
 
 const pipelineCache = new Map();
+let _state;
+export const initialize = (state) => (_state = state, initializeEnvironment(), setupActionListeners());
 
-export const initialize = (state) => {
+const setupActionListeners = () => {
+  _state.watch(`${manifest.name}.requests`, async (request) => {
+    await _state.write(`${manifest.name}.responses`, { id: request.id, result: await manifest.actions[request.action](request.params) });
+  }).bind(this);
+}
+const initializeEnvironment = () => {
   const env = Transformer.env;
   env.allowRemoteModels = false;
   env.allowLocalModels = true;
   env.localModelPath = chrome.runtime.getURL('models/');
   if(env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;
 }
-
-export async function loadModel(params) {
+const loadModel = async (params) => {
   const { modelId, options } = params;
   if (pipelineCache.has(modelId)) return;
   const pipe = await Transformer.pipeline('feature-extraction', modelId, { device: 'webgpu', local_files_only: true, ...options})
     .catch(() => Transformer.pipeline('feature-extraction', modelId, { device: 'wasm', local_files_only: true, ...options }));
   pipelineCache.set(modelId, pipe);
 }
+const getModel = (modelId) => pipelineCache.get(modelId)
+const listModels = () => Array.from(pipelineCache.keys())
+const clearCache = (modelId) => modelId ? pipelineCache.delete(modelId) : pipelineCache.clear();
 
-export const getModel = (modelId) => pipelineCache.get(modelId)
-export const listModels = () => Array.from(pipelineCache.keys())
-export const clearCache = (modelId) => modelId ? pipelineCache.delete(modelId) : pipelineCache.clear();
+manifest.actions = {loadModel, getModel, listModels, clearCache}
 
 
 // transformers.min.js from https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js
