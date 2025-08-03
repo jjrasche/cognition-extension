@@ -38,7 +38,7 @@ const addModuleActionsToConsole = () => {
       return _state.actions
         .execute(name, params)
         .then(res => {
-          // console.log(`[Dev] ${moduleName}.${actionName} →`, res)
+          console.log(`[Dev] ${moduleName}.${actionName} →`, res)
           return res;
         })
         .catch(err => console.error(`[Dev] ${moduleName}.${actionName} ✗`, err));

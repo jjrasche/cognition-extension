@@ -4,7 +4,7 @@ export const manifest = {
   version: "1.0.0",
   description: "...",
   actions: ["embedText"],
-  models : ["Xenova/all-MiniLM-L6-v2"],
+  localModels : ["Xenova/all-MiniLM-L6-v2"],
 };
 
 let _state
@@ -14,6 +14,6 @@ export const embedText = async (params) => {
   const { text } = params;
   !text && (() => { throw new Error('Text required'); })();
   
-  const model = await _state.actions.executeAction('transformer.getModel', { modelId: manifest.models[0] });
+  const model = await _state.actions.execute('transformer.getModel', { modelId: manifest.localModels[0] });
   return await model.pipeline(text);
 };

@@ -1,4 +1,4 @@
-export const manifest = {
+const manifest = {
   name: 'transformer',
   offscreen: true,
   description: 'Hugging Face Transformers.js runtime for loading and caching ML pipelines',
@@ -6,7 +6,7 @@ export const manifest = {
 
 const pipelineCache = new Map();
 let _state;
-export const initialize = (state) => (_state = state, initializeEnvironment(), setupActionListeners());
+const initialize = (state) => (_state = state, initializeEnvironment(), setupActionListeners());
 
 const setupActionListeners = () => {
   _state.watch(`${manifest.name}.requests`, async (request) => {

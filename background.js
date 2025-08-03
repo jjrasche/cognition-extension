@@ -12,13 +12,13 @@ chrome.runtime.onInstalled.addListener(async () => await initialize());
 async function initialize() {
   try {
     await beginInitialization()
+    await initializeOffscreenDocument();
     await registerModules();
     await registerActions();
     // await registerOauth();
     // await registerInference();
     // await registerContentScripts();
     await loadModels();
-    await initializeOffscreenDocument();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -32,7 +32,7 @@ const getModuleConfig = async (module) => await _state.read(`modules.${module.ma
 const registerModules = async () => await forAllModules("module", async (module) => {
   await module.initialize(_state, await getModuleConfig(module));
   loaded.push(module.manifest);
-});
+}, (m) => !m.manifest.offscreen);
 const registerOauth = async () => await forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
 const registerContentScripts = async () => await forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);
 const registerInference = async () => await forAllModules("inference", async (module) => module.manifest.defaultModel && await _state.actions.execute("inference.register", module));
@@ -41,7 +41,7 @@ const registerActions = async() => await forAllModules("actions", (module) => Ob
   .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))
   .forEach(actionName => _state.actions.register(module.manifest.name, actionName, module[actionName]))
 );
-const loadModels = async () => await forAllModules("models", async (module) => module.manifest.models && module.manifest.models.forEach(async (m) => await _state.actions.execute('transformer.loadModel', {modelId: m})));
+const loadModels = async () => await forAllModules("localModels", async (module) => module.manifest.localModels && module.manifest.localModels.forEach(async (m) => await _state.actions.execute('transformer.loadModel', {modelId: m})));
 
 const forAllModules = async (action, operation, filter = () => true) => {
   for (const module of modules.filter(filter)) {

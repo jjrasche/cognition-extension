@@ -2,7 +2,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { modules, coreFiles, devFiles } from '../module-registry.js';
+import { modules, coreFiles, devFiles, offscreenModules } from '../module-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -10,7 +10,7 @@ const buildDir = path.join(rootDir, 'build');
 async function build() {
   console.log('Building Cognition Extension...');
   await cleanBuildDirectory();
-  copyFiles([...coreFiles, ...moduleFiles(), ...(isDev() ? devFiles : [])]);
+  copyFiles([...coreFiles, ...moduleFiles(), ...offscreenModules, ...(isDev() ? devFiles : [])]);
   await copyModels();
   createTabStateStoreFile();
   console.log('Build complete!');

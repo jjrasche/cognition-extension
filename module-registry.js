@@ -15,7 +15,6 @@ import * as inferenceManager from './inference.module.js';
 import * as inferenceModelValidation from './inference-model-validation.module.js';
 import * as graphDbModule from './graph-db.module.js';
 import * as embeddingModule from './embedding.module.js';
-import * as transformerModule from './transformer.module.js';
 
 export const modules = [
     tabManagerModule,
@@ -32,12 +31,12 @@ export const modules = [
     inferenceManager,
     inferenceModelValidation,
     graphDbModule,
-    embeddingModule,
-    transformerModule
+    embeddingModule
 ];
 
 export const coreFiles = [
   'global-helpers.js',
+  'offscreen.html',
   'manifest.json',
   'background.js',
   'state-store.js',
@@ -49,4 +48,8 @@ export const coreFiles = [
 
 export const devFiles = [
   'dev-reload.js',
+];
+
+export const offscreenModules = [
+  'transformer.module.js',
 ];
