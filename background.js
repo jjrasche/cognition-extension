@@ -12,13 +12,13 @@ chrome.runtime.onInstalled.addListener(async () => await initialize());
 async function initialize() {
   try {
     await beginInitialization()
-    await initializeOffscreenDocument();
+    // await initializeOffscreenDocument();
     await registerModules();
     await registerActions();
     // await registerOauth();
     // await registerInference();
     // await registerContentScripts();
-    await loadModels();
+    // await loadModels();
     await completeInitialization();
   } catch (error) { await handleInitializationExceptions(error); }
 };
@@ -70,3 +70,13 @@ const createOffscreenProxyAction = (moduleName, action) => async (params) => {
   await _state.write(`${moduleName}.requests`, { id, action, params });
   return new Promise((resolve) => { const unwatch = _state.watch(`${moduleName}.responses`, (response) => response.id === id && (unwatch(), resolve(response.result))) });
 };
+
+// chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+//   if (msg.action?.startsWith('transformer.')) {
+//     chrome.runtime.sendMessage(msg, sendResponse);
+//   } else {
+//     // Execute locally (graph-db, fitbit, ui, etc.)
+//     _state.actions.execute(msg.action, msg.params).then(sendResponse);
+//   }
+//   return true; // Keep channel open for async
+// });

@@ -36,6 +36,8 @@ export const modules = [
 
 export const coreFiles = [
   'global-helpers.js',
+  'extension-page.html',
+  'extension-page.js',
   'offscreen.html',
   'manifest.json',
   'background.js',
