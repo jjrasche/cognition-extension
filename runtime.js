@@ -201,6 +201,12 @@ class Runtime {
         if (state !== 'ready') {
             await this.waitForModule(moduleName, 10000);
         }
+
+        // Check if this action is in the same context
+        if (this.modules.find(m => m.manifest.name === moduleName)) {
+            // Direct call for same context
+            return this.executeAction(actionName, params);
+        }
         
         // Send the message
         return new Promise((resolve, reject) => {
