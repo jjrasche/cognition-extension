@@ -131,7 +131,7 @@ class Runtime {
     getModulesWithProperty = (prop) => this.modules.filter(module => prop in module);
 }
 
-export async function initializeContext(runtimeName) {
+export async function initializeRuntime(runtimeName) {
     const initializer = new Runtime(runtimeName);
     await initializer.initialize();
     return initializer;

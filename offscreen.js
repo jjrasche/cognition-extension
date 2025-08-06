@@ -1,3 +1,3 @@
-import { initializeContext } from "./runtime.js";
+import { initializeRuntime } from "./runtime.js";
 
-initializeContext("offscreen");
+initializeRuntime("offscreen");

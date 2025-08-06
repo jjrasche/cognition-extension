@@ -1,20 +1,7 @@
-import './module-registry.js';
-import { initializeContext } from "./runtime.js";
+import { initializeRuntime } from "./runtime.js";
+initializeRuntime('service-worker');
 
-console.log('[DEBUG] Minimal service worker loaded');
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('[DEBUG] Message received:', message);
-    sendResponse({ status: 'ok', message: 'Service worker responding' });
-    return true;
-});
-
-chrome.runtime.onInstalled.addListener(() => {
-    console.log('[DEBUG] Extension installed/reloaded');
-});
-
-console.log('[DEBUG] Listeners registered');
-initializeContext('service-worker');
+// todo: add the self registering portions below to their own modules
 // // background.js - Service Worker Entry Point : This file bootstraps the module system and initializes the extension
 // import './dev-reload.js';
 // import { ExtensionStore } from './extension-state.js';

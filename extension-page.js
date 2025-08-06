@@ -1,6 +1,6 @@
-import { initializeContext } from "./runtime.js";
+import { initializeRuntime } from "./runtime.js";
 
-initializeContext("extension-page");
+initializeRuntime("extension-page");
 
 // chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 //   const params = msg.params || {};
