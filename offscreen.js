@@ -1,3 +1,6 @@
 import { initializeRuntime } from "./runtime.js";
 
-initializeRuntime("offscreen");
+setTimeout(async () => {
+  console.log('[Offscreen] Starting initialization now...');
+    const runtime = await initializeRuntime("offscreen");
+}, 10000)

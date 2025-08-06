@@ -1,5 +1,10 @@
 import { initializeRuntime } from "./runtime.js";
 initializeRuntime('service-worker');
+// Initialize the offscreen document
+
+chrome.runtime.onInstalled.addListener(async () => {
+    await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
+})
 
 // todo: add the self registering portions below to their own modules
 // // background.js - Service Worker Entry Point : This file bootstraps the module system and initializes the extension
@@ -57,30 +62,3 @@ initializeRuntime('service-worker');
 //   }
 // }
 
-
-// const initializeOffscreenDocument = async () => (createOffscreenDocument(), registerOffscreenModules());
-// const createOffscreenDocument = async () => await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
-// const offscreenModules = {
-//   'transformer': ['loadModel', 'embedText', 'clearCache', 'getModel']
-// };
-// const registerOffscreenModules = () => {
-//   for (const [moduleName, actions] of Object.entries(offscreenModules)) {
-//     actions.forEach(action => registerProxy(moduleName, action));
-//   }
-// }
-// const registerProxy = (moduleName, action) => _state.actions.register(moduleName, action, createOffscreenProxyAction(moduleName, action));
-// const createOffscreenProxyAction = (moduleName, action) => async (params) => {
-//   const id = getId();
-//   await _state.write(`${moduleName}.requests`, { id, action, params });
-//   return new Promise((resolve) => { const unwatch = _state.watch(`${moduleName}.responses`, (response) => response.id === id && (unwatch(), resolve(response.result))) });
-// };
-
-// // chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-// //   if (msg.action?.startsWith('transformer.')) {
-// //     chrome.runtime.sendMessage(msg, sendResponse);
-// //   } else {
-// //     // Execute locally (graph-db, fitbit, ui, etc.)
-// //     _state.actions.execute(msg.action, msg.params).then(sendResponse);
-// //   }
-// //   return true; // Keep channel open for async
-// // });

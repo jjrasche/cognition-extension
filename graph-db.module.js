@@ -5,7 +5,6 @@ export const manifest = {
     description: "Graph database for storing knowledge and relationships",
     permissions: ["storage"],
     actions: ["addInferenceNode", "getNode", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes"],
-    state: { reads: [], writes: ["graph.stats"] }
 };
 
 let _state, _db;

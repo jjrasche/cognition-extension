@@ -2,6 +2,7 @@ export const manifest = {
   name: "embedding", 
   keywords: ["embed"],
   context: "offscreen",
+  dependencies: ["transformer"],
   version: "1.0.0",
   description: "...",
   actions: ["embedText"],

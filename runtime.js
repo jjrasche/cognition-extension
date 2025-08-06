@@ -24,7 +24,7 @@ class Runtime {
 
     loadModulesForContext = async () => {
         this.modules = modules.filter(module => !module.manifest.context || module.manifest.context === this.runtimeName);
-        this.log(`Loading modules:`, this.modules);
+        this.log(`Loading modules:`, this.modules.map(m => JSON.stringify(m.manifest)));
     }
 
     getModuleActions = (module) => module.manifest.actions?.filter(action => this.exportedActions(module).includes(action)) || [];
@@ -33,17 +33,19 @@ class Runtime {
         .filter(prop => typeof module[prop] === 'function')
         .filter(name => !['initialize', 'cleanup', 'manifest', 'default'].includes(name));
 
+    // Register actions from modules across all contexts to enable cross-context function calling
     registerActions = () => {
-        // Register actions from ALL modules (not just context modules)
-        // This allows cross-context calls
         modules.forEach(module => {
-            this.getModuleActions(module)
-                .filter(action => typeof module[action] === 'function')
-                .forEach(action => {
-                    this.actions.set(`${module.manifest.name}.${action}`, module[action]);
-                });
+            try {
+                this.getModuleActions(module)
+                    .filter(action => typeof module[action] === 'function')
+                    .forEach(action => this.actions.set(`${module.manifest.name}.${action}`, module[action]));
+                } 
+            catch (error) {
+                this.logError(`[${this.runtimeName}] Failed to register [${module.manifest.name}] actions:`, { error: error.message });
+            }
+            this.log(`Registered [${module.manifest.name}] actions:`, Array.from(this.actions.keys()));
         });
-        this.log(`[${this.runtimeName}] Registered actions:`, Array.from(this.actions.keys()));
     }
 
     setupMessageListener = () => {
@@ -76,19 +78,19 @@ class Runtime {
     handleModuleReadyMessage = (message) => {
         if (message.type === 'MODULE_READY') {
             this.moduleState.set(message.moduleName, 'ready');
-            this.log(`[${this.runtimeName}] Module ${message.moduleName} ready in ${message.fromContext}`);
+            this.log(`Module ${message.moduleName} ready in ${message.fromContext}`);
             return true;
         }
     }
 
     initializeModules = async () => {
-        this.log(`[${this.runtimeName}] Starting module initialization...`);
+        this.log(`Starting module initialization...`);
         const pending = [...this.modules];
         const maxAttempts = 30;
         
         for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
             if (attempt > 0) {
-                this.log(`[${this.runtimeName}] Retry attempt ${attempt}, pending modules:`, pending.map(m => m.manifest.name));
+                this.log(`Retry attempt ${attempt}, pending modules:`, pending.map(m => m.manifest.name));
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
             
@@ -97,7 +99,7 @@ class Runtime {
                 
                 if (this.areDependenciesReady(module)) {
                     try {
-                        this.log(`[${this.runtimeName}] Initializing ${module.manifest.name}...`);
+                        this.log(`Initializing ${module.manifest.name}...`);
                         
                         if (typeof module.initialize !== 'function') {
                             console.warn(`[${this.runtimeName}] Module ${module.manifest.name} has no initialize function`);
@@ -107,7 +109,7 @@ class Runtime {
                         }
 
                         await module.initialize(this);
-                        this.log(`[${this.runtimeName}] ✅ ${module.manifest.name} initialized successfully`);
+                        this.log(`✅ ${module.manifest.name} initialized successfully`);
                         this.broadcastModuleReady(module.manifest.name);
                         pending.splice(i, 1);
                     } catch (error) {
@@ -123,7 +125,7 @@ class Runtime {
                 } else {
                     const deps = module.manifest.dependencies || [];
                     const notReady = deps.filter(dep => this.moduleState.get(dep) !== 'ready');
-                    this.log(`[${this.runtimeName}] ${module.manifest.name} waiting for dependencies:`, notReady);
+                    this.log(`${module.manifest.name} waiting for dependencies:`, notReady);
                 }
             }
         }
@@ -139,7 +141,7 @@ class Runtime {
             });
         });
         
-        this.log(`[${this.runtimeName}] Module initialization complete. Errors:`, this.errors);
+        this.log(`Module initialization complete. Errors:`, this.errors);
     }
 
     areDependenciesReady = (module) => {

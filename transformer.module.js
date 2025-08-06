@@ -1,18 +1,16 @@
 export const manifest = {
   name: 'transformer',
   offscreen: true,
+  context: "offscreen",
+  version: "1.0.0",
   description: 'Hugging Face Transformers.js runtime for loading and caching ML pipelines',
+  actions: ["getPipeline", "listModels"],
 };
 
 const pipelineCache = new Map();
-let _state;
-const initialize = (state) => (_state = state, initializeEnvironment(), setupActionListeners());
+let runtime;
+export const initialize = (rt) => (runtime = rt, initializeEnvironment());
 
-const setupActionListeners = () => {
-  _state.watch(`${manifest.name}.requests`, async (request) => {
-    await _state.write(`${manifest.name}.responses`, { id: request.id, result: await manifest.actions[request.action](request.params) });
-  });
-}
 const initializeEnvironment = () => {
   const env = Transformer.env;
   env.allowRemoteModels = false;
@@ -30,8 +28,6 @@ const loadModel = async (params) => {
 const getModel = (modelId) => pipelineCache.get(modelId)
 const listModels = () => Array.from(pipelineCache.keys())
 const clearCache = (modelId) => modelId ? pipelineCache.delete(modelId) : pipelineCache.clear();
-
-manifest.actions = {loadModel, getModel, listModels, clearCache}
 
 
 
