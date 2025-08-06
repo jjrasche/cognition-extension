@@ -1,8 +1,10 @@
 export let manifest = {
   name: "claude-api",
   keywords: ["claude", "anthropic"],
+  context: "service-worker",
   version: "1.0.0",
   permissions: ["storage"],
+  actions: ["setApiKey", "viewModels", "makeRequest"],
   defaultModel: "claude-3-5-sonnet-20241022"
 };
 

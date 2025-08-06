@@ -1,12 +1,7 @@
-/**
- * Fitbit Module - Bridge to Fitbit API for health data
- * Provides sleep, activity, and heart rate data from user's Fitbit device
- */
-
-// Module manifest
 export const manifest = {
   name: "fitbit",
   keywords: ["health", "fitness", "wearable"],
+  context: "service-worker",
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["refreshAllData"],

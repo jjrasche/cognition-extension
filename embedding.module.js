@@ -1,6 +1,7 @@
 export const manifest = {
   name: "embedding", 
   keywords: ["embed"],
+  context: "offscreen",
   version: "1.0.0",
   description: "...",
   actions: ["embedText"],

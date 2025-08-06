@@ -2,6 +2,7 @@ import { modules } from './module-registry.js';
 
 export const manifest = {
   name: "dev",
+  context: "extension-page",
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
@@ -46,6 +47,7 @@ const addModuleActionsToConsole = () => {
   }
   console.log('[Dev] Created action shortcuts:', Array.from(_state.actions.actions.keys()));
 };
+// todo: change this to pull from context-initializer.js
 const addEasyAccessVariablesToConsole = () => {
   globalThis.state = _state;
   globalThis.modules = modules;

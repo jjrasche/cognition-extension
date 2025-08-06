@@ -1,4 +1,4 @@
-const { getId } = globalThis.cognition;
+import { getId } from './helpers.js';
 
 export const manifest = {
   name: 'ui',

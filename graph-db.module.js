@@ -1,5 +1,6 @@
 export const manifest = {
     name: "graph-db",
+    context: "service-worker",
     version: "1.0.0",
     description: "Graph database for storing knowledge and relationships",
     permissions: ["storage"],

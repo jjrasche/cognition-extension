@@ -1,57 +1,53 @@
-import './global-helpers.js';
+import './helpers.js';
 import * as fitbitModule from './fitbit.module.js';
-import * as uiModule from './ui.module.js';
+// import * as uiModule from './ui.module.js';
 // import * as transcriptModule from './transcript.module.js';
-import * as textInputModule from './text-input.module.js';
-import * as emailModule from './outlook-email.module.js';
-import * as contentScriptHandlerModule from './content-script-handler.module.js';
+// import * as textInputModule from './text-input.module.js';
+// import * as emailModule from './outlook-email.module.js';
+// import * as contentScriptHandlerModule from './content-script-handler.module.js';
 import * as contextModule from './context.module.js';
-import * as groqInferenceModule from './groq-inference.module.js';
-import * as debugModule from './debug.module.js';
-import * as tabManagerModule from './tab-manager.module.js';
+// import * as groqInferenceModule from './groq-inference.module.js';
+// import * as debugModule from './debug.module.js';
+// import * as tabManagerModule from './tab-manager.module.js';
 import * as developmentModule from './dev.module.js';
 import * as claudeApiModule from './claude-api.module.js';
-import * as inferenceManager from './inference.module.js';
-import * as inferenceModelValidation from './inference-model-validation.module.js';
+import * as inferenceModule from './inference.module.js';
+// import * as inferenceModelValidationModule from './inference-model-validation.module.js';
 import * as graphDbModule from './graph-db.module.js';
 import * as embeddingModule from './embedding.module.js';
+import * as loggingModule from './logging.module.js';
 
 export const modules = [
-    tabManagerModule,
-    contentScriptHandlerModule,
+    // tabManagerModule,
+    // contentScriptHandlerModule,
+    loggingModule,
     fitbitModule,
-    uiModule,
-    emailModule,
-    textInputModule,
+    // uiModule,
+    // emailModule,
+    // textInputModule,
     contextModule,
-    groqInferenceModule,
-    debugModule,
+    // groqInferenceModule,
+    // debugModule,
     developmentModule,
     claudeApiModule,
-    inferenceManager,
-    inferenceModelValidation,
+    inferenceModule,
+    // inferenceModelValidationModule,
     graphDbModule,
     embeddingModule
 ];
 
 export const coreFiles = [
-  'global-helpers.js',
-  'extension-page.html',
-  'extension-page.js',
-  'offscreen.html',
   'manifest.json',
-  'background.js',
-  'state-store.js',
-  'extension-state.js',
-  'action-registry.js',
-  'oauth-manager.js',
   'module-registry.js',
+  'helpers.js',
+  'context-initializer.js',
+  'service-worker.js',
+  'extension-page.js',
+  'extension-page.html',
+  'offscreen.html',
+  'offscreen.js',
 ];
 
 export const devFiles = [
   'dev-reload.js',
-];
-
-export const offscreenModules = [
-  'transformer.module.js',
 ];

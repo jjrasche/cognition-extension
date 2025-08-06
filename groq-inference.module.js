@@ -3,11 +3,6 @@ export const manifest = {
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["prompt", "listModels", "setModel", "getUsage"],
-  dependencies: { 
-    "global-helpers": "1.0.0",
-    "context-assembler.module": "1.0.0",
-    "ui.module": "1.0.0"
-  },
   state: {
     reads: [],
     writes: ["groq.model.current", "groq.model.available", "groq.response.latest", "groq.history", "groq.usage.tokens"]

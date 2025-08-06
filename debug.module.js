@@ -1,4 +1,5 @@
-const { getId } = globalThis.cognition;
+import { getId } from './helpers.js';
+
 export const manifest = {
   name: "debug",
   version: "2.0.0",

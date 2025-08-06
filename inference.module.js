@@ -1,5 +1,6 @@
 export const manifest = {
   name: "inference",
+  context: "service-worker",
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
   permissions: ["storage"],

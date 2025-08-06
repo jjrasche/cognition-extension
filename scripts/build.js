@@ -2,7 +2,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { modules, coreFiles, devFiles, offscreenModules } from '../module-registry.js';
+import { modules, coreFiles, devFiles } from '../module-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -10,22 +10,11 @@ const buildDir = path.join(rootDir, 'build');
 async function build() {
   console.log('Building Cognition Extension...');
   await cleanBuildDirectory();
-  copyFiles([...coreFiles, ...moduleFiles(), ...offscreenModules, ...(isDev() ? devFiles : [])]);
+  copyFiles([...coreFiles, ...moduleFiles(), ...(isDev() ? devFiles : [])]);
   await copyModels();
-  createTabStateStoreFile();
   console.log('Build complete!');
 }
 // helpers
-const createTabStateStoreFile = async () => await fs.writeFile('build/content-state.js',
-  `(function() {
-    if (window.__Cognition) return; // Already loaded
-    ${(await fs.readFile('state-store.js', 'utf8'))
-      .replace(/export class StateStore/g, 'class StateStore')
-      .replace(/import.*from.*;\n/g, '')}
-    window.ContentStore = StateStore;
-    window.__Cognition = { "content-script-handler": true };
-  })();`
-);
 const moduleFiles = () => modules
   .map(module => `${module.manifest?.name}.module.js`)
   .filter(modulePath => modulePath && typeof modulePath === 'string');
