@@ -44,7 +44,7 @@ export const coreFiles = [
   'manifest.json',
   'module-registry.js',
   'helpers.js',
-  'context-initializer.js',
+  'runtime.js',
   'service-worker.js',
   'extension-page.js',
   'extension-page.html',

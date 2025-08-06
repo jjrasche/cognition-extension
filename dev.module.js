@@ -1,43 +1,30 @@
-import { modules } from './module-registry.js';
+import { kebabToCamel } from './helpers.js';
 
 export const manifest = {
   name: "dev",
-  context: "extension-page",
+  context: "service-worker", // todo: this will likely live in the extension page context
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
   actions: [],
-  state: {
-    reads: [],
-    writes: ["system.dev"]
-  }
 };
-const isDevMode = () => !chrome.runtime.getManifest().update_url;
-const setDevMode = async () => await _state.write('system.dev', isDevMode());
 
-let _state = {}
-export async function initialize(state, config) {
-  _state = state;
-  await setDevMode();
+let _runtime = {}
+export async function initialize(runtime) {
+  _runtime = runtime;
   createActionShortcuts();
-  console.log('[Dev] Initializing development utilities');
 }
 
-
+const isDevMode = () => !chrome.runtime.getManifest().update_url;
 const createActionShortcuts = () => {
-  if (isDevMode()) {
-    _state.watch('system.status', (status) => {
-      if (status === 'ready') (addModuleActionsToConsole(), addEasyAccessVariablesToConsole())
-    });
-  }
+  if (isDevMode()) (addModuleActionsToConsole(), addEasyAccessVariablesToConsole())
 };
 const addModuleActionsToConsole = () => {
-  for (let [name, { actionName, moduleName }] of _state.actions.actions.entries()) {
-    moduleName = globalThis.cognition.kebabToCamel(moduleName);
+  for (let [name, { actionName, moduleName }] of _runtime.getActions().entries()) {
+    moduleName = kebabToCamel(moduleName);
     globalThis[moduleName] ??= {};
     globalThis[moduleName][actionName] = (params = {}) => {
-      return _state.actions
-        .execute(name, params)
+      return _runtime.executeAction(name, params)
         .then(res => {
           console.log(`[Dev] ${moduleName}.${actionName} →`, res)
           return res;
@@ -45,25 +32,11 @@ const addModuleActionsToConsole = () => {
         .catch(err => console.error(`[Dev] ${moduleName}.${actionName} ✗`, err));
     }
   }
-  console.log('[Dev] Created action shortcuts:', Array.from(_state.actions.actions.keys()));
+  console.log('[Dev] Created action shortcuts:', Array.from(_runtime.getActions().keys()));
 };
-// todo: change this to pull from context-initializer.js
+// todo: change this to pull from runtime.js
 const addEasyAccessVariablesToConsole = () => {
-  globalThis.state = _state;
-  globalThis.modules = modules;
-  globalThis.printActions = () => _state.actions.prettyPrint();
-  globalThis.printState = async () => {
-    const state = await _state.getAll();
-    console.table(
-      Object.fromEntries(
-        Object.entries(state).map(([key, value]) => [
-          key,
-          {
-            value: JSON.stringify(value),
-            type: typeof value
-          }
-        ])
-      )
-    );
-  };
+  globalThis.state = _runtime.getState();
+  globalThis.modules = _runtime.getModules();
+  globalThis.printActions = () => _runtime.getActions().prettyPrint();
 }

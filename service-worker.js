@@ -1,8 +1,5 @@
-// import { initializeContext } from "./context-initializer.js";
-
 import './module-registry.js';
-
-import { initializeContext } from "./context-initializer.js";
+import { initializeContext } from "./runtime.js";
 
 console.log('[DEBUG] Minimal service worker loaded');
 

@@ -14,8 +14,8 @@ const refreshPromises = new Map();
 const pkceVerifiers = new Map();
 
 let _runtime;
-export const initialize = async (config, runtimeManager) => {
-  _runtime = runtimeManager;
+export const initialize = async (runtime) => {
+  _runtime = runtime;
   await loadStoredTokens();
   await autoDiscoverProviders();
   setupListeners();
