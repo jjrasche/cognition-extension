@@ -40,7 +40,7 @@ const addModuleActionsToConsole = () => {
     globalThis[camelModuleName][actionName] = (params = {}) => {
       return runtime.call(name, params)
         .then(res => (runtime.log(`[Dev] ${camelModuleName}.${actionName} →`, res), res))
-        .catch(err => (runtime.error(`[Dev] ${camelModuleName}.${actionName} ✗`, err), Promise.reject(err)));
+        .catch(err => (runtime.logError(`[Dev] ${camelModuleName}.${actionName} ✗`, err), Promise.reject(err)));
     };
   }
   

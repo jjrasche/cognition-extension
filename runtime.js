@@ -42,7 +42,7 @@ class Runtime {
                     .forEach(action => this.actions.set(`${module.manifest.name}.${action}`, module[action]));
                 } 
             catch (error) {
-                this.logError(`[${this.runtimeName}] Failed to register [${module.manifest.name}] actions:`, { error: error.message });
+                this.logError(` Failed to register [${module.manifest.name}] actions:`, { error: error.message });
             }
             this.log(`Registered [${module.manifest.name}] actions:`, Array.from(this.actions.keys()));
         });
@@ -71,7 +71,7 @@ class Runtime {
     handleModuleFailedMessage = (message) => {
         if (message.type === 'MODULE_FAILED') {
             this.moduleState.set(message.moduleName, 'failed');
-            this.logError(`[${this.runtimeName}] Module ${message.moduleName} failed in ${message.fromContext}: ${message.error}`);
+            this.logError(` Module ${message.moduleName} failed in ${message.fromContext}: ${message.error}`);
             return true;
         }
     }

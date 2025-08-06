@@ -16,7 +16,7 @@ import * as developmentModule from './dev.module.js';
 // import * as graphDbModule from './graph-db.module.js';
 import * as embeddingModule from './embedding.module.js';
 // import * as oauthModule from './oauth.module.js';
-// import * as transformerModule from './transformer.module.js';
+import * as transformerModule from './transformer.module.js';
 
 export const modules = [
     // tabManagerModule,
@@ -32,7 +32,7 @@ export const modules = [
     // fitbitModule,
     // contextModule,
     // claudeApiModule,
-    // transformerModule,
+    transformerModule,
     embeddingModule,
     // inferenceModule,
     developmentModule,

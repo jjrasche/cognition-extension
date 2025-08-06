@@ -1,15 +1,14 @@
 export const manifest = {
   name: 'transformer',
-  offscreen: true,
   context: "offscreen",
   version: "1.0.0",
   description: 'Hugging Face Transformers.js runtime for loading and caching ML pipelines',
-  actions: ["getPipeline", "listModels"],
+  actions: ["getModel", "listModels"],
 };
 
 const pipelineCache = new Map();
 let runtime;
-export const initialize = (rt) => (runtime = rt, initializeEnvironment());
+export const initialize = async (rt) => (runtime = rt, initializeEnvironment() , await preloadModels());
 
 const initializeEnvironment = () => {
   const env = Transformer.env;
@@ -25,8 +24,18 @@ const loadModel = async (params) => {
     .catch(() => Transformer.pipeline('feature-extraction', modelId, { device: 'wasm', local_files_only: true, ...options }));
   pipelineCache.set(modelId, pipe);
 }
-const getModel = (modelId) => pipelineCache.get(modelId)
-const listModels = () => Array.from(pipelineCache.keys())
+
+const preloadModels = async () => {
+  [...new Set(runtime.getModulesWithProperty('localModels').flatMap(module => module.manifest.localModels || []))]
+    .forEach(async modelId => {
+      try { await loadModel({ modelId }); runtime.log(`[Transformer] ✅ Loaded: ${modelId}`); } 
+      catch (error) { runtime.logError(`[Transformer] ❌ Failed to load model ${modelId}:`, { error: error.message }); }
+    });
+  runtime.log(`[Transformer] Preloading complete. Cached models:`, listModels());
+};
+
+export const getModel = (modelId) => pipelineCache.get(modelId)
+export const listModels = () => Array.from(pipelineCache.keys())
 const clearCache = (modelId) => modelId ? pipelineCache.delete(modelId) : pipelineCache.clear();
 
 
