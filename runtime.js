@@ -115,7 +115,7 @@ class Runtime {
     async executeAction(actionName, params) {
         const action = this.getAction(actionName);
         try {
-            const result = await action.handler(params);
+            const result = await action(params);
             logInfo({ module: 'Runtime', message: `Action executed: ${actionName}`, data: { module: action.module, params: Object.keys(params || {}), success: true } });
             return result;
 
