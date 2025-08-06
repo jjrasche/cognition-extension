@@ -5,6 +5,7 @@ export const manifest = {
   version: "1.0.0", 
   permissions: ["storage"],
   actions: ["request", "clearTokens"],
+  dependencies: [],
 };
 
 const url = 'https://chromiumapp.org/';
@@ -14,45 +15,75 @@ const refreshPromises = new Map();
 const pkceVerifiers = new Map();
 
 let _runtime;
+
 export const initialize = async (runtime) => {
   _runtime = runtime;
+  console.log('[OAuth] Initializing...');
   await loadStoredTokens();
   await autoDiscoverProviders();
   setupListeners();
+  console.log('[OAuth] Initialization complete');
 };
 
 // Auto-discovery of OAuth configs from modules
 const autoDiscoverProviders = async () => {
+  // Get all modules that have oauth property
   const oauthModules = _runtime.getModulesWithProperty('oauth');
-  oauthModules.forEach(module => registerProvider(module.manifest));
+  console.log('[OAuth] Found modules with oauth config:', oauthModules.map(m => m.manifest.name));
+  
+  oauthModules.forEach(module => {
+    if (module.manifest.oauth) {
+      registerProvider(module.manifest);
+    }
+  });
+  
   console.log(`[OAuth] Registered ${providers.size} providers:`, [...providers.keys()]);
 };
 
 const registerProvider = (manifest) => {
-  verifyConfig(manifest.oauth);
-  providers.set(manifest.name, { ...manifest.oauth, provider: manifest.name });
+  const config = manifest.oauth;
+  if (!config.clientId || !config.authUrl || !config.tokenUrl) {
+    console.error(`[OAuth] Invalid OAuth config for ${manifest.name}`);
+    return;
+  }
+  providers.set(manifest.name, { ...config, provider: manifest.name });
+  console.log(`[OAuth] Registered provider: ${manifest.name}`);
 };
-
-const verifyConfig = (config) => !config.clientId || !config.authUrl || !config.tokenUrl || (() => { throw new Error(`Invalid OAuth config`); })();
 
 // Main action - authenticated API calls
 export const request = async (params) => {
   const { provider, url } = params;
-  !providers.has(provider) && (() => { throw new Error(`OAuth provider ${provider} not registered`); })();
-  let token = await checkAndRefresh(provider);
-  if (!token) {
-    await startAuthFlow(provider);
-    token = await waitForToken(provider);
+  
+  if (!providers.has(provider)) {
+    throw new Error(`OAuth provider ${provider} not registered`);
   }
   
-  const response = await fetch(url, {  headers: { 'Authorization': `Bearer ${token}` } });  
+  console.log(`[OAuth] Request for ${provider}: ${url}`);
+  
+  let token = await checkAndRefresh(provider);
+  if (!token) {
+    console.log(`[OAuth] No token for ${provider}, starting auth flow`);
+    await startAuthFlow(provider);
+    token = await waitForToken(provider);
+    if (!token) {
+      throw new Error(`Failed to authenticate with ${provider}`);
+    }
+  }
+  
+  const response = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
 
   if (response.status === 401) {
+    console.log(`[OAuth] Token expired for ${provider}, clearing and retrying`);
     await clearTokens({ provider });
     return request(params); // Retry after clearing stale token
   }
   
-  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} - ${await response.text()}`);
+  }
+  
   return response.json();
 };
 
@@ -61,16 +92,29 @@ const startAuthFlow = async (provider) => {
   const csrf = await generateCSRF(provider);
   const pkce = await generatePKCE(provider);
   const authUrl = buildAuthUrl(provider, csrf, pkce || {});
-  await chrome.windows.create({ url: authUrl, type: 'popup', width: 600, height: 800, focused: true });
+  console.log(`[OAuth] Opening auth window for ${provider}`);
+  await chrome.windows.create({ 
+    url: authUrl, 
+    type: 'popup', 
+    width: 600, 
+    height: 800, 
+    focused: true 
+  });
 };
 
 const waitForToken = (provider, timeout = 30000) => new Promise((resolve) => {
   const start = Date.now();
   const check = () => {
     const token = tokens.get(provider)?.accessToken;
-    if (token) resolve(token);
-    else if (Date.now() - start > timeout) resolve(null);
-    else setTimeout(check, 500);
+    if (token) {
+      console.log(`[OAuth] Token received for ${provider}`);
+      resolve(token);
+    } else if (Date.now() - start > timeout) {
+      console.error(`[OAuth] Timeout waiting for token for ${provider}`);
+      resolve(null);
+    } else {
+      setTimeout(check, 500);
+    }
   };
   check();
 });
@@ -79,6 +123,7 @@ export const clearTokens = async (params) => {
   const { provider } = params;
   tokens.delete(provider);
   await chrome.storage.sync.remove([providerKey(provider)]);
+  console.log(`[OAuth] Cleared tokens for ${provider}`);
   return { success: true };
 };
 
@@ -86,17 +131,28 @@ export const clearTokens = async (params) => {
 const checkAndRefresh = async (provider) => {
   const token = tokens.get(provider);
   if (!token) return null;
-  return token.expiresAt && Date.now() > token.expiresAt
-    ? await refreshToken(provider)
-    : token.accessToken;
+  
+  if (token.expiresAt && Date.now() > token.expiresAt) {
+    console.log(`[OAuth] Token expired for ${provider}, refreshing...`);
+    return await refreshToken(provider);
+  }
+  
+  return token.accessToken;
 };
 
 const refreshToken = async (provider) => {
-  if (refreshPromises.has(provider)) return refreshPromises.get(provider);
+  if (refreshPromises.has(provider)) {
+    return refreshPromises.get(provider);
+  }
+  
   const promise = doRefresh(provider);
   refreshPromises.set(provider, promise);
-  try { return await promise; }
-  finally { refreshPromises.delete(provider); }
+  
+  try {
+    return await promise;
+  } finally {
+    refreshPromises.delete(provider);
+  }
 };
 
 const doRefresh = async (provider) => {
@@ -112,6 +168,7 @@ const doRefresh = async (provider) => {
     const response = await requestRefresh(config, token.refreshToken);
     const newTokens = await response.json();
     await storeTokens(provider, newTokens);
+    console.log(`[OAuth] Refreshed token for ${provider}`);
     return newTokens.access_token;
   } catch (error) {
     console.error(`[OAuth] Refresh failed for ${provider}:`, error);
@@ -130,18 +187,21 @@ const buildAuthUrl = (provider, csrf, pkceParams = {}) => {
 const buildAuthParams = (config, csrf, pkceParams = {}) => {
   const params = new URLSearchParams({
     client_id: config.clientId,
-    response_type: 'code', 
+    response_type: 'code',
     redirect_uri: config.redirectUri || url,
     scope: config.scopes.join(' '),
     state: csrf
   });
   
-  pkceParams.codeChallenge && (
-    params.set('code_challenge', pkceParams.codeChallenge),
-    params.set('code_challenge_method', 'S256')
-  );
+  if (pkceParams.codeChallenge) {
+    params.set('code_challenge', pkceParams.codeChallenge);
+    params.set('code_challenge_method', 'S256');
+  }
   
-  config.authParams && Object.entries(config.authParams).forEach(([k, v]) => params.set(k, v));
+  if (config.authParams) {
+    Object.entries(config.authParams).forEach(([k, v]) => params.set(k, v));
+  }
+  
   return params;
 };
 
@@ -166,7 +226,7 @@ const generateRandomString = () => {
   return Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
 };
 
-// CSRF management  
+// CSRF management
 const generateCSRF = async (provider) => {
   const csrf = crypto.randomUUID();
   await chrome.storage.local.set({ [csrfKey(provider)]: csrf });
@@ -192,6 +252,7 @@ const loadStoredTokens = async () => {
     .forEach(([key, tokenData]) => {
       const provider = key.replace('oauth_', '');
       tokens.set(provider, tokenData);
+      console.log(`[OAuth] Loaded stored token for ${provider}`);
     });
 };
 
@@ -206,6 +267,7 @@ const storeTokens = async (provider, newTokens) => {
   
   tokens.set(provider, tokenData);
   await chrome.storage.sync.set({ [providerKey(provider)]: tokenData });
+  console.log(`[OAuth] Stored tokens for ${provider}`);
 };
 
 // Network requests
@@ -223,19 +285,32 @@ const requestRefresh = async (config, refreshToken) => {
   }
   
   const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
-  !response.ok && (() => { throw new Error(`Refresh failed: ${response.status}`); })();
+  if (!response.ok) {
+    throw new Error(`Refresh failed: ${response.status}`);
+  }
   return response;
 };
 
 // Callback handling
 const handleCallback = async (callbackUrl) => {
   const params = extractCallbackParams(callbackUrl);
-  if (params.error) return { success: false, error: params.error };
-  if (!params.code || !params.state) return { success: false, error: 'Missing code or state' };
+  if (params.error) {
+    console.error(`[OAuth] Callback error: ${params.error}`);
+    return { success: false, error: params.error };
+  }
+  
+  if (!params.code || !params.state) {
+    console.error('[OAuth] Missing code or state in callback');
+    return { success: false, error: 'Missing code or state' };
+  }
   
   const provider = await findProviderByState(params.state);
-  if (!provider) return { success: false, error: 'Invalid state - possible CSRF' };
+  if (!provider) {
+    console.error('[OAuth] Invalid state - possible CSRF');
+    return { success: false, error: 'Invalid state - possible CSRF' };
+  }
   
+  console.log(`[OAuth] Processing callback for ${provider}`);
   await clearCSRF(provider);
   return await exchangeCodeForTokens(provider, params.code);
 };
@@ -263,8 +338,10 @@ const exchangeCodeForTokens = async (provider, code) => {
     const response = await requestTokens(config, code);
     const tokens = await response.json();
     await storeTokens(provider, tokens);
+    console.log(`[OAuth] Successfully exchanged code for tokens for ${provider}`);
     return { success: true, provider };
   } catch (error) {
+    console.error(`[OAuth] Token exchange failed for ${provider}:`, error);
     return { success: false, error: error.message };
   }
 };
@@ -280,7 +357,10 @@ const requestTokens = async (config, code) => {
   
   if (!config.clientSecret) {
     const verifier = pkceVerifiers.get(config.provider);
-    verifier && (body.set('code_verifier', verifier), pkceVerifiers.delete(config.provider));
+    if (verifier) {
+      body.set('code_verifier', verifier);
+      pkceVerifiers.delete(config.provider);
+    }
   }
   
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
