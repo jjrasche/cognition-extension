@@ -1,4 +1,4 @@
-const manifest = {
+export const manifest = {
   name: 'transformer',
   offscreen: true,
   description: 'Hugging Face Transformers.js runtime for loading and caching ML pipelines',
@@ -46,5 +46,3 @@ const Transformer = {
   AutoTokenizer: te,
   // Add more if you need them later
 };
-
-initialize(new ContentStore());

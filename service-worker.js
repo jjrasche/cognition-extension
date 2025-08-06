@@ -1,8 +1,23 @@
+// import { initializeContext } from "./context-initializer.js";
+
+import './module-registry.js';
+
 import { initializeContext } from "./context-initializer.js";
 
+console.log('[DEBUG] Minimal service worker loaded');
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('[DEBUG] Message received:', message);
+    sendResponse({ status: 'ok', message: 'Service worker responding' });
+    return true;
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+    console.log('[DEBUG] Extension installed/reloaded');
+});
+
+console.log('[DEBUG] Listeners registered');
 initializeContext('service-worker');
-
-
 // // background.js - Service Worker Entry Point : This file bootstraps the module system and initializes the extension
 // import './dev-reload.js';
 // import { ExtensionStore } from './extension-state.js';

@@ -17,3 +17,6 @@ export const waitFor = (condition, interval = 100, timeout = 10000) => new Promi
   check();
 });
 export const getId = (prefix = '') => `${prefix}${Date.now()}_${Math.random().toString(36)}`;
+
+export const yesterday = () => new Date(Date.now() - 86400000).toISOString().split('T')[0];
+export const today = () => new Date().toISOString().split('T')[0];
