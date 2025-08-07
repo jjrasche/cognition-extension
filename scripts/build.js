@@ -22,8 +22,8 @@ const moduleFiles = () => modules
   .filter(modulePath => modulePath && typeof modulePath === 'string');
 const isDev = () => process.argv.includes('--dev') || process.argv.includes('--watch');
 const cleanBuildDirectory = async () => {
-  try { await fs.rm(buildDir, { recursive: true, force: true });
-  } catch (error) {}
+  const filesToDelete = [...coreFiles, ...moduleFiles(), ...(isDev() ? devFiles : [])];
+  await Promise.all(filesToDelete.map(file => fs.unlink(path.join(buildDir, file)).catch(() => {})));
   await fs.mkdir(buildDir, { recursive: true });
 };
 const copyFiles = async(files) => files.forEach(async file => (console.log(file), await fs.copyFile(path.join(rootDir, file), path.join(buildDir, file))));
