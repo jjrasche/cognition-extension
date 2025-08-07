@@ -135,38 +135,17 @@ const loadModel = async (model) => {
   if (pipelineCache.has(name)) return pipelineCache.get(name);
   runtime.log(`[Transformer] Loading model ${name}...`);
   try {
-    const pipe = await Transformer.pipeline('feature-extraction', name, model.options || {});
+    const pipe = await Transformer.pipeline('feature-extraction', model.name, model.options || {});
     pipelineCache.set(name, pipe);
-  } catch (error) { runtime.logError(`[Transformer] loading ${name} failed:`, error) }
+  } catch (error) { 
+    runtime.logError(`[Transformer] loading ${name} failed:`, {
+      message: error.message,
+      stack: error.stack,
+      modelName: model.name,
+      options: model.options
+    });
+ }
 };
 export const getModel = (modelId) => pipelineCache.get(modelId);
 export const listModels = () => Array.from(pipelineCache.keys());
 export const getModelName = (model) => `${model.name}-${model.options.dtype}-${model.options.device}`;
-
-
-
-
-
-// testing remove
-export const checkExecutionProviders = async () => {
-  try {
-    const env = Transformer.env;
-    const ort = env.backends?.onnx;
-    
-    if (!ort) {
-      return { error: 'ONNX backend not available' };
-    }
-    
-    return {
-      ortVersion: ort.version || 'unknown',
-      availableProviders: ort.availableProviders || [],
-      webgpuSupported: ort.webgpu ? Object.keys(ort.webgpu) : [],
-      webgpuInitialized: typeof ort.webgpu?.init === 'function',
-      webnnSupported: ort.webnn ? Object.keys(ort.webnn) : [],
-      currentProviders: ort.executionProviders || 'not set'
-    };
-    
-  } catch (error) {
-    return { error: error.message };
-  }
-};

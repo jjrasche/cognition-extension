@@ -7,17 +7,24 @@ export const manifest = {
   description: "use local embedding models to embed text",
   actions: ["embedText"],
   externalDependencies: [
+    { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '759C3CD2B7FE7E93933AD23C4C9181B7396442A2ED746EC7C1D46192C469C46E' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_fp16.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '2CDB5E58291813B6D6E248ED69010100246821A367FA17B1B81AE9483744533D' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_q4f16.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: 'EB08A666C46109637E0B6CB04F6052A68EFD59BB0252D4E0438D28FB6B2D853D' },
+    { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: 'AFDB6F1A0E45B715D0BB9B11772F032C399BABD23BFC31FED1C170AFC848BDB1' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json', destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: 'DA0E79933B9ED51798A3AE27893D3C5FA4A201126CEF75586296DF9B4D2C62A0' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: '9261E7D79B44C8195C1CADA2B453E55B00AEB81E907A6664974B4D7776172AB3' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/config.json',  destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: '7135149F7CFFA1A573466C6E4D8423ED73B62FD2332C575BF738A0D033F70DF7' }
   ],
   localModels : [
+    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
+    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'q4f16', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
+    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
+    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
+    
   ]
 };
 
