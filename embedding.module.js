@@ -13,13 +13,13 @@ let runtime;
 export const initialize = async (rt) => runtime = rt;
 
 export const embedText = async (params) => {
-  const { text } = params;
+  const { text, modelName } = params;
   if (!text) throw new Error('Text required');
   
   const startTime = performance.now();
-  const model = await runtime.call('transformer.getModel', manifest.localModels[0]);
+  const model = await runtime.call('transformer.getModel', modelName || manifest.localModels[0]);
   if (!model) throw new Error('Model not loaded');
-  
+    
   runtime.log(`[Embedding] About to run inference with text: "${text.substring(0, 50)}..."`);
   
   // Try to get more device info from the actual inference

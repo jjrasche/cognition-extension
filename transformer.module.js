@@ -1,150 +1,225 @@
+import { embedText } from "embedding.module";
+
 export const manifest = {
   name: 'transformer',
   context: "offscreen",
   version: "1.0.0",
-  description: 'Hugging Face Transformers.js runtime for loading and caching ML pipelines',
-  actions: ["getModel", "listModels", "diagnoseGPU", "verifyOnnxFiles", "debugOnnxBackends", "checkExecutionProviders"],
+  description: 'Hugging Face Transformers.js runtime with WebGPU/WebNN support',
+  actions: ["getModel", "listModels", "diagnoseGPU", "verifyOnnxFiles", "checkExecutionProviders", "testWebNN", "testCPUvsGPU"],
 };
 
 const pipelineCache = new Map();
 let runtime;
 let Transformer;
-export const initialize = async (rt) => (runtime = rt, await initializeEnvironment() , await preloadModels());
 
-// const initializeEnvironment = async () => {
-//   Transformer = await loadTransformer();
-//   const env = Transformer.env;
-//   env.allowRemoteModels = false;
-//   env.useBrowserCache = false
-//   env.allowLocalModels = true;
-//   env.localModelPath = chrome.runtime.getURL('models/');
-//   if(env.backends?.onnx?.wasm) {
-//     env.backends.onnx.wasm.numThreads = 1;
-//     env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('onnx-runtime/');
-//     env.backends.onnx.wasm.proxy = false;
-//   }
-// }
+export const initialize = async (rt) => {
+  runtime = rt;
+  await initializeEnvironment();
+  await preloadModels();
+  await loadForTest();
+};
+
 const initializeEnvironment = async () => {
+  runtime.log('[Transformer] Loading Transformers.js library...');
   Transformer = await loadTransformer();
+  
   const env = Transformer.env;
   
-  // Configure paths
+  // Configure environment
   env.allowRemoteModels = false;
   env.useBrowserCache = false;
   env.allowLocalModels = true;
   env.localModelPath = chrome.runtime.getURL('models/');
   
-  // Configure WASM paths
+  // Configure WASM paths for JSEP (WebGPU/WebNN support)
   if (env.backends?.onnx?.wasm) {
     env.backends.onnx.wasm.numThreads = 1;
     env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('onnx-runtime/');
     env.backends.onnx.wasm.proxy = false;
   }
   
-  // CRITICAL: Initialize WebGPU backend explicitly
-  try {
-    // Initialize WebGPU backend
-    await env.backends.onnx.webgpu.init?.();
-    runtime.log('[Transformer] WebGPU backend initialized');
-    
-    // Set WebGPU as preferred execution provider
-    env.backends.onnx.webgpu.preferredExecutionProviders = ['webgpu', 'wasm'];
-    
-  } catch (error) {
-    runtime.logError('[Transformer] WebGPU backend initialization failed:', error);
+  runtime.log('[Transformer] ✅ Environment configured');
+  
+  // CRITICAL: Force initialize execution providers
+  await forceInitializeExecutionProviders();
+  
+  // Log available backends
+  if (env.backends?.onnx) {
+    runtime.log('[Transformer] Available ONNX backends:', Object.keys(env.backends.onnx));
   }
 };
 
-// Alternative loading method using dynamic import (cleaner for ES modules)
-const loadTransformer = async () => {
-  // try {
-    const scriptUrl = chrome.runtime.getURL('libs/transformers.js');
-    Transformer = await import(scriptUrl);
-    return Transformer;
-  // } catch (error) {
-  //   runtime.logError('[Transformer] Failed to load via import:', error);
+const forceInitializeExecutionProviders = async () => {
+  try {
+    runtime.log('[Transformer] Force initializing execution providers...');
     
-  //   // Fallback to fetch + eval (last resort)
-  //   try {
-  //     const response = await fetch(scriptUrl);
-  //     const code = await response.text();
+    const env = Transformer.env;
+    const ort = env.backends?.onnx;
+    
+    if (!ort) {
+      runtime.logError('[Transformer] ONNX backend not available');
+      return;
+    }
+    
+    // Method 1: Try to manually initialize WebGPU
+    if (ort.webgpu && typeof ort.webgpu.init === 'function') {
+      try {
+        await ort.webgpu.init();
+        runtime.log('[Transformer] ✅ WebGPU execution provider initialized');
+      } catch (error) {
+        runtime.logError('[Transformer] WebGPU init failed:', error);
+      }
+    }
+    
+    // Method 2: Try to manually initialize WASM
+    if (ort.wasm && typeof ort.wasm.init === 'function') {
+      try {
+        await ort.wasm.init();
+        runtime.log('[Transformer] ✅ WASM execution provider initialized');
+      } catch (error) {
+        runtime.logError('[Transformer] WASM init failed:', error);
+      }
+    }
+    
+    // Method 3: Force set execution providers list
+    try {
+      ort.executionProviders = ['webgpu', 'wasm', 'cpu'];
+      runtime.log('[Transformer] ✅ Forced execution providers:', ort.executionProviders);
+    } catch (error) {
+      runtime.logError('[Transformer] Failed to set execution providers:', error);
+    }
+    
+    // Method 4: Try to trigger provider registration
+    try {
+      // Create a minimal session to trigger provider initialization
+      const modelUrl = chrome.runtime.getURL('models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx');
+      const testOptions = {
+        executionProviders: ['webgpu', 'wasm'],
+        logSeverityLevel: 0
+      };
       
-  //     // Create a module from the code
-  //     const blob = new Blob([code], { type: 'application/javascript' });
-  //     const blobUrl = URL.createObjectURL(blob);
+      // Import ONNX Runtime directly
+      const ortModule = await import(chrome.runtime.getURL('onnx-runtime/ort.webgpu.mjs'));
+      const ortSession = await ortModule.InferenceSession.create(modelUrl, testOptions);
+      runtime.log('[Transformer] ✅ Test session created with execution providers');
       
-  //     Transformer = await import(blobUrl);
+      // Update our reference to the initialized ONNX runtime
+      if (ortModule.env?.backends?.onnx) {
+        Object.assign(ort, ortModule.env.backends.onnx);
+      }
       
-  //     URL.revokeObjectURL(blobUrl);
-  //     runtime.log('[Transformer] Library loaded via fetch + blob');
-      
-  //   } catch (fetchError) {
-  //     throw fetchError;
-  //   }
-  // }
+    } catch (error) {
+      runtime.logError('[Transformer] Test session creation failed:', error);
+    }
+    
+  } catch (error) {
+    runtime.logError('[Transformer] Force initialization failed:', error);
+  }
 };
 
-// const loadModel = async (params) => {
-//   let { modelId, options } = params;
-//   if (pipelineCache.has(modelId)) return;
-//   options = { dtype: 'fp16', model_file_name: 'model_fp16.onnx', local_files_only: true, ...options };
-//   const pipe = await Transformer.pipeline('feature-extraction', modelId, { device: 'webgpu', ...options})
-//     .catch(async () => await Transformer.pipeline('feature-extraction', modelId, { device: 'wasm', options }));
-//   pipelineCache.set(modelId, pipe);
-// }
+const loadTransformer = async () => {
+  try {
+    const scriptUrl = chrome.runtime.getURL('libs/transformers.js');
+    const transformer = await import(scriptUrl);
+    runtime.log('[Transformer] ✅ Transformers.js loaded successfully');
+    return transformer;
+  } catch (error) {
+    runtime.logError('[Transformer] ❌ Failed to load Transformers.js:', error);
+    throw error;
+  }
+};
+
 const loadModel = async (params) => {
   const { modelId, options = {} } = params;
   if (pipelineCache.has(modelId)) return pipelineCache.get(modelId);
   
   runtime.log(`[Transformer] Loading model ${modelId}...`);
   
-  // Use execution providers instead of device
-  const webgpuOptions = {
-    executionProviders: ['webgpu', 'wasm'],  // Instead of device: 'webgpu'
-    dtype: 'fp16',
-    local_files_only: true,
-    ...options
-  };
+  // Try execution providers in order of preference
+  const executionProviders = [
+    { device: 'webgpu', fallback: 'WebGPU acceleration' },
+    { device: 'webnn', fallback: 'WebNN acceleration' },
+    { device: 'wasm', fallback: 'WASM CPU execution' }
+  ];
   
-  runtime.log(`[Transformer] Attempting WebGPU with options:`, webgpuOptions);
-  
-  try {
-    const pipe = await Transformer.pipeline('feature-extraction', modelId, webgpuOptions);
-    runtime.log(`[Transformer] ✅ WebGPU pipeline created successfully`);
-    
-    pipelineCache.set(modelId, pipe);
-    return pipe;
-  } catch (error) {
-    runtime.logError(`[Transformer] WebGPU failed:`, error);
-    // Fallback...
+  for (const provider of executionProviders) {
+    try {
+      const pipelineOptions = {
+        device: provider.device,
+        dtype: provider.device === 'webgpu' ? 'fp16' : 'q8',
+        local_files_only: true,
+        ...options
+      };
+      
+      runtime.log(`[Transformer] Attempting ${provider.fallback} with device: ${provider.device}`);
+      
+      const pipe = await Transformer.pipeline('feature-extraction', modelId, pipelineOptions);
+      
+      runtime.log(`[Transformer] ✅ Successfully loaded ${modelId} with ${provider.fallback}`);
+      pipelineCache.set(modelId, pipe);
+      return pipe;
+      
+    } catch (error) {
+      runtime.logError(`[Transformer] ${provider.fallback} failed:`, error);
+      
+      // If this is the last provider, throw the error
+      if (provider === executionProviders[executionProviders.length - 1]) {
+        throw error;
+      }
+      // Otherwise, continue to next provider
+    }
   }
 };
 
 const preloadModels = async () => {
-  [...new Set(runtime.getModulesWithProperty('localModels').flatMap(module => module.manifest.localModels || []))]
-    .forEach(async modelId => {
-      try { await loadModel({ modelId }); runtime.log(`[Transformer] ✅ Loaded: ${modelId}`); } 
-      catch (error) { runtime.logError(`[Transformer] ❌ Failed to load model ${modelId}:`, { error: error.message }); }
-    });
+  const modelIds = [...new Set(
+    runtime.getModulesWithProperty('localModels')
+      .flatMap(module => module.manifest.localModels || [])
+  )];
+  
+  runtime.log(`[Transformer] Preloading ${modelIds.length} models...`);
+  
+  for (const modelId of modelIds) {
+    try {
+      await loadModel({ modelId });
+      runtime.log(`[Transformer] ✅ Preloaded: ${modelId}`);
+    } catch (error) {
+      runtime.logError(`[Transformer] ❌ Failed to preload ${modelId}:`, error);
+    }
+  }
+  
   runtime.log(`[Transformer] Preloading complete. Cached models:`, listModels());
 };
 
-export const getModel = (modelId) => {
-  return pipelineCache.get(modelId);
+const loadForTest = async (modelId) => {
+  
+    // Load WebGPU version
+  const webgpuModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+    device: 'webgpu'
+  });
+  
+  // Load WASM version  
+  const wasmModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+    device: 'wasm'
+  });
+  
+  // Store them in cache with prefixes
+  pipelineCache.set('webgpu-all-MiniLM-L6-v2', webgpuModel);
+  pipelineCache.set('wasm-all-MiniLM-L6-v2', wasmModel);
 }
-export const listModels = () => Array.from(pipelineCache.keys())
-const clearCache = (modelId) => modelId ? pipelineCache.delete(modelId) : pipelineCache.clear();
-
+export const getModel = (modelId) => pipelineCache.get(modelId);
+export const listModels = () => Array.from(pipelineCache.keys());
 
 export const diagnoseGPU = async () => {
   const diagnosis = {
     timestamp: new Date().toISOString(),
     webgpu: {},
+    webnn: {},
     onnx: {},
     transformers: {}
   };
   
-  // Test WebGPU directly
+  // Test WebGPU
   try {
     diagnosis.webgpu.available = !!navigator.gpu;
     
@@ -157,32 +232,38 @@ export const diagnoseGPU = async () => {
       if (adapter) {
         diagnosis.webgpu.adapterInfo = {
           vendor: adapter.info?.vendor || 'unknown',
-          architecture: adapter.info?.architecture || 'unknown',
-          device: adapter.info?.device || 'unknown'
+          architecture: adapter.info?.architecture || 'unknown'
         };
         
         const device = await adapter.requestDevice();
         diagnosis.webgpu.device = !!device;
-        
-        if (device) {
-          diagnosis.webgpu.features = Array.from(device.features);
-          diagnosis.webgpu.limits = Object.fromEntries(
-            Object.entries(device.limits).slice(0, 5) // First 5 limits
-          );
-        }
+        diagnosis.webgpu.features = device ? Array.from(device.features) : [];
       }
     }
   } catch (error) {
     diagnosis.webgpu.error = error.message;
   }
   
-  // Test ONNX WebGPU support
+  // Test WebNN
   try {
-    // This might reveal ONNX-specific WebGPU issues
+    diagnosis.webnn.available = 'ml' in navigator;
+    diagnosis.webnn.contextSupported = typeof navigator.ml?.createContext === 'function';
+    
+    if (diagnosis.webnn.available && diagnosis.webnn.contextSupported) {
+      // Try to create a context
+      const context = await navigator.ml.createContext({ deviceType: 'gpu' });
+      diagnosis.webnn.contextCreated = !!context;
+    }
+  } catch (error) {
+    diagnosis.webnn.error = error.message;
+  }
+  
+  // Test ONNX backends
+  try {
     const env = Transformer.env;
     diagnosis.onnx.backends = Object.keys(env.backends || {});
-    diagnosis.onnx.webgpu_available = env.backends?.webgpu ? true : false;
-    
+    diagnosis.onnx.webgpu_available = !!env.backends?.onnx?.webgpu;
+    diagnosis.onnx.webnn_available = !!env.backends?.onnx?.webnn;
   } catch (error) {
     diagnosis.onnx.error = error.message;
   }
@@ -190,16 +271,15 @@ export const diagnoseGPU = async () => {
   return diagnosis;
 };
 
-
 export const verifyOnnxFiles = async () => {
   const onnxDir = 'onnx-runtime/';
   const expectedFiles = [
-    'ort.webgpu.mjs',
-    'ort-wasm-simd-threaded.jsep.wasm',
-    'ort-wasm-simd-threaded.wasm',
-    'ort.webgpu.min.js',                    // Alternative WebGPU file
-    'ort-web.min.js',                       // Standard ONNX web
-    'ort.min.js'                           // Basic ONNX
+    'ort.webgpu.mjs',                    // WebGPU support
+    'ort-wasm-simd-threaded.jsep.wasm',  // JSEP WASM (WebGPU/WebNN)
+    'ort-wasm-simd-threaded.wasm',       // Standard WASM
+    'ort.webgpu.min.js',                 // Alternative WebGPU
+    'ort-web.min.js',                    // Standard web
+    'ort.min.js'                        // Basic ONNX
   ];
   
   const results = {
@@ -211,16 +291,13 @@ export const verifyOnnxFiles = async () => {
   for (const file of expectedFiles) {
     try {
       const url = chrome.runtime.getURL(onnxDir + file);
-      runtime.log(`[ONNX Check] Checking ${url}`);
-      
       const response = await fetch(url);
       
       results.files[file] = {
         exists: response.ok,
         status: response.status,
         size: response.headers.get('content-length'),
-        type: response.headers.get('content-type'),
-        url: url
+        type: response.headers.get('content-type')
       };
       
       if (response.ok) {
@@ -230,53 +307,80 @@ export const verifyOnnxFiles = async () => {
       }
       
     } catch (error) {
-      results.files[file] = {
-        exists: false,
-        error: error.message
-      };
+      results.files[file] = { exists: false, error: error.message };
       runtime.logError(`[ONNX Check] ❌ ${file} - ${error.message}`);
     }
-  }
-  
-  // Also check what's actually in the onnx-runtime directory
-  try {
-    const dirUrl = chrome.runtime.getURL(onnxDir);
-    runtime.log(`[ONNX Check] Base directory: ${dirUrl}`);
-  } catch (error) {
-    results.directoryError = error.message;
   }
   
   return results;
 };
 
-export const debugOnnxBackends = async () => {
-  const env = Transformer.env;
-  
-  return {
-    env_backends: Object.keys(env.backends || {}),
-    onnx_backend_details: env.backends.onnx,
-    webgpu_in_onnx: 'webgpu' in (env.backends || {}),
-    available_providers: env.backends.onnx?.availableProviders || 'unknown'
-  };
-};
-
-
 export const checkExecutionProviders = async () => {
   try {
     const env = Transformer.env;
+    const ort = env.backends?.onnx;
     
-    // Try to access ONNX runtime directly
-    const ort = env.backends.onnx;
+    if (!ort) {
+      return { error: 'ONNX backend not available' };
+    }
     
     return {
       ortVersion: ort.version || 'unknown',
       availableProviders: ort.availableProviders || [],
       webgpuSupported: ort.webgpu ? Object.keys(ort.webgpu) : [],
       webgpuInitialized: typeof ort.webgpu?.init === 'function',
+      webnnSupported: ort.webnn ? Object.keys(ort.webnn) : [],
       currentProviders: ort.executionProviders || 'not set'
     };
     
   } catch (error) {
     return { error: error.message };
+  }
+};
+
+export const testWebNN = async () => {
+  try {
+    // Check if WebNN API is available
+    if (!('ml' in navigator)) {
+      return { 
+        available: false, 
+        error: 'WebNN API not available in navigator' 
+      };
+    }
+    
+    runtime.log('[Transformer] WebNN API detected, testing context creation...');
+    
+    const results = {
+      available: true,
+      contexts: {}
+    };
+    
+    // Test different device types
+    const deviceTypes = ['cpu', 'gpu', 'npu'];
+    
+    for (const deviceType of deviceTypes) {
+      try {
+        const context = await navigator.ml.createContext({ deviceType });
+        results.contexts[deviceType] = {
+          success: true,
+          context: !!context
+        };
+        runtime.log(`[WebNN] ✅ ${deviceType} context created successfully`);
+      } catch (error) {
+        results.contexts[deviceType] = {
+          success: false,
+          error: error.message
+        };
+        runtime.log(`[WebNN] ❌ ${deviceType} context failed: ${error.message}`);
+      }
+    }
+    
+    return results;
+    
+  } catch (error) {
+    return { 
+      available: false, 
+      error: error.message 
+    };
   }
 };
