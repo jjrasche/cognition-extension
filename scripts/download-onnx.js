@@ -16,8 +16,9 @@ const CDN_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNX_VERSION}/d
 //  files for WebGPU
 const FILES = [
   'ort.webgpu.mjs',                     // Main WebGPU API (ES modules)
-  'ort-wasm-simd-threaded.jsep.wasm',   // WebGPU execution provider
-  'ort-wasm-simd-threaded.wasm',         // CPU fallback
+  'ort-wasm-simd-threaded.jsep.mjs',   // WebGPU JavaScript module
+  'ort-wasm-simd-threaded.jsep.wasm',  // WebGPU execution provider
+  'ort-wasm-simd-threaded.wasm',       // CPU fallback
 ]
 
 // Colors for console

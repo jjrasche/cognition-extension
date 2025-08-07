@@ -54,13 +54,45 @@ const loadTransformer = async () => {
   // }
 };
 
+// const loadModel = async (params) => {
+//   let { modelId, options } = params;
+//   if (pipelineCache.has(modelId)) return;
+//   options = { dtype: 'fp16', model_file_name: 'model_fp16.onnx', local_files_only: true, ...options };
+//   const pipe = await Transformer.pipeline('feature-extraction', modelId, { device: 'webgpu', ...options})
+//     .catch(async () => await Transformer.pipeline('feature-extraction', modelId, { device: 'wasm', options }));
+//   pipelineCache.set(modelId, pipe);
+// }
 const loadModel = async (params) => {
-  const { modelId, options } = params;
-  if (pipelineCache.has(modelId)) return;
-  const pipe = await Transformer.pipeline('feature-extraction', modelId, { device: 'webgpu', dtype: 'fp32', local_files_only: true, ...options})
-    .catch(async () => await Transformer.pipeline('feature-extraction', modelId, { device: 'wasm', dtype: 'q8', local_files_only: true, ...options }));
+  const { modelId, options = {} } = params;
+  if (pipelineCache.has(modelId)) return pipelineCache.get(modelId);
   
-}
+  // Try WebGPU with fp16 first
+  const webgpuOptions = {
+    device: 'webgpu',
+    dtype: 'fp16',
+    local_files_only: true,
+    ...options
+  };
+  
+  try {
+    const pipe = await Transformer.pipeline('feature-extraction', modelId, webgpuOptions);
+    pipelineCache.set(modelId, pipe);
+    return pipe;
+  } catch (error) {
+    console.warn('[Transformer] WebGPU failed, falling back to WASM:', error);
+    
+    const wasmOptions = {
+      device: 'wasm', 
+      dtype: 'fp32',  // WASM might not support fp16
+      local_files_only: true,
+      ...options
+    };
+    
+    const pipe = await Transformer.pipeline('feature-extraction', modelId, wasmOptions);
+    pipelineCache.set(modelId, pipe);
+    return pipe;
+  }
+};
 
 const preloadModels = async () => {
   [...new Set(runtime.getModulesWithProperty('localModels').flatMap(module => module.manifest.localModels || []))]
@@ -71,6 +103,32 @@ const preloadModels = async () => {
   runtime.log(`[Transformer] Preloading complete. Cached models:`, listModels());
 };
 
-export const getModel = (modelId) => pipelineCache.get(modelId)
+export const getModel = (modelId) => {
+  return pipelineCache.get(modelId);
+}
 export const listModels = () => Array.from(pipelineCache.keys())
 const clearCache = (modelId) => modelId ? pipelineCache.delete(modelId) : pipelineCache.clear();
+
+
+export const testWebGPU = async () => {
+  const startTime = performance.now();
+  
+  try {
+    const adapter = await navigator.gpu?.requestAdapter();
+    const device = await adapter?.requestDevice();
+    
+    return {
+      available: !!navigator.gpu,
+      adapter: !!adapter,
+      device: !!device,
+      adapterInfo: adapter?.info || null,
+      testTime: `${(performance.now() - startTime).toFixed(2)}ms`
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message,
+      testTime: `${(performance.now() - startTime).toFixed(2)}ms`
+    };
+  }
+};

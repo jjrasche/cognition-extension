@@ -15,6 +15,14 @@ export const initialize = async (rt) => runtime = rt;
 export const embedText = async (params) => {
   const { text } = params;
   !text && (() => { throw new Error('Text required'); })();
-  const model = await runtime.call('transformer.getModel', { modelId: manifest.localModels[0] });
-  return await model.pipeline(text);
+  const startTime = performance.now();
+  const model = await runtime.call('transformer.getModel', manifest.localModels[0]);
+  const endTime = performance.now();
+  const embedding = await model(text, { pooling: 'mean', normalize: true });
+  return {
+    embedding,
+    processingTime: `${(endTime - startTime).toFixed(2)}ms`,
+    modelUsed: manifest.localModels[0],
+    device: embedding.ort_tensor?.dataLocation || 'unknown'
+  };
 };
