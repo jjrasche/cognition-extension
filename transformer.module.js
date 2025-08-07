@@ -1,5 +1,3 @@
-import { embedText } from "embedding.module";
-
 export const manifest = {
   name: 'transformer',
   context: "offscreen",
@@ -192,20 +190,48 @@ const preloadModels = async () => {
 };
 
 const loadForTest = async (modelId) => {
+  const webgpuModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { device: 'webgpu' });
+  const wasmModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { device: 'wasm' });
   
-    // Load WebGPU version
-  const webgpuModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-    device: 'webgpu'
-  });
+  // Try to load WebNN model
+  let webnnModel = null;
+  try {
+    webnnModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { device: 'webnn' });
+    console.log('✅ WebNN model loaded successfully');
+  } catch (error) {
+    console.log('❌ WebNN model failed to load:', error.message);
+    
+    // WebNN might not be supported in Transformers.js device option
+    // Try direct ONNX Runtime approach
+    try {
+      const ortModule = await import(chrome.runtime.getURL('onnx-runtime/ort.webgpu.mjs'));
+      const modelUrl = chrome.runtime.getURL('models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx');
+      
+      const webnnSession = await ortModule.InferenceSession.create(modelUrl, {
+        executionProviders: [{
+          name: 'webnn',
+          deviceType: 'gpu',
+          powerPreference: 'high-performance'
+        }]
+      });
+      
+      console.log('✅ Direct WebNN session created');
+      // Store the session for manual inference
+      pipelineCache.set('webnn-session-all-MiniLM-L6-v2', webnnSession);
+      
+    } catch (sessionError) {
+      console.log('❌ Direct WebNN session failed:', sessionError.message);
+    }
+  }
   
-  // Load WASM version  
-  const wasmModel = await Transformer.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-    device: 'wasm'
-  });
-  
-  // Store them in cache with prefixes
   pipelineCache.set('webgpu-all-MiniLM-L6-v2', webgpuModel);
   pipelineCache.set('wasm-all-MiniLM-L6-v2', wasmModel);
+  
+  if (webnnModel) {
+    pipelineCache.set('webnn-all-MiniLM-L6-v2', webnnModel);
+  }
+  
+  console.log('Loaded models:', Array.from(pipelineCache.keys()));
 }
 export const getModel = (modelId) => pipelineCache.get(modelId);
 export const listModels = () => Array.from(pipelineCache.keys());
