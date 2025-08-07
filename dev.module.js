@@ -6,7 +6,7 @@ export const manifest = {
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
-  actions: [],
+  actions: ["testEmbeddingSpeed"],
   dependencies: []
 };
 
@@ -99,3 +99,23 @@ const prettyPrintModuleState = () => {
   }
   console.table(states);
 };
+
+export const testEmbeddingSpeed = async (text, runs = 10) => {
+  const models = await runtime.call('transformer.listModels');
+  
+  const results = [];
+  for (const modelName of models) {
+    const times = [];
+    for (let i = 0; i < runs; i++) {
+      const start = performance.now();
+      await runtime.call('embedding.embedText', { text, modelName });
+      times.push(performance.now() - start);
+    }
+    const avgDuration = Math.round(times.reduce((sum, time) => sum + time, 0) / runs);
+    results.push({ modelName, avgDuration });
+  }
+  
+  const sorted = results.sort((a, b) => a.avgDuration - b.avgDuration);
+  console.table(sorted);
+  return sorted;
+}
