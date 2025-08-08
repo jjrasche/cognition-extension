@@ -15,17 +15,17 @@ export const manifest = {
     ]
   }
 };
-let runtime, db;
-export const initialize = async (rt) => (runtime = rt, await setDB());
+let runtime;
+const dbName = manifest.indexeddb.name;
+export const initialize = async (rt) => (runtime = rt);
 // handle db
-const setDB = async () => db = await runtime.call('indexed-db.openDb', manifest.indexeddb);
-const getStoredHandle = async (name) => (await runtime.call('indexed-db.getRecord', { db, storeName: 'handles', key: `handle-${name}` })).handle || null;
+const getStoredHandle = async (name) => (await runtime.call('indexed-db.getRecord', { dbName, storeName: 'handles', key: `handle-${name}` })).handle || null;
 const storeHandle = async (name, handle) => updateStoredHandle({ id: `handle-${name}`, name, handle, timestamp: new Date().toISOString(), directoryName: handle.name });
-const removeStoredHandle = async (name) => await runtime.call('indexed-db.removeRecord', { db, storeName: 'handles', key: `handle-${name}` });
-const getAllStoredHandleNames = async () => (await runtime.call('indexed-db.getAllRecords', { db, storeName: 'handles' })).map(handle => handle.name);
-const updateStoredHandle = async (handleData) => await runtime.call('indexed-db.updateRecord', { db, storeName: 'handles', data: handleData });
+const removeStoredHandle = async (name) => await runtime.call('indexed-db.removeRecord', { dbName, storeName: 'handles', key: `handle-${name}` });
+const getAllStoredHandleNames = async () => (await runtime.call('indexed-db.getAllRecords', { dbName, storeName: 'handles' })).map(handle => handle.name);
+const updateStoredHandle = async (handleData) => await runtime.call('indexed-db.updateRecord', { dbName, storeName: 'handles', data: handleData });
 // operations db
-const saveFileOperation = async (data) => await runtime.call('indexed-db.addRecord', { db, storeName: 'operations', data });
+const saveFileOperation = async (data) => await runtime.call('indexed-db.addRecord', { dbName, storeName: 'operations', data });
 // permissions
 const getHandle = async (name) => {
   const handle = await getStoredHandle(name);
@@ -39,7 +39,7 @@ const getHandle = async (name) => {
 };
 // logging
 const logFileOperation = async (operation, dir, filename, size) => await saveFileOperation({ operation, directory: dir, filename, size, timestamp: new Date().toISOString() });
-export const getFileHistory = async ({ limit = 10 } = {}) => await runtime.call('indexed-db.getByIndex', { db, storeName: 'operations', indexName: 'by-timestamp', limit, direction: 'prev' });
+export const getFileHistory = async ({ limit = 10 } = {}) => await runtime.call('indexed-db.getByIndex', { dbName, storeName: 'operations', indexName: 'by-timestamp', limit, direction: 'prev' });
 // file operations
 const writeFile = async (writer, data) => (await writer.write(data), await writer.close());
 const appendFile = async (writer, data, dir, filename ) => (await writer.write(readFile({ dir, filename }) + data), await writer.close());

@@ -44,8 +44,8 @@ class Runtime {
             catch (error) {
                 this.logError(` Failed to register [${module.manifest.name}] actions:`, { error: error.message });
             }
-            this.log(`Registered [${module.manifest.name}] actions:`, Array.from(this.actions.keys()));
         });
+        this.log(`[Runtime] Registered actions in ${this.runtimeName}:`, Array.from(this.actions.keys()));
     }
 
     setupMessageListener = () => {

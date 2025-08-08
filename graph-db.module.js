@@ -4,7 +4,7 @@ export const manifest = {
     version: "1.0.0",
     description: "Graph database for storing knowledge and relationships",
     permissions: ["storage"],
-    dependencies: ["indexeddb"],
+    dependencies: ["indexed-db"],
     actions: ["addInferenceNode", "addNode", "getNode", "removeNode", "getNodesByType", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes", "printNodes"],
     indexeddb: {
         name: 'CognitionGraph',
@@ -16,30 +16,30 @@ export const manifest = {
     },
 };
 
-let runtime, db;
+let runtime, dbName = manifest.indexeddb.name;
 const similiarityThreshold = 0.7;
-export const initialize = async (rt) => (runtime = rt, db = await runtime.call('indexeddb.openDb', manifest.indexeddb), db);
+export const initialize = async (rt) => runtime = rt;
 // Main node operations
 export const addInferenceNode = async (params) => {
     const { userPrompt, assembledPrompt, response, model, context } = params;
-    const nodeId = await runtime.call('indexeddb.getNextId', { db, type: 'inference' });
+    const nodeId = await runtime.call('indexeddb.getNextId', { dbName, type: 'inference' });
     const node = { id: nodeId, timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
     node.embedding = await runtime.call('embedding.embedText', { text: assembledPrompt });
-    await runtime.call('indexeddb.addRecord', { db, storeName: 'nodes', data: node });
+    await runtime.call('indexeddb.addRecord', { dbName, storeName: 'nodes', data: node });
     await findAndCreateSimilarEdges(nodeId);
     return nodeId;
 };
 export const addNode = async (params) => {
     const { id, type = 'generic', ...nodeData } = params;
-    const nodeId = id || await runtime.call('indexeddb.getNextId', { db, type });
+    const nodeId = id || await runtime.call('indexeddb.getNextId', { dbName, type });
     const node = { id: nodeId, type, timestamp: new Date().toISOString(), ...nodeData };  
-    await runtime.call('indexeddb.addRecord', { db, storeName: 'nodes', data: node });
+    await runtime.call('indexeddb.addRecord', { dbName, storeName: 'nodes', data: node });
     return nodeId;
 };
-export const getNode = async (params) => await runtime.call('indexeddb.getRecord', { db, storeName: 'nodes', key: params.nodeId });
-export const removeNode = async (params) => await runtime.call('indexeddb.removeRecord', { db, storeName: 'nodes', key: params.nodeId });
-export const getNodesByType = async (params) => await runtime.call('indexeddb.getAllRecords', { db, storeName: 'nodes' }).filter(node => node.type === params.type);
-export const getRecentNodes = async (params) => await runtime.call('indexeddb.getByIndex', { db, storeName: 'nodes', indexName: 'by-timestamp', limit: params?.limit || 20, direction: 'prev' });
+export const getNode = async (params) => await runtime.call('indexeddb.getRecord', { dbName, storeName: 'nodes', key: params.nodeId });
+export const removeNode = async (params) => await runtime.call('indexeddb.removeRecord', { dbName, storeName: 'nodes', key: params.nodeId });
+export const getNodesByType = async (params) => await runtime.call('indexeddb.getAllRecords', { dbName, storeName: 'nodes' }).filter(node => node.type === params.type);
+export const getRecentNodes = async (params) => await runtime.call('indexeddb.getByIndex', { dbName, storeName: 'nodes', indexName: 'by-timestamp', limit: params?.limit || 20, direction: 'prev' });
 // Search operations
 export const findSimilarNodes = async (params) => {
     const { nodeId, threshold = similiarityThreshold } = params;
@@ -65,18 +65,18 @@ export const getConnectedNodes = async (params) => {
     const edges = [];
     const nodeIds = new Set(); 
     if (direction === 'outgoing' || direction === 'both') {
-        (await runtime.call('indexeddb.getByIndex', { db, storeName: 'edges', indexName: 'by-from', value: nodeId }))
+        (await runtime.call('indexeddb.getByIndex', { dbName, storeName: 'edges', indexName: 'by-from', value: nodeId }))
             .forEach(edge => (edges.push(edge), nodeIds.add(edge.to)));
     }
     if (direction === 'incoming' || direction === 'both') {
-        (await runtime.call('indexeddb.getByIndex', { db, storeName: 'edges', indexName: 'by-to', value: nodeId }))
+        (await runtime.call('indexeddb.getByIndex', { dbName, storeName: 'edges', indexName: 'by-to', value: nodeId }))
             .forEach(edge => (edges.push(edge), nodeIds.add(edge.from)));
     }
     const nodes = await Promise.all([...nodeIds].map(id => getNode({ nodeId: id })));
     return nodes.filter(Boolean);
 };
 // Edge operations
-const createEdge = async (from, to, type, weights) => await runtime.call('indexeddb.addRecord', { db, storeName: 'edges', data: { from, to, type, weights } });
+const createEdge = async (from, to, type, weights) => await runtime.call('indexeddb.addRecord', { dbName, storeName: 'edges', data: { from, to, type, weights } });
 const findAndCreateSimilarEdges = async (nodeId) => {
     const node = await getNode({ nodeId });
     if (!node.embedding) return;
@@ -90,7 +90,7 @@ const findAndCreateSimilarEdges = async (nodeId) => {
     }
 };
 // Utility functions
-const getAllNodesWithEmbeddings = async () => await runtime.call('indexeddb.getAllRecords', { db, storeName: 'nodes' }).filter(node => node.embedding);
+const getAllNodesWithEmbeddings = async () => await runtime.call('indexeddb.getAllRecords', { dbName, storeName: 'nodes' }).filter(node => node.embedding);
 const cosineSimilarity = (a, b) => {
     const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
     const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
