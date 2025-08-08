@@ -1,7 +1,7 @@
 // import './dev-reload.js';
 import { initializeRuntime } from "./runtime.js";
 chrome.runtime.onInstalled.addListener(async () => {
-    // await initializeOffscreenDocument();
+    await initializeOffscreenDocument();
     await initializeExtensionPage();
     const runtime = await initializeRuntime('service-worker');
     runtime.log('[Service Worker] Initialized');
@@ -19,7 +19,7 @@ const extensionPageExists = async () => {
 }
 
 const createExtensionPage = async () => {
-    const tab = await chrome.tabs.create({ url: 'extension-page.html', pinned: true });
+    const tab = await chrome.tabs.create({ url: 'extension-page.html', });
     await setExtensionPageTabId(tab.id);
 }
 // chrome.tabs.onRemoved.addListener(async (tabId) => {

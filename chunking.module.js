@@ -2,6 +2,7 @@ export const manifest = {
   name: "chunking",
   version: "1.0.0",
   description: "Semantic chunking for documents and text with flexible size boundaries",
+  context: "service-worker",
   permissions: ["storage"],
   actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData", "runAllChunkingTests"],
   dependencies: ["embedding"],

@@ -1,5 +1,5 @@
 import { modules } from './module-registry.js';
-
+import { retryAsync } from './helpers.js';
 class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
@@ -91,7 +91,7 @@ class Runtime {
         for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
             if (attempt > 0) {
                 this.log(`Retry attempt ${attempt}, pending modules:`, pending.map(m => m.manifest.name));
-                await new Promise(resolve => setTimeout(resolve, 10000));
+                await new Promise(resolve => setTimeout(resolve, 5000));
             }
             
             for (let i = pending.length - 1; i >= 0; i--) {
@@ -125,6 +125,7 @@ class Runtime {
                 } else {
                     const deps = module.manifest.dependencies || [];
                     const notReady = deps.filter(dep => this.moduleState.get(dep) !== 'ready');
+                    this.log(`${module.manifest.name} waiting for dependencies:`, notReady);
                 }
             }
         }
@@ -153,30 +154,15 @@ class Runtime {
         });
     }
 
-    broadcastModuleReady = (moduleName) => {
-        this.moduleState.set(moduleName, 'ready');
-        this.log(`[Runtime] Module ${moduleName} is ready in ${this.runtimeName}`);
-        chrome.runtime.sendMessage({
-            type: 'MODULE_READY',
-            moduleName,
-            fromContext: this.runtimeName
-        }).catch(() => {
-            // Ignore errors when no other contexts are listening
-        });
-    }
-
-    broadcastModuleFailed = (moduleName, error) => {
-        this.moduleState.set(moduleName, 'failed');
-        this.log(`[Runtime] Module ${moduleName} is failed in ${this.runtimeName}`);
-        chrome.runtime.sendMessage({
-            type: 'MODULE_FAILED',
-            moduleName,
-            error: error.message,
-            fromContext: this.runtimeName
-        }).catch(() => {
-            // Ignore errors when no other contexts are listening
-        });
-    }
+    broadcastModuleStatus = async (moduleName, state) => {
+        const type = `MODULE_${state.toUpperCase()}`;
+        this.moduleState.set(moduleName, state);
+        await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }),
+            { maxAttempts: 10, delay: 1000, onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
+        ).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
+    };
+    broadcastModuleReady = (moduleName) => this.broadcastModuleStatus(moduleName, 'ready');
+    broadcastModuleFailed = (moduleName) => this.broadcastModuleStatus(moduleName, 'failed');
 
     // New simplified method for module-to-module calls
     call = async (actionName, params = {}) => {

@@ -20,3 +20,17 @@ export const getId = (prefix = '') => `${prefix}${Date.now()}_${Math.random().to
 
 export const yesterday = () => new Date(Date.now() - 86400000).toISOString().split('T')[0];
 export const today = () => new Date().toISOString().split('T')[0];
+
+// helpers.js
+export const retryAsync = async (asyncFn, options = {}) => {
+  const { maxAttempts = 10, delay = 1000, backoff = false, onRetry = null, shouldRetry = (error) => true } = options;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try { return await asyncFn(attempt); } 
+    catch (error) {
+      if (attempt === maxAttempts || !shouldRetry(error)) throw error;
+      if (onRetry) onRetry(error, attempt, maxAttempts);
+      const currentDelay = backoff ? delay * Math.pow(2, attempt - 1) : delay;
+      await new Promise(resolve => setTimeout(resolve, currentDelay));
+    }
+  }
+};

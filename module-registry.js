@@ -17,7 +17,7 @@ import * as graphDbModule from './graph-db.module.js';
 import * as embeddingModule from './embedding.module.js';
 // import * as oauthModule from './oauth.module.js';
 import * as transformerModule from './transformer.module.js';
-// import * as chunkingModule from './chunking.module.js';
+import * as chunkingModule from './chunking.module.js';
 import * as fileModule from './file.module.js';
 
 export const modules = [
@@ -38,7 +38,7 @@ export const modules = [
     embeddingModule,
     // inferenceModule,
     developmentModule,
-    // chunkingModule,
+    chunkingModule,
     fileModule,
 ];
 
