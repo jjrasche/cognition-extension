@@ -7,17 +7,16 @@ export const manifest = {
     actions: ["addInferenceNode", "getNode", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes"],
 };
 
-let _state, _db;
+let runtime, db;
 const similiarityThreshold = 0.7;
 const [DB_NAME, DB_VERSION, NODES_STORE, EDGES_STORE, COUNTERS_STORE] = ['CognitionGraph', 1, 'nodes', 'edges', 'counters'];
-export const initialize = async (state) => ([_state, _db] = [state, await openDatabase()], await updateStats());
+export const initialize = async (rt) => ([runtime, db] = [rt, await openDatabase()]);
 
 export const addInferenceNode = async (params) => {
     const { userPrompt, assembledPrompt, response, model, context } = params;
     const node = { id: await getNextId('inference'), timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
     await promisify(getStore(NODES_STORE).add(node));
     generateEmbedding(assembledPrompt).then(embedding => updateNodeEmbedding(node.id, embedding));
-    await updateStats();
     return node.id;
 };
 
@@ -61,7 +60,6 @@ const getStats = async () => {
     const edgeCount = await promisify(getStore(EDGES_STORE).count());
     return { nodeCount, edgeCount, lastUpdated: new Date().toISOString() };
 };
-const updateStats = async () => await _state.write('graph.stats', await getStats());
 // Node methods
 export const getNode = async (params) => await getNodeById(params.nodeId);
 const getNodeById = async (nodeId) => await promisify(getStore(NODES_STORE).get(nodeId));
@@ -107,7 +105,7 @@ const createEdgesStore = (db) => {
     store.createIndex('by-to', 'to');
 };
 const createCountersStore = (db) => db.createObjectStore(COUNTERS_STORE);
-const getStore = (storeName, mode = 'readwrite') => _db.transaction([storeName], mode).objectStore(storeName);
+const getStore = (storeName, mode = 'readwrite') => db.transaction([storeName], mode).objectStore(storeName);
 const getIndex = (storeName, indexName) => getStore(storeName).index(indexName);
 const getNextId = async (type) => {
     const store = getStore(COUNTERS_STORE);

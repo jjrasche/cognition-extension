@@ -1,8 +1,11 @@
 // import './dev-reload.js';
 import { initializeRuntime } from "./runtime.js";
-initializeRuntime('service-worker');
-chrome.runtime.onInstalled.addListener(async () => (await initializeOffscreenDocument(), await initializeExtensionPage()));
-
+chrome.runtime.onInstalled.addListener(async () => {
+    // await initializeOffscreenDocument();
+    await initializeExtensionPage();
+    const runtime = await initializeRuntime('service-worker');
+    runtime.log('[Service Worker] Initialized');
+});
 const initializeOffscreenDocument = async () => await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
 const initializeExtensionPage = async () => !(await extensionPageExists()) || await createExtensionPage();
 

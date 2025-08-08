@@ -155,6 +155,7 @@ class Runtime {
 
     broadcastModuleReady = (moduleName) => {
         this.moduleState.set(moduleName, 'ready');
+        this.log(`[Runtime] Module ${moduleName} is ready in ${this.runtimeName}`);
         chrome.runtime.sendMessage({
             type: 'MODULE_READY',
             moduleName,
@@ -166,6 +167,7 @@ class Runtime {
 
     broadcastModuleFailed = (moduleName, error) => {
         this.moduleState.set(moduleName, 'failed');
+        this.log(`[Runtime] Module ${moduleName} is failed in ${this.runtimeName}`);
         chrome.runtime.sendMessage({
             type: 'MODULE_FAILED',
             moduleName,
