@@ -8,6 +8,7 @@ yarn-error.log*
 onnx-runtime/
 models/
 libs/
+data/
 
 # Build outputs
 dist/

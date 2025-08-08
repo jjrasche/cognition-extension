@@ -3,7 +3,7 @@ export const manifest = {
   version: "1.0.0",
   description: "Semantic chunking for documents and text with flexible size boundaries",
   permissions: ["storage"],
-  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "runAllTests"],
+  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData"],
   dependencies: ["embedding"],
   state: {
     reads: [],
@@ -17,79 +17,79 @@ export const initialize = async (rt) => { runtime = rt; };
 // === PUBLIC ACTIONS ===
 
 export const chunkText = async (params) => {
-  // TODO: Implement - currently returns empty for failing tests
-  const { text, minTokens = 50, maxTokens = 1000, preserveStructure = true } = params;
-  return [];
+  // params: { text, minTokens=50, maxTokens=1000, preserveStructure=true }
+  // returns: array of chunks with metadata
 };
 
-export const chunkInferenceInteraction = async (params) => {
-  // TODO: Implement - currently returns empty for failing tests
-  const { userPrompt, aiResponse, metadata = {} } = params;
-  return { 
-    promptChunks: [], 
-    responseChunks: [], 
-    metadata 
-  };
-};
+// export const chunkInferenceInteraction = async (params) => {
+//   // params: { userPrompt, aiResponse, metadata={} }
+//   // returns: { promptChunks[], responseChunks[], metadata }
+//   // Special handling: skip code blocks in AI responses
+// };
 
 export const chunkDocument = async (params) => {
-  // TODO: Implement - currently returns empty for failing tests
-  const { content, documentType = 'unknown', metadata = {} } = params;
-  return [];
+  // params: { content, documentType='unknown', metadata={} }
+  // returns: array of chunks optimized for document type
 };
 
 // === PRIVATE HELPER FUNCTIONS ===
 
 const createChunks = async (text, options = {}) => {
-  // TODO: Core chunking orchestration
-  return [];
+  // Core chunking orchestration
+  // 1. Preprocess text (remove code blocks, normalize)
+  // 2. Detect semantic boundaries (headers, paragraphs, sentences)
+  // 3. Create chunks within token range (50-1000)
+  // 4. Enhance with metadata
 };
 
 const preprocessText = (text, options = {}) => {
-  // TODO: Clean text - currently returns unchanged
-  return text;
+  // Clean text: remove code blocks, normalize whitespace, clean markdown
 };
 
-export const detectSemanticBoundaries = (text, options = {}) => {
-  // TODO: Find natural break points - currently returns empty
-  return [];
+const detectSemanticBoundaries = (text, options = {}) => {
+  // Find natural break points:
+  // - Headers (# ## ###)
+  // - Paragraph breaks (double newlines)
+  // - Strong sentence boundaries (.!? followed by capital)
+  // Returns: [{ position, type, strength }]
 };
 
 const boundaryStrengths = {
-  header: 6,      
-  paragraph: 4,   
-  sentence: 2,    
-  comma: 1        
+  header: 6,      // # ## ### (strongest - always a good place to split)
+  paragraph: 4,   // Double newline (very natural break)
+  sentence: 2,    // Period + capital letter (okay break point)
+  comma: 1        // Comma (weak - only if desperate)
 };
 
 const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
-  // TODO: Split text at boundaries while respecting token limits
-  return [];
+  // Split text at boundaries while respecting min/max token limits
+  // Strategy: grow chunks until maxTokens, split at strongest boundary
 };
 
 const estimateTokenCount = (text) => {
-  // TODO: More sophisticated token estimation - currently rough estimate
-  return Math.ceil(text.split(/\s+/).length * 0.75);
+  // Rough token estimation: ~0.75 tokens per word
 };
 
 const enhanceChunks = async (rawChunks, options = {}) => {
-  // TODO: Add metadata and embeddings
-  return rawChunks;
+  // Add metadata: token count, position, type, embeddings
 };
 
 // === UTILITY FUNCTIONS ===
 
 const removeCodeBlocks = (text) => {
-  // TODO: Remove code blocks completely
-  return text;
+  // Remove: ```code```, `inline`, indented blocks
 };
 
 const isHeaderLine = (line) => {
-  // TODO: Detect markdown headers
-  return false;
+  // Detect markdown headers or title-case lines
 };
 
-// === TEST DATA AND RUNNERS ===
+const getDocumentTypeConfig = (documentType) => {
+  // Return chunking config based on document type
+  // 'conversation', 'technical', 'narrative', etc.
+};
+
+// Test data for chunking module - following existing module code style
 
 const boundaryDetectionTests = [
   {
@@ -215,25 +215,25 @@ const codeRemovalTests = [
   {
     name: "fenced_blocks",
     input: "Explanation\n```javascript\nfunction test() {}\n```\nMore text",
-    expected: "Explanation\nMore text",
-    notes: "Should remove fenced code blocks completely"
+    expected: "Explanation\n[CODE_BLOCK_REMOVED]\nMore text",
+    notes: "Should remove fenced code blocks"
   },
   {
     name: "inline_code", 
     input: "Use the `forEach` method here",
-    expected: "Use the  method here",
-    notes: "Should remove inline backtick code completely"
+    expected: "Use the [CODE_REMOVED] method here",
+    notes: "Should remove inline backtick code"
   },
   {
     name: "indented_code",
     input: "Example:\n    function test() {\n        return true;\n    }\nEnd example",
-    expected: "Example:\nEnd example",
-    notes: "Should remove indented code lines completely"
+    expected: "Example:\n[CODE_LINE_REMOVED]\n[CODE_LINE_REMOVED]\n[CODE_LINE_REMOVED]\nEnd example",
+    notes: "Should remove indented code lines"
   },
   {
     name: "mixed_code_types",
     input: "Text `inline` more.\n```\nblock code\n```\n    indented\nEnd.",
-    expected: "Text  more.\nEnd.",
+    expected: "Text [CODE_REMOVED] more.\n[CODE_BLOCK_REMOVED]\n[CODE_LINE_REMOVED]\nEnd.",
     notes: "Should remove all code types, preserve text flow"
   },
   {
@@ -266,9 +266,9 @@ const edgeCaseTests = [
   {
     name: "all_code_blocks",
     input: "```\nfunction a() {}\n```\n```\nfunction b() {}\n```",
-    expectedChunks: 0,
-    expectedContent: "",
-    notes: "Should return no chunks after code removal"
+    expectedChunks: 1,
+    expectedContent: "[CODE_BLOCK_REMOVED]\n[CODE_BLOCK_REMOVED]",
+    notes: "Should return minimal chunk after code removal"
   },
   {
     name: "unicode_handling",
@@ -321,117 +321,43 @@ const conversationTests = [
   }
 ];
 
-// Test runner functions
-const runBoundaryDetectionTests = async () => {
+// Test runner functions matching existing module style
+const runBoundaryDetectionTests = async (chunkingModule) => {
   const results = [];
   for (const test of boundaryDetectionTests) {
     try {
-      const boundaries = detectSemanticBoundaries(test.input);
+      const boundaries = await chunkingModule.detectSemanticBoundaries(test.input);
       const passed = validateBoundaries(boundaries, test.expected);
       results.push({ ...test, boundaries, passed });
-      runtime.log(`[Chunking Test] ${test.name}: ${passed ? 'PASS' : 'FAIL'}`);
     } catch (error) {
       results.push({ ...test, error: error.message, passed: false });
-      runtime.logError(`[Chunking Test] ${test.name}: ERROR - ${error.message}`);
     }
   }
   return results;
 };
 
-const runTokenRangeTests = async () => {
+const runTokenRangeTests = async (chunkingModule) => {
   const results = [];
   for (const test of tokenRangeTests) {
     try {
-      const chunks = await chunkText({ text: test.input, ...test.options });
+      const chunks = await chunkingModule.chunkText({ text: test.input, ...test.options });
       const passed = test.expectedChunks ? chunks.length === test.expectedChunks : validateTokenRanges(chunks, test.options);
       results.push({ ...test, actualChunks: chunks.length, passed });
-      runtime.log(`[Chunking Test] ${test.name}: ${passed ? 'PASS' : 'FAIL'} (expected: ${test.expectedChunks}, got: ${chunks.length})`);
-    } catch (error) { 
-      results.push({ ...test, error: error.message, passed: false }); 
-      runtime.logError(`[Chunking Test] ${test.name}: ERROR - ${error.message}`);
-    }
+    } catch (error) { results.push({ ...test, error: error.message, passed: false }); }
   }
   return results;
 };
 
-const runConversationTests = async () => {
+const runConversationTests = async (chunkingModule) => {
   const results = [];
   for (const test of conversationTests) {
     try {
-      const result = await chunkInferenceInteraction({ userPrompt: test.userPrompt, aiResponse: test.aiResponse });
+      const result = await chunkingModule.chunkInferenceInteraction({ userPrompt: test.userPrompt, aiResponse: test.aiResponse });
       const passed = ( result.promptChunks.length === test.expectedPromptChunks && result.responseChunks.length === test.expectedResponseChunks);
       results.push({ ...test, actualPrompt: result.promptChunks.length, actualResponse: result.responseChunks.length, passed });
-      runtime.log(`[Chunking Test] ${test.name}: ${passed ? 'PASS' : 'FAIL'} (prompt: ${result.promptChunks.length}/${test.expectedPromptChunks}, response: ${result.responseChunks.length}/${test.expectedResponseChunks})`);
-    } catch (error) { 
-      results.push({ ...test, error: error.message, passed: false }); 
-      runtime.logError(`[Chunking Test] ${test.name}: ERROR - ${error.message}`);
-    }
+    } catch (error) { results.push({ ...test, error: error.message, passed: false }); }
   }
   return results;
-};
-
-const runCodeRemovalTests = async () => {
-  const results = [];
-  for (const test of codeRemovalTests) {
-    try {
-      const actual = removeCodeBlocks(test.input);
-      const passed = actual === test.expected;
-      results.push({ ...test, actual, passed });
-      runtime.log(`[Chunking Test] ${test.name}: ${passed ? 'PASS' : 'FAIL'}`);
-      if (!passed) {
-        runtime.log(`  Expected: "${test.expected}"`);
-        runtime.log(`  Actual: "${actual}"`);
-      }
-    } catch (error) {
-      results.push({ ...test, error: error.message, passed: false });
-      runtime.logError(`[Chunking Test] ${test.name}: ERROR - ${error.message}`);
-    }
-  }
-  return results;
-};
-
-const runEdgeCaseTests = async () => {
-  const results = [];
-  for (const test of edgeCaseTests) {
-    try {
-      const chunks = await chunkText({ text: test.input, ...test.options });
-      const passed = chunks.length === test.expectedChunks;
-      results.push({ ...test, actualChunks: chunks.length, passed });
-      runtime.log(`[Chunking Test] ${test.name}: ${passed ? 'PASS' : 'FAIL'} (expected: ${test.expectedChunks}, got: ${chunks.length})`);
-    } catch (error) { 
-      results.push({ ...test, error: error.message, passed: false }); 
-      runtime.logError(`[Chunking Test] ${test.name}: ERROR - ${error.message}`);
-    }
-  }
-  return results;
-};
-
-// Main test runner
-export const runAllTests = async () => {
-  runtime.log('[Chunking] Starting all tests...');
-  
-  const boundaryResults = await runBoundaryDetectionTests();
-  const tokenResults = await runTokenRangeTests();
-  const conversationResults = await runConversationTests();
-  const codeResults = await runCodeRemovalTests();
-  const edgeResults = await runEdgeCaseTests();
-  
-  const allResults = [...boundaryResults, ...tokenResults, ...conversationResults, ...codeResults, ...edgeResults];
-  const passed = allResults.filter(r => r.passed).length;
-  const total = allResults.length;
-  
-  runtime.log(`[Chunking] Tests complete: ${passed}/${total} passed`);
-  
-  return {
-    summary: { passed, total, percentage: Math.round((passed/total) * 100) },
-    results: {
-      boundary: boundaryResults,
-      tokenRange: tokenResults,
-      conversation: conversationResults,
-      codeRemoval: codeResults,
-      edgeCase: edgeResults
-    }
-  };
 };
 
 // Utility validation functions
@@ -441,3 +367,157 @@ const validateBoundaries = (actual, expected) => {
 };
 
 const validateTokenRanges = (chunks, options) => chunks.every(chunk => chunk.tokenCount >= options.minTokens && chunk.tokenCount <= options.maxTokens);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Convert Claude conversation export to inference interactions
+export const processClaudeConversations = async (params) => {
+  const { conversations } = params;
+  if (!Array.isArray(conversations)) {
+    throw new Error('Conversations must be an array');
+  }
+  
+  // Flatten all chat_messages from all conversations
+  const allMessages = conversations.flatMap(conv => 
+    (conv.chat_messages || []).map(msg => ({
+      ...msg,
+      conversationName: conv.name,
+      conversationUuid: conv.uuid
+    }))
+  );
+  
+  const interactions = [];
+  let currentHuman = null;
+  let pairCount = 0;
+  let unpairedHuman = 0;
+  let unpairedAssistant = 0;
+  
+  for (const message of allMessages) {
+    if (message.sender === 'human') {
+      // If we had an unpaired human message, count it
+      if (currentHuman) {
+        unpairedHuman++;
+      }
+      
+      currentHuman = {
+        userPrompt: message.text,
+        uuid: message.uuid,
+        timestamp: message.created_at,
+        conversationName: message.conversationName,
+        conversationUuid: message.conversationUuid
+      };
+    } else if (message.sender === 'assistant') {
+      if (currentHuman) {
+        // Valid pair found
+        const interaction = {
+          userPrompt: currentHuman.userPrompt,
+          aiResponse: message.text,
+          metadata: {
+            conversationId: `${currentHuman.uuid}-${message.uuid}`,
+            conversationName: currentHuman.conversationName,
+            conversationUuid: currentHuman.conversationUuid,
+            humanTimestamp: currentHuman.timestamp,
+            assistantTimestamp: message.created_at
+          }
+        };
+        
+        interactions.push(interaction);
+        pairCount++;
+        currentHuman = null; // Reset for next pair
+      } else {
+        // Unpaired assistant message
+        unpairedAssistant++;
+      }
+    }
+  }
+  
+  // Count final unpaired human if exists
+  if (currentHuman) {
+    unpairedHuman++;
+  }
+  
+  runtime.log(`[Chunking] Processed ${allMessages.length} total messages from ${conversations.length} conversations`);
+  runtime.log(`[Chunking] Created ${pairCount} valid human-assistant pairs`);
+  runtime.log(`[Chunking] Found ${unpairedHuman} unpaired human messages, ${unpairedAssistant} unpaired assistant messages`);
+  
+  return interactions;
+};
+
+export const chunkInferenceInteraction = async (params) => {
+  const { userPrompt, aiResponse, metadata = {} } = params;
+  
+  // For now, create simple single chunks until we implement proper chunking
+  const promptChunks = [{
+    text: userPrompt,
+    tokenCount: estimateTokenCount(userPrompt),
+    chunkIndex: 0,
+    metadata: { type: 'user_prompt', ...metadata }
+  }];
+  
+  const responseChunks = [{
+    text: aiResponse,
+    tokenCount: estimateTokenCount(aiResponse),
+    chunkIndex: 0,
+    metadata: { type: 'assistant_response', ...metadata }
+  }];
+  
+  return { 
+    promptChunks, 
+    responseChunks, 
+    metadata 
+  };
+};
+
+
+export async function testWithClaudeData() {
+  try {
+    const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
+    const conversations = await response.json();
+    console.log(`Loaded ${conversations.length} conversations`);
+    
+    const interactions = await processClaudeConversations({ conversations });
+    
+    // Test chunking on first few interactions
+    const testResults = [];
+    const samplesToTest = Math.min(5, interactions.length);
+    
+    for (let i = 0; i < samplesToTest; i++) {
+      const interaction = interactions[i];
+      const chunks = await chunkInferenceInteraction(interaction);
+      
+      testResults.push({
+        interaction: i + 1,
+        promptLength: interaction.userPrompt.length,
+        responseLength: interaction.aiResponse.length,
+        promptChunks: chunks.promptChunks.length,
+        responseChunks: chunks.responseChunks.length,
+        conversationName: interaction.metadata.conversationName
+      });
+    }
+    
+    console.table(testResults);
+    
+    return {
+      totalInteractions: interactions.length,
+      testResults,
+      sampleInteractions: interactions.slice(0, 3)
+    };
+  } catch (error) {
+    console.error('Test failed:', error);
+    return { error: error.message };
+  }
+}

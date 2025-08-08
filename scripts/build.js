@@ -11,7 +11,8 @@ const buildDir = path.join(rootDir, 'build');
 async function build() {
   console.log('Building Cognition Extension...');
   await cleanBuildDirectory();
-  await downloadExternalDependencies(); // Add this line
+  await downloadExternalDependencies();
+  await copyData();
   copyFiles([...coreFiles, ...moduleFiles(), ...(isDev() ? devFiles : [])]);
   console.log('Build complete!');
 }
@@ -43,7 +44,7 @@ const cleanBuildDirectory = async () => {
   }
 };
 const copyFiles = async(files) => files.forEach(async file => (console.log(file), await fs.copyFile(path.join(rootDir, file), path.join(buildDir, file))));
-// external depednencies
+const copyData = async() => await fs.cp(path.join(rootDir, 'data'), path.join(buildDir, 'data'), { recursive: true });
 const downloadExternalDependencies = async () => {
   const allDeps = modules.flatMap(m => (m.manifest?.externalDependencies || []).map(dep => ({ ...dep, fromModule: m.manifest.name })));
   if (allDeps.length === 0) return;

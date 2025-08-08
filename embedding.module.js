@@ -15,7 +15,7 @@ export const manifest = {
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: '9261E7D79B44C8195C1CADA2B453E55B00AEB81E907A6664974B4D7776172AB3' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/config.json',  destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: '7135149F7CFFA1A573466C6E4D8423ED73B62FD2332C575BF738A0D033F70DF7' },
     
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '4158604FAD17A2C68244122D812A340BF64DA1A048CDA242DABAD5048864A93C' },
+    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: 'A488B290590D86DA3B81C502B242343CA8312E83CFC618B2CD1AE50C09D8F669' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_fp16.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '4158604FAD17A2C68244122D812A340BF64DA1A048CDA242DABAD5048864A93C' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_q4f16.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '78CF177870851C003763F6E39970F376D69D139DE45037B80CA065DB91524F1B' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '84D57EC981CFC6B46920247B8628610271F59A724D73124E051DA96D6E406293' },
