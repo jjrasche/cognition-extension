@@ -19,6 +19,7 @@ import * as embeddingModule from './embedding.module.js';
 import * as transformerModule from './transformer.module.js';
 import * as chunkingModule from './chunking.module.js';
 import * as fileModule from './file.module.js';
+import * as indexedDbModule from './indexed-db.module.js';
 
 export const modules = [
     // tabManagerModule,
@@ -30,6 +31,7 @@ export const modules = [
     // debugModule,
     // inferenceModelValidationModule,
     // oauthModule,
+    indexedDbModule,
     graphDbModule,
     // fitbitModule,
     // contextModule,

@@ -14,13 +14,13 @@ const extensionPageExists = async () => {
 }
 
 const createExtensionPage = async () => {
-    const tab = await chrome.tabs.create({ url: 'extension-page.html', });
+    const tab = await chrome.tabs.create({ url: 'extension-page.html', active: false });
     await setExtensionPageTabId(tab.id);
 }
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-    const storedTabId = await getExtensionPageTabId();
-    if (tabId === storedTabId) (await removeExtensionPageTabId(), await createExtensionPage());
-});
+// chrome.tabs.onRemoved.addListener(async (tabId) => {
+//     const storedTabId = await getExtensionPageTabId();
+//     if (tabId === storedTabId) (await removeExtensionPageTabId(), await createExtensionPage());
+// });
 
 const getExtensionPageTabId = async () => (await chrome.storage.local.get(['extensionPageTabId'])).extensionPageTabId;
 const removeExtensionPageTabId = async () => await chrome.storage.local.remove(['extensionPageTabId']);

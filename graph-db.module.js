@@ -4,190 +4,96 @@ export const manifest = {
     version: "1.0.0",
     description: "Graph database for storing knowledge and relationships",
     permissions: ["storage"],
-    actions: ["addInferenceNode", "getNode", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes"],
+    dependencies: ["indexeddb"],
+    actions: ["addInferenceNode", "addNode", "getNode", "removeNode", "getNodesByType", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes", "printNodes"],
+    indexeddb: {
+        name: 'CognitionGraph',
+        version: 1,
+        storeConfigs: [
+            { name: 'nodes', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
+            { name: 'edges',  options: { keyPath: ['from', 'to', 'type'] }, indexes: [ { name: 'by-from', keyPath: 'from' }, { name: 'by-to', keyPath: 'to' } ] },
+        ]
+    },
 };
 
 let runtime, db;
 const similiarityThreshold = 0.7;
-const [DB_NAME, DB_VERSION, NODES_STORE, EDGES_STORE, COUNTERS_STORE] = ['CognitionGraph', 1, 'nodes', 'edges', 'counters'];
-export const initialize = async (rt) => ([runtime, db] = [rt, await openDatabase()]);
-
+export const initialize = async (rt) => (runtime = rt, db = await runtime.call('indexeddb.openDb', manifest.indexeddb), db);
+// Main node operations
 export const addInferenceNode = async (params) => {
     const { userPrompt, assembledPrompt, response, model, context } = params;
-    const node = { id: await getNextId('inference'), timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
-    await promisify(getStore(NODES_STORE).add(node));
-    generateEmbedding(assembledPrompt).then(embedding => updateNodeEmbedding(node.id, embedding));
-    return node.id;
+    const nodeId = await runtime.call('indexeddb.getNextId', { db, type: 'inference' });
+    const node = { id: nodeId, timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
+    node.embedding = await runtime.call('embedding.embedText', { text: assembledPrompt });
+    await runtime.call('indexeddb.addRecord', { db, storeName: 'nodes', data: node });
+    await findAndCreateSimilarEdges(nodeId);
+    return nodeId;
 };
-
+export const addNode = async (params) => {
+    const { id, type = 'generic', ...nodeData } = params;
+    const nodeId = id || await runtime.call('indexeddb.getNextId', { db, type });
+    const node = { id: nodeId, type, timestamp: new Date().toISOString(), ...nodeData };  
+    await runtime.call('indexeddb.addRecord', { db, storeName: 'nodes', data: node });
+    return nodeId;
+};
+export const getNode = async (params) => await runtime.call('indexeddb.getRecord', { db, storeName: 'nodes', key: params.nodeId });
+export const removeNode = async (params) => await runtime.call('indexeddb.removeRecord', { db, storeName: 'nodes', key: params.nodeId });
+export const getNodesByType = async (params) => await runtime.call('indexeddb.getAllRecords', { db, storeName: 'nodes' }).filter(node => node.type === params.type);
+export const getRecentNodes = async (params) => await runtime.call('indexeddb.getByIndex', { db, storeName: 'nodes', indexName: 'by-timestamp', limit: params?.limit || 20, direction: 'prev' });
+// Search operations
 export const findSimilarNodes = async (params) => {
     const { nodeId, threshold = similiarityThreshold } = params;
-    const sourceNode = await getNodeById(nodeId);
-    if (!sourceNode?.embedding) return { success: false, error: 'Node not found or no embedding' };;
+    const sourceNode = await getNode({ nodeId });
+    if (!sourceNode?.embedding) return { success: false, error: 'Node not found or no embedding' };
     return (await getAllNodesWithEmbeddings())
         .filter(node => node.id !== nodeId)
         .map(node => ({ ...node, similarity: cosineSimilarity(sourceNode.embedding, node.embedding)}))
         .filter(node => node.similarity >= threshold)
         .sort((a, b) => b.similarity - a.similarity);
 };
-
 export const searchByText = async (params) => {
     const { text, threshold = 0.5 } = params;
-    const embedding = await generateEmbedding(text);
-    const ret = (await getAllNodesWithEmbeddings()).map(node => ({ node, similarity: cosineSimilarity(embedding, node.embedding) }))
+    const embedding = await runtime.call('embedding.embedText', { text });
+    return (await getAllNodesWithEmbeddings())
+        .map(node => ({ node, similarity: cosineSimilarity(embedding, node.embedding) }))
         .filter(({ similarity }) => similarity >= threshold)
         .sort((a, b) => b.similarity - a.similarity)
         .map(({ node }) => node);
-    return ret;
 };
-
 export const getConnectedNodes = async (params) => {
     const { nodeId, direction = 'both' } = params;
     const edges = [];
-    const nodeIds = new Set();
-    if (direction === 'outgoing' || direction === 'both') await iterateCursor(getIndex(EDGES_STORE, 'by-from').openCursor(IDBKeyRange.only(nodeId)),
-        (edge) => (edges.push(edge), nodeIds.add(edge.to)));
-    if (direction === 'incoming' || direction === 'both') await iterateCursor(getIndex(EDGES_STORE, 'by-to').openCursor(IDBKeyRange.only(nodeId)),
-        (edge) => (edges.push(edge), nodeIds.add(edge.from)));
-    
-    const nodes = await Promise.all([...nodeIds].map(id => getNodeById(id)));
+    const nodeIds = new Set(); 
+    if (direction === 'outgoing' || direction === 'both') {
+        (await runtime.call('indexeddb.getByIndex', { db, storeName: 'edges', indexName: 'by-from', value: nodeId }))
+            .forEach(edge => (edges.push(edge), nodeIds.add(edge.to)));
+    }
+    if (direction === 'incoming' || direction === 'both') {
+        (await runtime.call('indexeddb.getByIndex', { db, storeName: 'edges', indexName: 'by-to', value: nodeId }))
+            .forEach(edge => (edges.push(edge), nodeIds.add(edge.from)));
+    }
+    const nodes = await Promise.all([...nodeIds].map(id => getNode({ nodeId: id })));
     return nodes.filter(Boolean);
 };
-
-// stats
-const getStats = async () => {
-    const nodeCount = await promisify(getStore(NODES_STORE).count());
-    const edgeCount = await promisify(getStore(EDGES_STORE).count());
-    return { nodeCount, edgeCount, lastUpdated: new Date().toISOString() };
-};
-// Node methods
-export const getNode = async (params) => await getNodeById(params.nodeId);
-const getNodeById = async (nodeId) => await promisify(getStore(NODES_STORE).get(nodeId));
-export const getRecentNodes = async (params) => await getRecentNodesInternal(params?.limit || 20);
-const getRecentNodesInternal = async (limit) => await iterateCursor(getIndex(NODES_STORE, 'by-timestamp').openCursor(null, 'prev'), () => true, limit);
-const getAllNodesWithEmbeddings = async () => (await promisify(getStore(NODES_STORE).getAll())).filter(node => node.embedding);
-// edge methods
-const createEdge = async (from, to, type, weights) => await promisify(getStore(EDGES_STORE).put({ from, to, type, weights }));
+// Edge operations
+const createEdge = async (from, to, type, weights) => await runtime.call('indexeddb.addRecord', { db, storeName: 'edges', data: { from, to, type, weights } });
 const findAndCreateSimilarEdges = async (nodeId) => {
-    const node = await getNodeById(nodeId);
+    const node = await getNode({ nodeId });
     if (!node.embedding) return;
-    for (const other of await getRecentNodesInternal(50)) {
+    const recentNodes = await getRecentNodes({ limit: 50 });
+    for (const other of recentNodes) {
         if (other.id === nodeId || !other.embedding) continue;
         const similarity = cosineSimilarity(node.embedding, other.embedding);
-        // todo: want to push this value into a node
-        if (similarity > similiarityThreshold) await createEdge(nodeId, other.id, 'SEMANTICALLY_SIMILAR', { semantic: similarity });
+        if (similarity > similiarityThreshold) {
+            await createEdge(nodeId, other.id, 'SEMANTICALLY_SIMILAR', { semantic: similarity });
+        }
     }
 };
+// Utility functions
+const getAllNodesWithEmbeddings = async () => await runtime.call('indexeddb.getAllRecords', { db, storeName: 'nodes' }).filter(node => node.embedding);
 const cosineSimilarity = (a, b) => {
     const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
     const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
     const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
     return dotProduct / (magnitudeA * magnitudeB);
-};
-// Utility functions
-const promisify = (req) => new Promise((resolve, reject) => (req.onsuccess = () => resolve(req.result), req.onerror = () => reject(req.error)));
-
-// indexdb interactions
-const openDatabase = () => new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => initializeDatabase(event.target.result);
-});
-const initializeDatabase = (db) => (createCountersStore(db), createEdgesStore(db), createNodesStore(db));
-const createNodesStore = (db) => {
-    const store = db.createObjectStore(NODES_STORE, { keyPath: 'id' });
-    store.createIndex('by-timestamp', 'timestamp');
-};
-const createEdgesStore = (db) => {
-    const store = db.createObjectStore(EDGES_STORE, { keyPath: ['from', 'to', 'type'] });
-    store.createIndex('by-from', 'from');
-    store.createIndex('by-to', 'to');
-};
-const createCountersStore = (db) => db.createObjectStore(COUNTERS_STORE);
-const getStore = (storeName, mode = 'readwrite') => db.transaction([storeName], mode).objectStore(storeName);
-const getIndex = (storeName, indexName) => getStore(storeName).index(indexName);
-const getNextId = async (type) => {
-    const store = getStore(COUNTERS_STORE);
-    const current = (await promisify(store.get(type))) || 0;
-    const next = current + 1;
-    await promisify(store.put(next, type));
-    return `${type}-${next}`;
-};
-// const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
-//     const results = [];
-//     let cursor = await promisify(cursorRequest);
-//     while (cursor && results.length < limit) {
-//         const shouldContinue = await callback(cursor.value, cursor);
-//         if (shouldContinue === false) break;
-//         results.push(cursor.value);
-//         cursor = await promisify(cursor.continue());
-//     }
-//     return results;
-// };
-const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
-    const results = [];
-    
-    return new Promise((resolve, reject) => {
-        cursorRequest.onsuccess = (event) => {
-            const cursor = event.target.result;
-            
-            if (cursor && results.length < limit) {
-                const shouldContinue = callback(cursor.value, cursor);
-                if (shouldContinue !== false) {
-                    results.push(cursor.value);
-                    cursor.continue(); // This doesn't return anything - it triggers the next onsuccess
-                } else {
-                    resolve(results);
-                }
-            } else {
-                // No more results or limit reached
-                resolve(results);
-            }
-        };
-        
-        cursorRequest.onerror = () => reject(cursorRequest.error);
-    });
-};
-// embedding
-// TODO: update mock embeddingCall embeddings API or create local embedding module
-const generateEmbedding = async (text) => Array(1536).fill(0).map(() => Math.random() - 0.5)
-
-const updateNodeEmbedding = async (nodeId, embedding) => {
-    const store = getStore(NODES_STORE);
-    const node = await promisify(store.get(nodeId));
-    node.embedding = embedding;
-    await promisify(store.put(node));
-    await findAndCreateSimilarEdges(nodeId);
-};
-
-
-export const printNodes = async (params = {}) => {
-    const { limit = 10, detailed = false } = params;
-    const nodes = await getRecentNodesInternal(limit);
-    
-    if (detailed) {
-        console.log(`=== ${nodes.length} Most Recent Nodes (Detailed) ===`);
-        nodes.forEach((node, index) => {
-            console.log(`\n--- Node ${index + 1}: ${node.id} ---`);
-            console.log('Timestamp:', node.timestamp);
-            console.log('User Prompt:', node.userPrompt);
-            console.log('Model:', node.model);
-            console.log('Response:', node.response?.substring(0, 100) + (node.response?.length > 100 ? '...' : ''));
-            console.log('Has Embedding:', !!node.embedding);
-            console.log('Context:', node.context);
-        });
-    } else {
-        console.log(`=== ${nodes.length} Most Recent Nodes ===`);
-        console.table(nodes.map(node => ({
-            id: node.id,
-            timestamp: new Date(node.timestamp).toLocaleString(),
-            userPrompt: node.userPrompt?.substring(0, 50) + (node.userPrompt?.length > 50 ? '...' : ''),
-            model: node.model,
-            hasEmbedding: !!node.embedding,
-            responseLength: node.response?.length || 0
-        })));
-    }
-    
-    return nodes;
 };
