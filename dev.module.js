@@ -2,7 +2,7 @@ import { kebabToCamel } from './helpers.js';
 
 export const manifest = {
   name: "dev",
-  context: "extension-page",
+  context: ["service-worker", "extension-page", "offscreen"],
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],

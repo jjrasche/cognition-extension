@@ -23,7 +23,7 @@ class Runtime {
     }
 
     loadModulesForContext = async () => {
-        this.modules = modules.filter(module => !module.manifest.context || module.manifest.context === this.runtimeName);
+        this.modules = modules.filter(module => module.manifest.context && (module.manifest.context === this.runtimeName || module.manifest.context.includes(this.runtimeName)));
         this.log(`Loading modules:`, this.modules.map(m => JSON.stringify(m.manifest)));
     }
 
@@ -114,7 +114,7 @@ class Runtime {
                         pending.splice(i, 1);
                     } catch (error) {
                         console.error(`[${this.runtimeName}] ❌ ${module.manifest.name} failed:`, error);
-                        this.broadcastModuleFailed(module.manifest.name, error);
+                        this.broadcastModuleFailed(module.manifest.name);
                         this.errors.push({
                             module: module.manifest.name,
                             error: error.message,
@@ -134,7 +134,7 @@ class Runtime {
         pending.forEach(module => {
             const error = new Error(`Dependencies not met after ${maxAttempts} attempts`);
             console.error(`[${this.runtimeName}] ❌ ${module.manifest.name} failed:`, error);
-            this.broadcastModuleFailed(module.manifest.name, error);
+            this.broadcastModuleFailed(module.manifest.name);
             this.errors.push({
                 module: module.manifest.name,
                 error: error.message
