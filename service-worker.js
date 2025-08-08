@@ -1,35 +1,26 @@
-// import './dev-reload.js';
+import './dev-reload.js';
 import { initializeRuntime } from "./runtime.js";
-chrome.runtime.onInstalled.addListener(async () => {
-    await initializeOffscreenDocument();
-    await initializeExtensionPage();
-    const runtime = await initializeRuntime('service-worker');
-    runtime.log('[Service Worker] Initialized');
-});
+let runtime;
+chrome.runtime.onInstalled.addListener(async () => ( runtime = initializeRuntime('service-worker'), initializeOffscreenDocument(), initializeExtensionPage() ));
 const initializeOffscreenDocument = async () => await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
-const initializeExtensionPage = async () => !(await extensionPageExists()) || await createExtensionPage();
-
+const initializeExtensionPage = async () => !(await extensionPageExists()) && await createExtensionPage();
 const extensionPageExists = async () => {
     const storedTabId = await getExtensionPageTabId();
     if (storedTabId) {
-        try { await chrome.tabs.get(storedTabId); }
+        try { await chrome.tabs.get(storedTabId) } 
         catch (e) { await removeExtensionPageTabId(); return false; }
     }
-    return true;
+    return !!storedTabId;
 }
 
 const createExtensionPage = async () => {
     const tab = await chrome.tabs.create({ url: 'extension-page.html', });
     await setExtensionPageTabId(tab.id);
 }
-// chrome.tabs.onRemoved.addListener(async (tabId) => {
-//     const storedTabId = await getExtensionPageTabId();
-//     if (tabId === storedTabId) {
-//         console.log('[Service Worker] Extension page was closed, recreating...');
-//         await removeExtensionPageTabId();
-//         await createExtensionPage();
-//     }
-// });
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+    const storedTabId = await getExtensionPageTabId();
+    if (tabId === storedTabId) (await removeExtensionPageTabId(), await createExtensionPage());
+});
 
 const getExtensionPageTabId = async () => (await chrome.storage.local.get(['extensionPageTabId'])).extensionPageTabId;
 const removeExtensionPageTabId = async () => await chrome.storage.local.remove(['extensionPageTabId']);

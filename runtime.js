@@ -158,7 +158,7 @@ class Runtime {
         const type = `MODULE_${state.toUpperCase()}`;
         this.moduleState.set(moduleName, state);
         await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }),
-            { maxAttempts: 10, delay: 1000, onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
+            { maxAttempts: 15, delay: 3000, onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
         ).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
     };
     broadcastModuleReady = (moduleName) => this.broadcastModuleStatus(moduleName, 'ready');
@@ -242,8 +242,8 @@ class Runtime {
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
 }
 
-export async function initializeRuntime(runtimeName) {
+export function initializeRuntime(runtimeName) {
     const initializer = new Runtime(runtimeName);
-    await initializer.initialize();
+    initializer.initialize();
     return initializer;
 }
