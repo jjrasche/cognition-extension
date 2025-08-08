@@ -6,7 +6,7 @@ class Runtime {
         this.actions = new Map();
         this.modules = [];
         this.errors = [];
-        this.moduleState = new Map(); // Tracks all modules across all contexts
+        this.moduleState = new Map();
     }
 
     initialize = async () => {
@@ -86,12 +86,12 @@ class Runtime {
     initializeModules = async () => {
         this.log(`Starting module initialization...`);
         const pending = [...this.modules];
-        const maxAttempts = 30;
+        const maxAttempts = 20;
         
         for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
             if (attempt > 0) {
                 this.log(`Retry attempt ${attempt}, pending modules:`, pending.map(m => m.manifest.name));
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 10000));
             }
             
             for (let i = pending.length - 1; i >= 0; i--) {
@@ -125,7 +125,6 @@ class Runtime {
                 } else {
                     const deps = module.manifest.dependencies || [];
                     const notReady = deps.filter(dep => this.moduleState.get(dep) !== 'ready');
-                    this.log(`${module.manifest.name} waiting for dependencies:`, notReady);
                 }
             }
         }

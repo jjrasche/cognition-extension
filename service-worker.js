@@ -1,14 +1,50 @@
+// import './dev-reload.js';
 import { initializeRuntime } from "./runtime.js";
 initializeRuntime('service-worker');
-// Initialize the offscreen document
+chrome.runtime.onInstalled.addListener(async () => (await initializeOffscreenDocument(), await initializeExtensionPage()));
 
-chrome.runtime.onInstalled.addListener(async () => {
-    await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
-})
+const initializeOffscreenDocument = async () => await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
+const initializeExtensionPage = async () => !(await extensionPageExists()) || await createExtensionPage();
+
+const extensionPageExists = async () => {
+    const storedTabId = await getExtensionPageTabId();
+    if (storedTabId) {
+        try { await chrome.tabs.get(storedTabId); }
+        catch (e) { await removeExtensionPageTabId(); return false; }
+    }
+    return true;
+}
+
+const createExtensionPage = async () => {
+    const tab = await chrome.tabs.create({ url: 'extension-page.html', pinned: true });
+    await setExtensionPageTabId(tab.id);
+}
+// chrome.tabs.onRemoved.addListener(async (tabId) => {
+//     const storedTabId = await getExtensionPageTabId();
+//     if (tabId === storedTabId) {
+//         console.log('[Service Worker] Extension page was closed, recreating...');
+//         await removeExtensionPageTabId();
+//         await createExtensionPage();
+//     }
+// });
+
+const getExtensionPageTabId = async () => (await chrome.storage.local.get(['extensionPageTabId'])).extensionPageTabId;
+const removeExtensionPageTabId = async () => await chrome.storage.local.remove(['extensionPageTabId']);
+const setExtensionPageTabId = async (tabId) => await chrome.storage.local.set({ extensionPageTabId: tabId });
+
+
+
+
+
+
+
+
+
+
+
 
 // todo: add the self registering portions below to their own modules
 // // background.js - Service Worker Entry Point : This file bootstraps the module system and initializes the extension
-// import './dev-reload.js';
 // import { ExtensionStore } from './extension-state.js';
 // import { modules } from './module-registry.js';
 // const { getId } = globalThis.cognition;

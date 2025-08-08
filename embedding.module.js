@@ -42,6 +42,13 @@ export const manifest = {
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } }, 
+  ],
+  cloudModels: [
+    'jina-embeddings-v3',
+    'jina-embeddings-v2-base-en', 
+    'jina-embeddings-v2-small-en',
+    'jina-colbert-v1-en',
+    'jina-clip-v1'
   ]
 };
 
@@ -62,22 +69,26 @@ export const embedText = async (params) => {
   const { text, modelName } = params;
   if (!text) throw new Error('Text required');
   
+  // Route to cloud or local based on model name
+  if (isCloudModel(modelName)) {
+    return await embedTextCloud(text, modelName);
+  }
+  
+  // Your existing local logic here (keep unchanged):
   const startTime = performance.now();
   const model = await runtime.call('transformer.getModel', modelName || (await getModelName(manifest.localModels[0])));
   if (!model) throw new Error('Model not loaded');
     
   runtime.log(`[Embedding] About to run inference with text: "${text.substring(0, 50)}..."`);
   
-  // Try to get more device info from the actual inference
   const result = await model(text, { 
     pooling: 'mean',
     normalize: true,
-    return_tensor: false  // This might give us more device info
+    return_tensor: false
   });
   
   const endTime = performance.now();
   runtime.log(`[Embedding] Inference completed in ${(endTime - startTime).toFixed(2)}ms`);
-  runtime.log(`[Embedding] Result structure:`, Object.keys(result));
   
   return {
     embedding: result,
@@ -94,6 +105,63 @@ export const embedText = async (params) => {
 };
 
 
+export const setJinaApiKey = async (params) => {
+  const { apiKey } = params;
+  await chrome.storage.sync.set({ jinaApiKey: apiKey });
+  runtime.log('[Embedding] Jina API key saved');
+  return { success: true };
+};
+
+const getJinaApiKey = async () => {
+  const stored = await chrome.storage.sync.get(['jinaApiKey']);
+  if (!stored.jinaApiKey) {
+    const apiKey = prompt('Enter your Jina AI API key:');
+    if (apiKey) {
+      await setJinaApiKey({ apiKey });
+      return apiKey;
+    }
+    throw new Error('Jina API key required');
+  }
+  return stored.jinaApiKey;
+};
+
+const isCloudModel = (modelName) => manifest.cloudModels.includes(modelName);
+
+const embedTextCloud = async (text, modelName) => {
+  const apiKey = await getJinaApiKey();
+  const startTime = performance.now();
+  
+  const response = await fetch('https://api.jina.ai/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: modelName,
+      input: [text],
+      encoding_format: 'float'
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Jina API error: ${response.status} - ${await response.text()}`);
+  }
+  
+  const result = await response.json();
+  const endTime = performance.now();
+  
+  runtime.log(`[Embedding] Cloud inference completed in ${(endTime - startTime).toFixed(2)}ms`);
+  
+  return {
+    embedding: result.data[0].embedding,
+    dimensions: result.data[0].embedding.length,
+    processingTime: `${(endTime - startTime).toFixed(2)}ms`,
+    modelUsed: modelName,
+    device: 'cloud',
+    usage: result.usage
+  };
+};
 
 
 // Test cases for embedding module - semantic similarity testing
@@ -147,16 +215,29 @@ export const embeddingTestCases = [
 ];
 
 // Test runner function
-export const runEmbeddingTests = async (modelName) => {
+export const runEmbeddingTests = async (params = {}) => {
+  const { modelName } = params;
+  if (!modelName) {
+    runtime.log('[Embedding] Available models:');
+    runtime.log('Local:', await runtime.call('transformer.listModels'));
+    runtime.log('Cloud:', manifest.cloudModels);
+    return { error: 'Please specify modelName parameter' };
+  }
+  
   const results = [];
   
   for (const testGroup of embeddingTestCases) {
     console.log(`\n=== Testing: ${testGroup.name} ===`);
     for (const pair of testGroup.pairs) {
       try {
-        const embedding1 = await runtime.call('embedding.embedText', { text: pair.text1, modelName });
-        const embedding2 = await runtime.call('embedding.embedText', { text: pair.text2, modelName });
-        const similarity = calculateCosineSimilarity(embedding1.embedding.ort_tensor.data, embedding2.embedding.ort_tensor.data);
+        const embedding1 = await embedText({ text: pair.text1, modelName });
+        const embedding2 = await embedText({ text: pair.text2, modelName });
+        
+        // Handle different embedding formats (local vs cloud)
+        const vec1 = embedding1.embedding.ort_tensor?.data || embedding1.embedding;
+        const vec2 = embedding2.embedding.ort_tensor?.data || embedding2.embedding;
+        
+        const similarity = calculateCosineSimilarity(vec1, vec2);
         const passed = evaluateSimilarity(similarity, pair.expectedSimilarity); 
         const result = { text1: pair.text1, text2: pair.text2, similarity: similarity.toFixed(4), expected: pair.expectedSimilarity, passed, notes: pair.notes };
         results.push(result);
@@ -169,7 +250,7 @@ export const runEmbeddingTests = async (modelName) => {
   }
   const passed = results.filter(r => r.passed).length;
   const total = results.length;
-  console.log(`\n=== SUMMARY ===`);
+  console.log(`\n=== SUMMARY for ${modelName} ===`);
   console.log(`Passed: ${passed}/${total} (${(passed/total*100).toFixed(1)}%)`);
   return results;
 };

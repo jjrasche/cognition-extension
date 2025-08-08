@@ -17,23 +17,24 @@ export const setApiKey = async (key) => (_apiKey = key, await chrome.storage.syn
 let _apiKey;
 export const initialize = async () => _apiKey = await getApiKey();
 
-export const makeRequest = async (messages, model, onChunk) => {
+export const makeRequest = async (params) => {
+  const { model, messages, onChunk } = params;
   const systemMessage = messages.find(m => m.role === 'system');
   const chatMessages = messages.filter(m => m.role !== 'system');
-  
-  const body = JSON.stringify({
+  const body = {
     model,
     max_tokens: 4096,
     ...(systemMessage && { system: systemMessage.content }),
     messages: chatMessages,
-    stream: true
-  });
+    stream: true,
+  };
+  if (params.webSearch) body.tools = (body.tools ?? []).concat(addWebSearchTool(params.webSearch));
 
-  // const body = JSON.stringify({ model, max_tokens: 4096, messages, stream: true });
-  const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(_apiKey), body });
+  const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(_apiKey), body: JSON.stringify(body) });
   if (!resp.ok) throw new Error(`Claude API error: ${resp.status} - ${await resp.text()}`);
   return await processStream(resp, onChunk);
 };
+const addWebSearchTool = ({params}) => ({ "type": "web_search", "name": "web_search", "max_uses": params.max_uses || null, "allowed_domains": params.allowed_domains || null, ...(params.options ?? {})})
 
 const processStream = async (resp, onChunk) => {
   let [reader, decoder, content, metadata] = [resp.body.getReader(), new TextDecoder(), '', { tokens: 0 }];
