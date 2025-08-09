@@ -4,7 +4,7 @@ export const manifest = {
   description: "Semantic chunking for documents and text with flexible size boundaries",
   context: "service-worker",
   permissions: ["storage"],
-  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData", "runAllChunkingTests"],
+  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData", "runAllChunkingTests", "analyzeConversationChunking"],
   dependencies: ["embedding"],
   state: {
     reads: [],
@@ -503,4 +503,166 @@ export async function testWithClaudeData() {
     console.error('Test failed:', error);
     return { error: error.message };
   }
+}
+
+
+
+
+
+
+
+export const analyzeConversationChunking = async (params = {}) => {
+  const { minResponseLength = 800, maxSamples = 10 } = params;
+  
+  try {
+    // Load your conversation data
+    const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
+    const conversations = await response.json();
+    const interactions = await processClaudeConversations({ conversations });
+    
+    // Find interesting conversations for chunking analysis
+    const longResponses = interactions
+      .filter(interaction => interaction.aiResponse.length >= minResponseLength)
+      .sort((a, b) => b.aiResponse.length - a.aiResponse.length)
+      .slice(0, maxSamples);
+    
+    console.log(`\n🔍 ANALYZING ${longResponses.length} CONVERSATIONS FOR CHUNKING`);
+    console.log(`Response lengths: ${longResponses.map(r => r.aiResponse.length).join(', ')} chars\n`);
+    
+    const results = [];
+    
+    for (let i = 0; i < longResponses.length; i++) {
+      const interaction = longResponses[i];
+      const conversationName = interaction.metadata.conversationName;
+      
+      console.log(`\n=== CONVERSATION ${i + 1}: ${conversationName} ===`);
+      console.log(`Prompt (${interaction.userPrompt.length} chars): "${interaction.userPrompt.substring(0, 100)}..."`);
+      console.log(`Response (${interaction.aiResponse.length} chars): "${interaction.aiResponse.substring(0, 100)}..."`);
+      
+      // Test different chunking strategies
+      const strategies = [
+        { name: 'Small Chunks', minTokens: 50, maxTokens: 300 },
+        { name: 'Medium Chunks', minTokens: 100, maxTokens: 600 },
+        { name: 'Large Chunks', minTokens: 200, maxTokens: 1000 },
+      ];
+      
+      const chunkResults = {};
+      
+      for (const strategy of strategies) {
+        try {
+          const promptChunks = await chunkText({ 
+            text: interaction.userPrompt, 
+            ...strategy 
+          });
+          
+          const responseChunks = await chunkText({ 
+            text: interaction.aiResponse, 
+            ...strategy 
+          });
+          
+          chunkResults[strategy.name] = {
+            promptChunks: promptChunks.chunks.length,
+            responseChunks: responseChunks.chunks.length,
+            totalChunks: promptChunks.chunks.length + responseChunks.chunks.length,
+            responseChunkDetails: responseChunks.chunks.map(chunk => ({
+              tokens: chunk.tokenCount,
+              preview: chunk.text.substring(0, 80) + '...'
+            }))
+          };
+          
+          console.log(`  ${strategy.name}: ${promptChunks.chunks.length} prompt + ${responseChunks.chunks.length} response = ${promptChunks.chunks.length + responseChunks.chunks.length} total chunks`);
+          
+        } catch (error) {
+          console.error(`  ${strategy.name}: ERROR - ${error.message}`);
+          chunkResults[strategy.name] = { error: error.message };
+        }
+      }
+      
+      // Analyze semantic structure of the response
+      const semanticAnalysis = analyzeSemanticStructure(interaction.aiResponse);
+      console.log(`  Semantic Structure: ${semanticAnalysis.headers} headers, ${semanticAnalysis.paragraphs} paragraphs, ${semanticAnalysis.sentences} sentences`);
+      
+      results.push({
+        conversation: conversationName,
+        promptLength: interaction.userPrompt.length,
+        responseLength: interaction.aiResponse.length,
+        estimatedTokens: estimateTokenCount(interaction.aiResponse),
+        semanticAnalysis,
+        chunkResults
+      });
+      
+      // Show detailed breakdown for first conversation
+      if (i === 0) {
+        console.log(`\n📝 DETAILED BREAKDOWN OF FIRST CONVERSATION:`);
+        const detailedChunks = await chunkText({ 
+          text: interaction.aiResponse, 
+          minTokens: 100, 
+          maxTokens: 600 
+        });
+        
+        detailedChunks.chunks.forEach((chunk, idx) => {
+          console.log(`\n  Chunk ${idx + 1} (${chunk.tokenCount} tokens):`);
+          console.log(`  "${chunk.text.substring(0, 200)}${chunk.text.length > 200 ? '...' : ''}"`);
+        });
+      }
+    }
+    
+    // Summary analysis
+    console.log(`\n📊 CHUNKING STRATEGY COMPARISON:`);
+    const summary = results.map(r => ({
+      conversation: r.conversation.substring(0, 30),
+      tokens: r.estimatedTokens,
+      small: r.chunkResults['Small Chunks']?.totalChunks || 'Error',
+      medium: r.chunkResults['Medium Chunks']?.totalChunks || 'Error',
+      large: r.chunkResults['Large Chunks']?.totalChunks || 'Error'
+    }));
+    
+    console.table(summary);
+    
+    return {
+      analyzedConversations: results.length,
+      summary,
+      detailedResults: results,
+      recommendations: generateChunkingRecommendations(results)
+    };
+    
+  } catch (error) {
+    console.error('[Chunking Analysis] Failed:', error);
+    return { error: error.message };
+  }
+};
+
+// Helper function to analyze semantic structure
+function analyzeSemanticStructure(text) {
+  const headers = (text.match(/^#+\s+/gm) || []).length;
+  const paragraphs = (text.match(/\n\s*\n/g) || []).length + 1;
+  const sentences = (text.match(/[.!?](?:\s+[A-Z]|\s*\n)/g) || []).length;
+  const codeBlocks = (text.match(/```[\s\S]*?```/g) || []).length;
+  const lists = (text.match(/^\s*[-*+]\s+/gm) || []).length;
+  
+  return { headers, paragraphs, sentences, codeBlocks, lists };
+}
+
+// Generate recommendations based on analysis
+function generateChunkingRecommendations(results) {
+  const avgResponseLength = results.reduce((sum, r) => sum + r.responseLength, 0) / results.length;
+  const avgTokens = results.reduce((sum, r) => sum + r.estimatedTokens, 0) / results.length;
+  
+  const recommendations = [];
+  
+  if (avgResponseLength > 1500) {
+    recommendations.push("Consider medium chunking (100-600 tokens) for most responses");
+  } else {
+    recommendations.push("Small to medium chunking (50-400 tokens) may be optimal");
+  }
+  
+  if (results.some(r => r.semanticAnalysis.headers > 2)) {
+    recommendations.push("Use header-aware chunking for structured responses");
+  }
+  
+  if (results.some(r => r.semanticAnalysis.codeBlocks > 0)) {
+    recommendations.push("Implement code-block preservation in chunking");
+  }
+  
+  return recommendations;
 }

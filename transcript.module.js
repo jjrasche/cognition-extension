@@ -1,167 +1,65 @@
+export const manifest = {
+  name: "transcript",
+  context: "offscreen", // Run with transformer module
+  version: "1.0.0", 
+  description: "Local speech transcription using Whisper Base",
+  dependencies: ["transformer"],
+  actions: ["start", "stop", "getStatus", "transcribe"],
+  externalDependencies: [
+    { url: 'https://huggingface.co/Xenova/whisper-base.en/resolve/main/onnx/encoder_model.onnx', destination: 'models/Xenova/whisper-base.en/onnx/', sha256: '3AF4D8B7515F01F1C313AFE0D691768FF084169B8E1EC1CB4D975CE2AC465F6E' },
+    { url: 'https://huggingface.co/Xenova/whisper-base.en/resolve/main/onnx/decoder_model_merged.onnx', destination: 'models/Xenova/whisper-base.en/onnx/', sha256: 'E2B3D8E71A16E9462C2849FFB79B2966DA800997AAB299BFB9A754BA3CAA54C1' },
+    { url: 'https://huggingface.co/Xenova/whisper-base.en/resolve/main/tokenizer.json', destination: 'models/Xenova/whisper-base.en/', sha256: 'C6EE8F089220A5B1188F6426456772572671C6141AE007EECB83C6A8349F5DEB' },
+    { url: 'https://huggingface.co/Xenova/whisper-base.en/resolve/main/config.json', destination: 'models/Xenova/whisper-base.en/', sha256: '5C390F2C6BA84DDEB7E362CD8B2123832911407850174E64D7081CCC36DF2D64' },
+    { url: 'https://huggingface.co/Xenova/whisper-base.en/resolve/main/generation_config.json', destination: 'models/Xenova/whisper-base.en/', sha256: '1E57ED56AD1BD7F08A49ECE7FE7DAADA674573805A35F8BDBBE68380AAB5B1EE' },
+    { url: 'https://huggingface.co/Xenova/whisper-base.en/resolve/main/preprocessor_config.json', destination: 'models/Xenova/whisper-base.en/', sha256: 'A6A76D28C93EDB273669EB9E0B0636A2BDDBB1272C3261E47B7CA6DFDBAC1B8D' },
+  ],
+  localModels: [
+    { name: "Xenova/whisper-base.en", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } }
+  ]
+};
 
+let runtime;
+let whisperPipeline = null;
 
-// /**
-//  * Transcript Module - Bridge to Web Speech API for live transcription
-//  * Provides real-time speech recognition and transcription capabilities
+export async function initialize(rt) {
+  runtime = rt;
+  runtime.log('[Transcript] Loading Whisper Base model...');
+  
+  // Load the model via transformer module
+  whisperPipeline = await runtime.call('transformer.getModel', 'Xenova/whisper-base.en-webgpu-fp16');
+  
+  runtime.log('[Transcript] Whisper Base ready for transcription');
+}
 
+export async function transcribe(params) {
+  const { audioData } = params; // Float32Array of 16kHz audio
+  
+  if (!whisperPipeline) {
+    throw new Error('Whisper model not loaded');
+  }
+  
+  const result = await whisperPipeline(audioData);
+  
+  return {
+    text: result.text,
+    confidence: result.confidence || 1.0,
+    processingTime: result.processingTime
+  };
+}
 
-// Summary: Transcript Module Approach
-// Decision: Dedicated transcript tab
+export async function start(params = {}) {
+  // Start continuous transcription (to be implemented)
+  // Will need VAD + chunking logic
+  return { success: true, message: 'Transcription started' };
+}
 
-// Open a chrome-extension://[id]/transcript.html page
-// One-time microphone permission (remembered for extension)
-// Clean tab management: if transcript tab exists, focus it; else create it
-// Full control over UI/UX in the transcript page
-// No complex content script injection needed
+export async function stop() {
+  return { success: true, message: 'Transcription stopped' };
+}
 
-// Two possible modes:
-
-// Microphone transcription - Web Speech API (what we're building)
-// Tab audio transcription - chrome.tabCapture API (future feature)
-
-// */
-
-// // Module manifest
-// export const manifest = {
-//   name: "transcript",
-//   version: "1.0.0",
-//   permissions: ["storage"],
-//   actions: ["startTranscription", "stopTranscription"],
-//   state: {
-//     reads: [],
-//     writes: ["speech.transcript.current", "speech.transcript.history"]
-//   }
-// };
-
-// let recognition = null;
-
-// export async function initialize(state, config) {
-//   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-//   if (!SpeechRecognition) {
-//     console.error('Web Speech API not supported in this browser.');
-//     return;
-//   }
-
-//   recognition = new SpeechRecognition();
-//   recognition.continuous = true;
-//   recognition.interimResults = false;
-//   recognition.lang = config?.lang || 'en-US';
-//   recognition.onresult = (event) => processRecognitionResult(state, event);
-//   recognition.onerror = (event) => console.error('SpeechRecognition error:', event.error);
-//   recognition.onend = () => console.log('SpeechRecognition ended');
-// }
-
-// const processRecognitionResult = async (state,event) => {
-//     for (let i = event.resultIndex; i < event.results.length; i++) {
-//       const result = event.results[i];
-//       if (!result.isFinal) continue;
-//       const transcript = result[0].transcript.trim();
-//       const confidence = result[0].confidence;
-//       const timestamp = new Date().toISOString();
-//       const segment = { text: transcript, confidence, timestamp };
-
-//       await state.write('speech.transcript.current', segment);
-//       const existing = (await state.read('speech.transcript.history')) || [];
-//       existing.push(segment);
-//       await state.write('speech.transcript.history', existing);
-//     }    
-// }
-
-// export const startTranscription = () => {
-//   verifySpeechModuleInitialized();
-//   return recognition.start().then(() => ({ success: true }));
-// };
-
-// export const stopTranscription = () => {
-//   verifySpeechModuleInitialized();
-//   return recognition.stop().then(() => ({ success: true }));
-// };
-
-// const verifySpeechModuleInitialized = () => {
-//   if (!recognition) {
-//     throw new Error('speech-module not initialized. Call initialize() first.');
-//   }
-// };
-
-// // ----------------------
-// // Tests
-// // ----------------------
-// export const tests = [
-//   {
-//     name: 'initialize_setsUpRecognition',
-//     fn: async () => {
-//       // Mock SpeechRecognition constructor
-//       let created = null;
-//       const MockRecon = function() { created = this; };
-//       MockRecon.prototype.start = () => {};
-//       MockRecon.prototype.stop = () => {};
-//       window.SpeechRecognition = MockRecon;
-
-//       const mockState = createMockState();
-//       await initialize(mockState, { lang: 'en-US' });
-//       // Ensure recognition instance exists and has correct settings
-//       assert(created instanceof MockRecon);
-//       assert(typeof created.start === 'function');
-//       assert(typeof created.stop === 'function');
-//     }
-//   },
-//   {
-//     name: 'startTranscription_callsRecognitionStart',
-//     fn: async () => {
-//       // Spy on start
-//       let started = false;
-//       const MockRecon = function() { this.start = () => { started = true }; };
-//       window.SpeechRecognition = MockRecon;
-
-//       const mockState = createMockState();
-//       await initialize(mockState, {});
-//       startTranscription();
-//       assert(started === true);
-//     }
-//   },
-//   {
-//     name: 'stopTranscription_callsRecognitionStop',
-//     fn: async () => {
-//       // Spy on stop
-//       let stopped = false;
-//       const MockRecon = function() { this.stop = () => { stopped = true }; };
-//       window.SpeechRecognition = MockRecon;
-
-//       const mockState = createMockState();
-//       await initialize(mockState, {});
-//       stopTranscription();
-//       assert(stopped === true);
-//     }
-//   },
-//   {
-//     name: 'onResult_finalSegment_updatesCurrentAndHistory',
-//     fn: async () => {
-//       // Setup recognition and mockState
-//       const MockRecon = function() {};
-//       window.SpeechRecognition = MockRecon;
-//       const mockState = createMockState();
-//       await initialize(mockState, {});
-
-//       // Prepare fake event with one interim and one final result
-//       const fakeEvent = {
-//         resultIndex: 0,
-//         results: [
-//           { isFinal: false, 0: { transcript: 'hello world', confidence: 0.5 } },
-//           { isFinal: true,  0: { transcript: 'test done',   confidence: 0.9 } }
-//         ]
-//       };
-//       // Invoke handler directly
-//       await recognition.onresult(fakeEvent);
-
-//       // Check writes
-//       const current = await mockState.read('speech.transcript.current');
-//       assert(current.text === 'test done');
-//       assert(current.confidence === 0.9);
-
-//       const history = await mockState.read('speech.transcript.history');
-//       assert(Array.isArray(history));
-//       assert(history.length === 1);
-//       assert(history[0].text === 'test done');
-//     }
-//   }
-// ];
+export async function getStatus() {
+  return {
+    modelLoaded: !!whisperPipeline,
+    modelName: 'Xenova/whisper-base.en'
+  };
+}
