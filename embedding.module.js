@@ -11,7 +11,7 @@ export const manifest = {
   name: "embedding", 
   keywords: ["embed"],
   context: "offscreen",
-  dependencies: ["transformer"],
+  dependencies: ["transformer", "api-keys"],
   version: "1.0.0",
   description: "use local embedding models to embed text",
   actions: ["embedText", "runEmbeddingTests", "setJinaApiKey", "runSpeedQualityComparison", "testAllModels"],
@@ -31,7 +31,7 @@ export const manifest = {
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'D00DAD6F80B7EAB804479A58634A58A50966366627F847E47848BAC52873995D' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: '3EA32220C2E21AF4F0BE95E2A43BDC8AC693F8C35C2255127EF680689B469461' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'A783505A4E839B61700AA61D249D381D00ADDFB9CF3221359E2D30A6DA6C6499' },
-
+    
     // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/onnx/model_fp16.onnx', destination: 'models/jinaai/jina-embeddings-v3/onnx', sha256: '329C3EA03A1815CC98F6B97EFCAFB9000C6C780C2D89D40D4F541B9A88434C38' },
     // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/tokenizer.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: 'F59925FCB90C92B894CB93E51BB9B4A6105C5C249FE54CE1C704420AC39B81AF' },
     // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/tokenizer_config.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: 'E1BC77DA5B90BA65B47AA8BD776C6317F47D50DC6717E92B10177686B3B8F161' },
@@ -46,7 +46,7 @@ export const manifest = {
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
-
+    
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
@@ -63,13 +63,16 @@ export const manifest = {
     'jina-embeddings-v4',
     'jina-embeddings-v3',
     'jina-embeddings-v2-base-en'
-  ]
+  ],
+  apiKeys: ["jina"],
 };
 
 let runtime;
 export const initialize = async (rt) => runtime = rt;
 
 export const getModelName = async (model) => await runtime.call('transformer.getModelName', model);
+const isValidAPIService = (service) => manifest.apiKeys.includes(service) || (() => { throw new Error(`Invalid API service: ${service}. Valid services are: ${manifest.apiKeys.join(', ')}`); })();
+const getAPIKey = async (service) => isValidAPIService(service) && await runtime.call('api-keys.getKey', { service });
 
 export const embedText = async (params) => {
   const { text, modelName } = params;
@@ -110,51 +113,10 @@ export const embedText = async (params) => {
   };
 };
 
-export const setJinaApiKey = async (params) => {
-  const { apiKey } = params;
-  // Use runtime call to handle storage from appropriate context
-  await runtime.call('indexed-db.updateRecord', {
-    db: await getConfigDB(),
-    storeName: 'config',
-    data: { id: 'jinaApiKey', value: apiKey, timestamp: new Date().toISOString() }
-  });
-  runtime.log('[Embedding] Jina API key saved');
-  return { success: true };
-};
-
-const getJinaApiKey = async () => {
-  try {
-    const stored = await runtime.call('indexed-db.getRecord', {
-      db: await getConfigDB(),
-      storeName: 'config',
-      key: 'jinaApiKey'
-    });
-    
-    if (stored?.value) {
-      return stored.value;
-    }
-  } catch (error) {
-    runtime.log('[Embedding] No stored API key found, will prompt user');
-  }
-  
-  // For now, throw error - in real usage, this would be set via UI
-  throw new Error('Jina API key not configured. Please set it first with: embedding.setJinaApiKey({apiKey: "your-key"})');
-};
-
-const getConfigDB = async () => {
-  return await runtime.call('indexed-db.openDb', {
-    name: 'EmbeddingConfig',
-    version: 1,
-    storeConfigs: [
-      { name: 'config', options: { keyPath: 'id' } }
-    ]
-  });
-};
-
 const isCloudModel = (modelName) => manifest.cloudModels.includes(modelName);
 
 const embedTextCloud = async (text, modelName) => {
-  const apiKey = await getJinaApiKey();
+  const apiKey = await getAPIKey('jina');
   const startTime = performance.now();
   
   // Jina API expects different format - just model and input

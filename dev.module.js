@@ -18,7 +18,7 @@ export async function initialize(rt) {
   runtime.log('[Dev] Development helpers ready');
 }
 
-const isDevMode = () => !chrome.runtime.getManifest().update_url || runtime.runtimeName == "offscreen";
+const isDevMode = () => runtime.runtimeName == "offscreen" || !chrome.runtime.getManifest().update_url;
 
 const createActionShortcuts = () => {
   if (!isDevMode()) {

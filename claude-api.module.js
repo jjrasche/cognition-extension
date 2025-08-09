@@ -4,18 +4,18 @@ export let manifest = {
   context: "service-worker",
   version: "1.0.0",
   permissions: ["storage"],
-  actions: ["setApiKey", "viewModels", "makeRequest"],
+  dependencies: ["api-keys"],
+  apiKeys: ["claude"],
+  actions: ["setApiKey", "viewModels", "makeRequest", "searchExportedConversations"],
   defaultModel: "claude-3-5-sonnet-20241022"
 };
 
-const buildHeaders = (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
-const getApiKey = async () => (await chrome.storage.sync.get(['claudeApiKey']))['claudeApiKey'] || (() => { throw new Error('Claude API key not configured'); })()
-const fetchModels = async () => (await (await fetch(`https://api.anthropic.com/v1/models`, { method: 'GET', headers: buildHeaders(_apiKey) })).json()).data;
+const buildHeaders = () => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
+const fetchModels = async () => (await (await fetch(`https://api.anthropic.com/v1/models`, { method: 'GET', headers: buildHeaders() })).json()).data;
 export const viewModels = async () => console.table(Object.fromEntries((await fetchModels()).map(({ display_name, id, created_at }) => [display_name, { id, created_at }])));
-export const setApiKey = async (key) => (_apiKey = key, await chrome.storage.sync.set({ claudeApiKey: key }));
 
-let _apiKey;
-export const initialize = async () => _apiKey = await getApiKey();
+let apiKey, runtime;
+export const initialize = async (rt) => (runtime = rt, apiKey = await runtime.call("api-keys.getKey", { service: "claude" }));
 
 export const makeRequest = async (params) => {
   const { model, messages, onChunk } = params;
@@ -30,7 +30,7 @@ export const makeRequest = async (params) => {
   };
   if (params.webSearch) body.tools = (body.tools ?? []).concat(addWebSearchTool(params.webSearch));
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(_apiKey), body: JSON.stringify(body) });
+  const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(), body: JSON.stringify(body) });
   if (!resp.ok) throw new Error(`Claude API error: ${resp.status} - ${await resp.text()}`);
   return await processStream(resp, onChunk);
 };
@@ -160,3 +160,89 @@ manifest.models = [
     "rateLimits": { "requestsPerMinute": 50, "tokensPerMinute": 20000, "requestsPerDay": 72000 }
   }
 ];
+
+
+
+
+
+
+export const searchExportedConversations = async (params) => {
+  const { query, caseSensitive = false } = params;
+  if (!query) {
+    runtime.log('[Dev] Search query required');
+    return { success: false, error: 'Search query required' };
+  }
+  
+  try {
+    // Load conversations
+    const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
+    const conversations = await response.json();
+    
+    // Search for matching conversations
+    const searchTerm = caseSensitive ? query : query.toLowerCase();
+    const matches = conversations.filter(conv => {
+      // Check conversation name
+      if ((caseSensitive ? conv.name : conv.name?.toLowerCase())?.includes(searchTerm)) {
+        return true;
+      }
+      
+      // Check message content
+      return conv.chat_messages?.some(msg => 
+        (caseSensitive ? msg.text : msg.text?.toLowerCase())?.includes(searchTerm)
+      );
+    });
+    
+    // Display results in console
+    if (matches.length === 0) {
+      console.log(`No conversations found matching "${query}"`);
+      return { success: true, count: 0 };
+    }
+    
+    console.log(`Found ${matches.length} conversations matching "${query}":`);
+    
+    // Format and display each conversation
+    matches.forEach((conv, index) => {
+      // Format timestamp
+      const created = new Date(conv.created_at).toLocaleString();
+      
+      // Count messages by type
+      const humanMsgs = conv.chat_messages?.filter(m => m.sender === 'human').length || 0;
+      const aiMsgs = conv.chat_messages?.filter(m => m.sender === 'assistant').length || 0;
+      
+      // Display conversation header
+      console.group(`${index + 1}. ${conv.name} (${created})`);
+      console.log(`ID: ${conv.uuid}`);
+      console.log(`Messages: ${conv.chat_messages?.length || 0} (${humanMsgs} human, ${aiMsgs} AI)`);
+      
+      // Find matching messages
+      const matchingMsgs = conv.chat_messages?.filter(msg => 
+        (caseSensitive ? msg.text : msg.text?.toLowerCase())?.includes(searchTerm)
+      ) || [];
+      
+      if (matchingMsgs.length > 0) {
+        console.log(`Matching messages: ${matchingMsgs.length}`);
+        
+        // Display first matching message preview
+        if (matchingMsgs.length > 0) {
+          const msg = matchingMsgs[0];
+          const preview = msg.text.length > 150 ? 
+            msg.text.substring(0, 150) + '...' : 
+            msg.text;
+          
+          console.log(`Preview (${msg.sender}): ${preview}`);
+        }
+      }
+      
+      console.groupEnd();
+    });
+    
+    return { 
+      success: true, 
+      count: matches.length, 
+      conversations: matches
+    };
+  } catch (error) {
+    console.error('[Dev] Error searching conversations:', error);
+    return { success: false, error: error.message };
+  }
+};

@@ -7,7 +7,7 @@ chrome.runtime.onInstalled.addListener(async () => {
         await initializeOffscreenDocument();
         await initializeExtensionPage();
     } catch (error) {
-        console.error('Error initializing service worker:', error);
+        runtime.logError('Error initializing service worker:', error);
     }
 });
 const initializeOffscreenDocument = async () => await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['LOCAL_STORAGE'], justification: 'Run ML models that require full browser APIs' });
