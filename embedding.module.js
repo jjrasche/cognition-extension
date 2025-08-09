@@ -1,3 +1,12 @@
+/*
+  Goal: Achieve high semantic resolution for LLM context selection by distinguishing between 5+ distinct relevance levels (synonyms, related concepts, same domain, tangentially related, unrelated) to enable precise retrieval of the most contextually useful content while avoiding token waste from irrelevant or weakly related material.
+  Why: LLM performance depends heavily on context quality. Poor semantic resolution leads to including irrelevant content (wasting tokens) or missing relevant content (degrading responses). High-resolution embeddings enable building superior RAG systems and conversation context selection.
+
+  STS focuses on: "The cat sat on the mat" vs "A feline rested on the rug"
+  Your use case: "How do I implement OAuth?" vs "OAuth security best practices" vs "Database connection pooling"
+  Your content has technical specificity and contextual relationships that standard paraphrasing tests miss.
+  Example: "OAuth implementation in Node.js" vs "JWT token validation" = medium relevance (both auth, different specifics)
+*/
 export const manifest = {
   name: "embedding", 
   keywords: ["embed"],

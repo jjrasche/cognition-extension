@@ -172,35 +172,51 @@ const isAbbreviation = (text, dotIndex) => /\b(Mr|Mrs|Dr|Prof|etc|vs|ie|eg)$/.te
 const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
   const { minTokens = 50, maxTokens = 1000, overlapTokens = 50 } = options;
   const chunks = [];
+  
+  // Check if entire text fits in one chunk
+  const totalTokens = estimateTokenCount(text);
+  if (totalTokens <= maxTokens) {
+    return [{
+      text: text.trim(),
+      tokenCount: totalTokens,
+      startPos: 0,
+      endPos: text.length,
+      chunkIndex: 0
+    }];
+  }
+  
   let currentStart = 0;
   
   while (currentStart < text.length) {
     let chunkEnd = findOptimalChunkEnd(text, currentStart, boundaries, minTokens, maxTokens);
     
-    // For very large chunks, ensure we're making progress
+    // FIX: More aggressive forced splitting
     const segmentText = text.slice(currentStart, chunkEnd);
     const actualTokens = estimateTokenCount(segmentText);
     
-    // If chunk is still too large, force split at paragraph boundaries
-    if (actualTokens > maxTokens * 1.5) {
-      const paragraphBoundaries = boundaries.filter(b => 
+    // If chunk is still too large, force split at maxTokens
+    if (actualTokens > maxTokens * 1.2) {  // Changed from 1.5 to 1.2
+      // Find approximate position for maxTokens
+      const avgCharsPerToken = text.length / totalTokens;
+      const targetChars = Math.floor(maxTokens * avgCharsPerToken);
+      chunkEnd = currentStart + targetChars;
+      
+      // Try to find nearest boundary
+      const nearbyBoundaries = boundaries.filter(b => 
         b.position > currentStart && 
-        b.position < chunkEnd && 
-        (b.type === 'paragraph' || b.type === 'strong_paragraph' || b.type === 'header')
+        b.position < chunkEnd + 100 &&
+        b.position > chunkEnd - 100
       );
       
-      if (paragraphBoundaries.length > 0) {
-        // Split at middle paragraph boundary
-        const midIndex = Math.floor(paragraphBoundaries.length / 2);
-        chunkEnd = paragraphBoundaries[midIndex].position;
+      if (nearbyBoundaries.length > 0) {
+        chunkEnd = nearbyBoundaries[0].position;
       }
     }
     
-    // CRITICAL FIX: Ensure we always make progress
+    // Ensure forward progress
     if (chunkEnd <= currentStart) {
-      // Force progress - take at least some content
-      chunkEnd = Math.min(currentStart + 1000, text.length); // Move forward by at least 1000 chars
-      console.warn(`[Chunking] Forced progress from ${currentStart} to ${chunkEnd}`);
+      const avgCharsPerToken = text.length / totalTokens;
+      chunkEnd = Math.min(currentStart + (maxTokens * avgCharsPerToken), text.length);
     }
     
     const chunkText = text.slice(currentStart, chunkEnd).trim();
@@ -215,31 +231,26 @@ const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
         chunkIndex: chunks.length 
       });
       
-      // Add overlap for better context continuity (except for last chunk)
+      // FIX: Simplify overlap - just use a small character overlap
       if (chunkEnd < text.length) {
-        // Find a good overlap point (sentence or paragraph boundary)
-        const overlapStart = Math.max(currentStart, chunkEnd - (overlapTokens * 4)); // Approximate char count
+        // Find last sentence boundary for overlap
         const overlapBoundaries = boundaries.filter(b => 
-          b.position >= overlapStart && 
+          b.position >= chunkEnd - 200 && 
           b.position < chunkEnd &&
-          (b.type === 'sentence' || b.type === 'paragraph')
+          b.type === 'sentence'
         );
         
-        if (overlapBoundaries.length > 0) {
+        if (overlapBoundaries.length > 0 && overlapTokens > 0) {
+          // Start next chunk from last sentence
           currentStart = overlapBoundaries[overlapBoundaries.length - 1].position;
         } else {
-          currentStart = chunkEnd; // No overlap if no good boundary
-        }
-        
-        // CRITICAL FIX: Ensure we always move forward
-        if (currentStart <= chunkEnd - chunkText.length) {
-          currentStart = chunkEnd; // Force forward if overlap would go backwards
+          // No overlap
+          currentStart = chunkEnd;
         }
       } else {
         currentStart = chunkEnd;
       }
     } else {
-      // Safety: prevent infinite loop on empty chunk
       currentStart = Math.min(currentStart + 100, text.length);
     }
   }
@@ -299,63 +310,51 @@ const findOptimalChunkEnd = (text, start, boundaries, minTokens, maxTokens) => {
     return text.length;
   }
   
-  let bestEnd = text.length;
-  let currentTokens = 0;
-  let lastViableEnd = start;
-  let lastMinEnd = start;
+  // FIX: Remove the 0.8 multiplier - use full maxTokens
+  const targetMax = maxTokens;  // Not: Math.floor(maxTokens * 0.8)
   
-  // For very large content, be more aggressive about finding boundaries
-  const isLargeContent = estimateTokenCount(text.slice(start)) > 2000;
-  const targetMax = isLargeContent ? Math.floor(maxTokens * 0.8) : maxTokens; // Chunk smaller for large content
+  let bestEnd = start;
+  let closestToTarget = null;
+  let closestDistance = Infinity;
   
   for (const boundary of availableBoundaries) {
     const segmentText = text.slice(start, boundary.position);
-    currentTokens = estimateTokenCount(segmentText);
+    const currentTokens = estimateTokenCount(segmentText);
     
-    // Track first boundary that meets minimum
-    if (currentTokens >= minTokens && lastMinEnd === start) {
-      lastMinEnd = boundary.position;
-    }
+    // FIX: Find boundary closest to target, not just first acceptable one
+    const distance = Math.abs(currentTokens - targetMax);
     
-    // For boundaries that meet minimum, prefer higher-strength boundaries
-    if (currentTokens >= minTokens) {
-      // Prefer stronger boundaries (headers, paragraphs over sentences)
-      if (boundary.strength >= 3 || currentTokens >= targetMax * 0.6) {
-        lastViableEnd = boundary.position;
+    // Stop if we've exceeded max tokens
+    if (currentTokens > targetMax) {
+      // Use the closest boundary we've found so far
+      if (closestToTarget) {
+        return closestToTarget;
       }
+      // Or use this boundary if it's the first one past the limit
+      return boundary.position;
     }
     
-    // Hard stop at max tokens, but prefer strong boundaries near the limit
-    if (currentTokens >= targetMax) {
-      // Look for a strong boundary within the last 20% of content
-      const recentBoundaries = availableBoundaries.filter(b => 
-        b.position <= boundary.position && 
-        b.position >= start + (segmentText.length * 0.8) &&
-        b.strength >= 3
-      );
-      
-      if (recentBoundaries.length > 0) {
-        bestEnd = recentBoundaries[recentBoundaries.length - 1].position;
-      } else {
-        bestEnd = lastViableEnd;
-      }
-      break;
+    // Track the boundary closest to our target
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestToTarget = boundary.position;
     }
     
-    bestEnd = boundary.position;
+    // Update bestEnd to the furthest boundary within limits
+    if (currentTokens <= targetMax) {
+      bestEnd = boundary.position;
+    }
   }
   
-  // Safety: ensure we don't return something smaller than minimum
-  if (currentTokens > maxTokens && lastViableEnd > start) {
-    return lastViableEnd;
+  // FIX: If no boundary found at target, force split at approximate position
+  if (bestEnd === start && text.length > start) {
+    // Estimate position for target tokens
+    const avgCharsPerToken = 4;  // Approximate
+    const targetPosition = start + (targetMax * avgCharsPerToken);
+    return Math.min(targetPosition, text.length);
   }
   
-  // If we never found a good boundary, at least use minimum boundary
-  if (bestEnd === start && lastMinEnd > start) {
-    return lastMinEnd;
-  }
-  
-  return bestEnd;
+  return bestEnd > start ? bestEnd : text.length;
 };
 
 const enhanceChunks = async (rawChunks, options = {}) => rawChunks.map((chunk, index) => ({
@@ -780,606 +779,6 @@ export async function testWithClaudeData() {
 
 
 
-
-
-export const analyzeConversationChunking = async (params = {}) => {
-  const { minResponseLength = 800, maxSamples = 10 } = params;
-  
-  try {
-    // Load your conversation data
-    const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
-    const conversations = await response.json();
-    const interactions = await processClaudeConversations({ conversations });
-    
-    // Find interesting conversations for chunking analysis
-    const longResponses = interactions
-      .filter(interaction => interaction.aiResponse.length >= minResponseLength)
-      .sort((a, b) => b.aiResponse.length - a.aiResponse.length)
-      .slice(0, maxSamples);
-    
-    console.log(`\n🔍 ANALYZING ${longResponses.length} CONVERSATIONS FOR CHUNKING`);
-    console.log(`Response lengths: ${longResponses.map(r => r.aiResponse.length).join(', ')} chars\n`);
-    
-    const results = [];
-    
-    for (let i = 0; i < longResponses.length; i++) {
-      const interaction = longResponses[i];
-      const conversationName = interaction.metadata.conversationName;
-      
-      console.log(`\n=== CONVERSATION ${i + 1}: ${conversationName} ===`);
-      console.log(`Prompt (${interaction.userPrompt.length} chars): "${interaction.userPrompt.substring(0, 100)}..."`);
-      console.log(`Response (${interaction.aiResponse.length} chars): "${interaction.aiResponse.substring(0, 100)}..."`);
-      
-      // Test different chunking strategies
-      const strategies = [
-        { name: 'Small Chunks', minTokens: 50, maxTokens: 300 },
-        { name: 'Medium Chunks', minTokens: 100, maxTokens: 600 },
-        { name: 'Large Chunks', minTokens: 200, maxTokens: 1000 },
-      ];
-      
-      const chunkResults = {};
-      
-      for (const strategy of strategies) {
-        try {
-          const promptChunks = await chunkText({ 
-            text: interaction.userPrompt, 
-            ...strategy 
-          });
-          
-          const responseChunks = await chunkText({ 
-            text: interaction.aiResponse, 
-            ...strategy 
-          });
-          
-          chunkResults[strategy.name] = {
-            promptChunks: promptChunks.chunks.length,
-            responseChunks: responseChunks.chunks.length,
-            totalChunks: promptChunks.chunks.length + responseChunks.chunks.length,
-            responseChunkDetails: responseChunks.chunks.map(chunk => ({
-              tokens: chunk.tokenCount,
-              preview: chunk.text.substring(0, 80) + '...'
-            }))
-          };
-          
-          console.log(`  ${strategy.name}: ${promptChunks.chunks.length} prompt + ${responseChunks.chunks.length} response = ${promptChunks.chunks.length + responseChunks.chunks.length} total chunks`);
-          
-        } catch (error) {
-          console.error(`  ${strategy.name}: ERROR - ${error.message}`);
-          chunkResults[strategy.name] = { error: error.message };
-        }
-      }
-      
-      // Analyze semantic structure of the response
-      const semanticAnalysis = analyzeSemanticStructure(interaction.aiResponse);
-      console.log(`  Semantic Structure: ${semanticAnalysis.headers} headers, ${semanticAnalysis.paragraphs} paragraphs, ${semanticAnalysis.sentences} sentences`);
-      
-      results.push({
-        conversation: conversationName,
-        promptLength: interaction.userPrompt.length,
-        responseLength: interaction.aiResponse.length,
-        estimatedTokens: estimateTokenCount(interaction.aiResponse),
-        semanticAnalysis,
-        chunkResults
-      });
-      
-      // Show detailed breakdown for first conversation
-      if (i === 0) {
-        console.log(`\n📝 DETAILED BREAKDOWN OF FIRST CONVERSATION:`);
-        const detailedChunks = await chunkText({ 
-          text: interaction.aiResponse, 
-          minTokens: 100, 
-          maxTokens: 600 
-        });
-        
-        detailedChunks.chunks.forEach((chunk, idx) => {
-          console.log(`\n  Chunk ${idx + 1} (${chunk.tokenCount} tokens):`);
-          console.log(`  "${chunk.text.substring(0, 200)}${chunk.text.length > 200 ? '...' : ''}"`);
-        });
-      }
-    }
-    
-    // Summary analysis
-    console.log(`\n📊 CHUNKING STRATEGY COMPARISON:`);
-    const summary = results.map(r => ({
-      conversation: r.conversation.substring(0, 30),
-      tokens: r.estimatedTokens,
-      small: r.chunkResults['Small Chunks']?.totalChunks || 'Error',
-      medium: r.chunkResults['Medium Chunks']?.totalChunks || 'Error',
-      large: r.chunkResults['Large Chunks']?.totalChunks || 'Error'
-    }));
-    
-    console.table(summary);
-    
-    return {
-      analyzedConversations: results.length,
-      summary,
-      detailedResults: results,
-      recommendations: generateChunkingRecommendations(results)
-    };
-    
-  } catch (error) {
-    console.error('[Chunking Analysis] Failed:', error);
-    return { error: error.message };
-  }
-};
-
-// Helper function to analyze semantic structure
-function analyzeSemanticStructure(text) {
-  const headers = (text.match(/^#+\s+/gm) || []).length;
-  const paragraphs = (text.match(/\n\s*\n/g) || []).length + 1;
-  const sentences = (text.match(/[.!?](?:\s+[A-Z]|\s*\n)/g) || []).length;
-  const codeBlocks = (text.match(/```[\s\S]*?```/g) || []).length;
-  const lists = (text.match(/^\s*[-*+]\s+/gm) || []).length;
-  
-  return { headers, paragraphs, sentences, codeBlocks, lists };
-}
-
-// Generate recommendations based on analysis
-function generateChunkingRecommendations(results) {
-  const avgResponseLength = results.reduce((sum, r) => sum + r.responseLength, 0) / results.length;
-  const avgTokens = results.reduce((sum, r) => sum + r.estimatedTokens, 0) / results.length;
-  
-  const recommendations = [];
-  
-  if (avgResponseLength > 1500) {
-    recommendations.push("Consider medium chunking (100-600 tokens) for most responses");
-  } else {
-    recommendations.push("Small to medium chunking (50-400 tokens) may be optimal");
-  }
-  
-  if (results.some(r => r.semanticAnalysis.headers > 2)) {
-    recommendations.push("Use header-aware chunking for structured responses");
-  }
-  
-  if (results.some(r => r.semanticAnalysis.codeBlocks > 0)) {
-    recommendations.push("Implement code-block preservation in chunking");
-  }
-  
-  return recommendations;
-}
-
-
-
-
-
-
-
-
-
-// Add this to your chunking.module.js
-
-export const extractTestCases = async (params = {}) => {
-  const { maxCases = 15, includeContent = false } = params;
-  
-  try {
-    // Load conversation data
-    const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
-    const conversations = await response.json();
-    const interactions = await processClaudeConversations({ conversations });
-    
-    runtime.log(`[Test Extraction] Analyzing ${interactions.length} interactions...`);
-    
-    // Categorize conversations by characteristics
-    const categories = {
-      short: [],      // < 500 chars
-      medium: [],     // 500-2000 chars  
-      long: [],       // 2000-5000 chars
-      veryLong: [],   // > 5000 chars
-      codeHeavy: [],  // > 2 code blocks
-      structured: [], // > 3 headers
-      listHeavy: [],  // > 10 list items
-      minimal: [],    // Low structure (few headers/lists/code)
-      edgeCases: []   // Unusual patterns
-    };
-    
-    // Analyze each interaction
-    interactions.forEach((interaction, index) => {
-      const response = interaction.aiResponse;
-      const length = response.length;
-      const analysis = analyzeSemanticStructure(response);
-      
-      const metadata = {
-        index,
-        length,
-        tokens: estimateTokenCount(response),
-        promptPreview: interaction.userPrompt.substring(0, 100),
-        responsePreview: response.substring(0, 150),
-        conversationName: interaction.metadata.conversationName,
-        ...analysis
-      };
-      
-      // Categorize by length
-      if (length < 500) categories.short.push(metadata);
-      else if (length < 2000) categories.medium.push(metadata);
-      else if (length < 5000) categories.long.push(metadata);
-      else categories.veryLong.push(metadata);
-      
-      // Categorize by content type
-      if (analysis.codeBlocks >= 2) categories.codeHeavy.push(metadata);
-      if (analysis.headers >= 3) categories.structured.push(metadata);
-      if (analysis.lists >= 10) categories.listHeavy.push(metadata);
-      if (analysis.headers <= 1 && analysis.lists <= 2 && analysis.codeBlocks === 0) {
-        categories.minimal.push(metadata);
-      }
-      
-      // Edge cases
-      if (analysis.sentences < 3 || response.includes('```json') || response.includes('```yaml')) {
-        categories.edgeCases.push(metadata);
-      }
-    });
-    
-    // Sort each category by interesting characteristics
-    Object.keys(categories).forEach(key => {
-      categories[key].sort((a, b) => {
-        if (key === 'codeHeavy') return b.codeBlocks - a.codeBlocks;
-        if (key === 'structured') return b.headers - a.headers;
-        if (key === 'listHeavy') return b.lists - a.lists;
-        return b.tokens - a.tokens; // Default: most tokens first
-      });
-    });
-    
-    // Select representatives from each category
-    const selectedCases = [];
-    const casesPerCategory = Math.floor(maxCases / Object.keys(categories).length);
-    
-    Object.entries(categories).forEach(([categoryName, items]) => {
-      const selected = items.slice(0, casesPerCategory);
-      selected.forEach(item => {
-        item.category = categoryName;
-        item.testReason = getTestReason(categoryName, item);
-      });
-      selectedCases.push(...selected);
-    });
-    
-    // Fill remaining slots with most interesting cases
-    const remaining = maxCases - selectedCases.length;
-    if (remaining > 0) {
-      const allSorted = interactions
-        .map((interaction, index) => ({
-          index,
-          tokens: estimateTokenCount(interaction.aiResponse),
-          analysis: analyzeSemanticStructure(interaction.aiResponse),
-          interaction
-        }))
-        .sort((a, b) => b.tokens - a.tokens)
-        .slice(0, remaining);
-      
-      allSorted.forEach(item => {
-        if (!selectedCases.find(sc => sc.index === item.index)) {
-          selectedCases.push({
-            ...item,
-            category: 'additional',
-            testReason: 'High token count for stress testing'
-          });
-        }
-      });
-    }
-    
-    // Add full content if requested
-    if (includeContent) {
-      selectedCases.forEach(testCase => {
-        const interaction = interactions[testCase.index];
-        testCase.fullInteraction = interaction;
-      });
-    }
-    
-    // Generate summary
-    const summary = {
-      totalInteractions: interactions.length,
-      categoryCounts: Object.fromEntries(
-        Object.entries(categories).map(([key, items]) => [key, items.length])
-      ),
-      selectedCases: selectedCases.length,
-      casesByCategory: selectedCases.reduce((acc, item) => {
-        acc[item.category] = (acc[item.category] || 0) + 1;
-        return acc;
-      }, {})
-    };
-    
-    runtime.log('[Test Extraction] Summary:', summary);
-    
-    return {
-      summary,
-      selectedCases: selectedCases.slice(0, maxCases),
-      categories // For detailed analysis
-    };
-    
-  } catch (error) {
-    runtime.logError('[Test Extraction] Failed:', error);
-    return { error: error.message };
-  }
-};
-
-function getTestReason(category, item) {
-  const reasons = {
-    short: 'Tests single-chunk behavior for brief responses',
-    medium: 'Tests boundary detection in moderate-length content',
-    long: 'Tests multi-chunk splitting with semantic boundaries',
-    veryLong: 'Stress tests chunking on very large responses',
-    codeHeavy: `Tests code block preservation (${item.codeBlocks} blocks)`,
-    structured: `Tests header-aware chunking (${item.headers} headers)`,
-    listHeavy: `Tests list handling (${item.lists} list items)`,
-    minimal: 'Tests chunking with minimal semantic structure',
-    edgeCases: 'Tests edge cases and unusual content patterns',
-    additional: 'Additional high-token case for comprehensive testing'
-  };
-  return reasons[category] || 'General chunking validation';
-}
-
-// Helper function to anonymize content for test cases
-export const anonymizeContent = (text) => {
-  return text
-    // Replace names and emails
-    .replace(/\b[A-Z][a-z]+ [A-Z][a-z]+\b/g, 'John Smith')
-    .replace(/\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, 'user@example.com')
-    // Replace URLs
-    .replace(/https?:\/\/[^\s]+/g, 'https://example.com')
-    // Replace file paths
-    .replace(/[C-Z]:\\[^\s]+/g, 'C:\\path\\to\\file')
-    .replace(/\/[a-zA-Z0-9/_.-]+/g, '/path/to/file')
-    // Replace specific numbers that might be sensitive
-    .replace(/\b\d{3}-\d{3}-\d{4}\b/g, '555-123-4567')
-    .replace(/\b\d{16}\b/g, '1234567890123456');
-};
-
-// Generate static test cases from selected interactions
-export const generateStaticTestCases = async (params = {}) => {
-  const { testCaseName = 'realWorldChunking', anonymize = true } = params;
-  
-  const analysis = await extractTestCases({ maxCases: 12, includeContent: true });
-  
-  if (analysis.error) {
-    return analysis;
-  }
-  
-  const testCases = analysis?.selectedCases?.map((testCase, index) => {
-    const interaction = testCase.fullInteraction;
-    let userPrompt = interaction.userPrompt;
-    let aiResponse = interaction.aiResponse;
-    
-    if (anonymize) {
-      userPrompt = anonymizeContent(userPrompt);
-      aiResponse = anonymizeContent(aiResponse);
-    }
-    
-    // Predict expected chunking behavior
-    const expectedBehavior = predictChunkingBehavior(aiResponse, testCase);
-    
-    return {
-      name: `${testCase.category}_${index + 1}`,
-      category: testCase.category,
-      testReason: testCase.testReason,
-      userPrompt,
-      aiResponse,
-      metadata: {
-        originalLength: testCase.length,
-        estimatedTokens: testCase.tokens,
-        semanticStructure: {
-          headers: testCase.headers,
-          paragraphs: testCase.paragraphs,
-          sentences: testCase.sentences,
-          codeBlocks: testCase.codeBlocks,
-          lists: testCase.lists
-        }
-      },
-      expectedBehavior
-    };
-  });
-  
-  return {
-    testSuiteName: testCaseName,
-    generatedAt: new Date().toISOString(),
-    testCases,
-    summary: analysis.summary
-  };
-};
-
-// Run validation tests on generated test cases
-export const validateRealWorldChunking = async (params = {}) => {
-  const { regenerateTests = false, showDetails = true } = params;
-  
-  runtime.log('[Real World Validation] Starting test validation...');
-  
-  // Generate or use cached test cases
-  const testSuite = await generateStaticTestCases({ testCaseName: 'realWorldValidation' });
-  
-  if (testSuite.error) {
-    return testSuite;
-  }
-  
-  const results = [];
-  const strategies = [
-    { name: 'small', minTokens: 50, maxTokens: 300 },
-    { name: 'medium', minTokens: 100, maxTokens: 600 },
-    { name: 'large', minTokens: 200, maxTokens: 1000 }
-  ];
-  
-  runtime.log(`[Real World Validation] Testing ${testSuite.testCases.length} cases across ${strategies.length} strategies...`);
-  
-  for (const testCase of testSuite.testCases) {
-    const testResult = {
-      name: testCase.name,
-      category: testCase.category,
-      testReason: testCase.testReason,
-      originalTokens: testCase.metadata.estimatedTokens,
-      strategies: {}
-    };
-    
-    for (const strategy of strategies) {
-      try {
-        // Test prompt chunking
-        const promptResult = await chunkText({
-          text: testCase.userPrompt,
-          ...strategy
-        });
-        
-        // Test response chunking  
-        const responseResult = await chunkText({
-          text: testCase.aiResponse,
-          ...strategy
-        });
-        
-        const actualChunks = responseResult.chunks.length;
-        const expectedChunks = testCase.expectedBehavior[strategy.name].expectedChunks;
-        const tolerance = Math.max(1, Math.ceil(expectedChunks * 0.3)); // 30% tolerance
-        
-        const passed = Math.abs(actualChunks - expectedChunks) <= tolerance;
-        
-        testResult.strategies[strategy.name] = {
-          promptChunks: promptResult.chunks.length,
-          responseChunks: actualChunks,
-          expectedChunks,
-          tolerance,
-          passed,
-          prediction: testCase.expectedBehavior[strategy.name].reason,
-          chunkSizes: responseResult.chunks.map(c => c.tokenCount)
-        };
-        
-        if (showDetails && !passed) {
-          runtime.log(`❌ ${testCase.name} (${strategy.name}): Expected ~${expectedChunks}, got ${actualChunks}`);
-        }
-        
-      } catch (error) {
-        testResult.strategies[strategy.name] = {
-          error: error.message,
-          passed: false
-        };
-        runtime.logError(`Error testing ${testCase.name} with ${strategy.name}:`, error);
-      }
-    }
-    
-    results.push(testResult);
-  }
-  
-  // Calculate overall statistics
-  const stats = calculateValidationStats(results);
-  
-  if (showDetails) {
-    runtime.log('[Real World Validation] Results by category:');
-    displayResultsByCategory(results);
-  }
-  
-  runtime.log('[Real World Validation] Overall Statistics:', stats);
-  
-  return {
-    testSuite: testSuite.testSuiteName,
-    totalTests: results.length,
-    results,
-    statistics: stats,
-    recommendations: generateValidationRecommendations(results, stats)
-  };
-};
-
-function calculateValidationStats(results) {
-  const stats = {
-    byStrategy: {},
-    byCategory: {},
-    overall: { totalTests: results.length, totalPassed: 0, totalFailed: 0 }
-  };
-  
-  // Initialize strategy stats
-  ['small', 'medium', 'large'].forEach(strategy => {
-    stats.byStrategy[strategy] = { passed: 0, failed: 0, accuracy: 0 };
-  });
-  
-  // Calculate stats
-  results.forEach(result => {
-    // Strategy stats
-    Object.entries(result.strategies).forEach(([strategy, strategyResult]) => {
-      if (strategyResult.passed) {
-        stats.byStrategy[strategy].passed++;
-        stats.overall.totalPassed++;
-      } else {
-        stats.byStrategy[strategy].failed++;
-        stats.overall.totalFailed++;
-      }
-    });
-    
-    // Category stats
-    if (!stats.byCategory[result.category]) {
-      stats.byCategory[result.category] = { passed: 0, failed: 0, tests: 0 };
-    }
-    stats.byCategory[result.category].tests++;
-    
-    const categoryPassed = Object.values(result.strategies).some(s => s.passed);
-    if (categoryPassed) {
-      stats.byCategory[result.category].passed++;
-    } else {
-      stats.byCategory[result.category].failed++;
-    }
-  });
-  
-  // Calculate accuracy percentages
-  Object.keys(stats.byStrategy).forEach(strategy => {
-    const strategyStats = stats.byStrategy[strategy];
-    const total = strategyStats.passed + strategyStats.failed;
-    strategyStats.accuracy = total > 0 ? (strategyStats.passed / total * 100).toFixed(1) : 0;
-  });
-  
-  Object.keys(stats.byCategory).forEach(category => {
-    const categoryStats = stats.byCategory[category];
-    categoryStats.accuracy = (categoryStats.passed / categoryStats.tests * 100).toFixed(1);
-  });
-  
-  stats.overall.accuracy = (stats.overall.totalPassed / (stats.overall.totalPassed + stats.overall.totalFailed) * 100).toFixed(1);
-  
-  return stats;
-}
-
-function displayResultsByCategory(results) {
-  const byCategory = results.reduce((acc, result) => {
-    if (!acc[result.category]) acc[result.category] = [];
-    acc[result.category].push(result);
-    return acc;
-  }, {});
-  
-  Object.entries(byCategory).forEach(([category, categoryResults]) => {
-    runtime.log(`\n=== ${category.toUpperCase()} CATEGORY ===`);
-    categoryResults.forEach(result => {
-      const strategies = Object.entries(result.strategies)
-        .map(([name, data]) => `${name}: ${data.passed ? '✅' : '❌'} ${data.responseChunks || 'ERR'}`)
-        .join(' | ');
-      runtime.log(`  ${result.name}: ${strategies}`);
-    });
-  });
-}
-
-function generateValidationRecommendations(results, stats) {
-  const recommendations = [];
-  
-  // Strategy-specific recommendations
-  Object.entries(stats.byStrategy).forEach(([strategy, data]) => {
-    if (data.accuracy < 70) {
-      recommendations.push(`${strategy} strategy has low accuracy (${data.accuracy}%) - review token limits`);
-    }
-  });
-  
-  // Category-specific recommendations
-  Object.entries(stats.byCategory).forEach(([category, data]) => {
-    if (data.accuracy < 60) {
-      recommendations.push(`${category} content performs poorly - consider specialized handling`);
-    }
-  });
-  
-  // Overall recommendations
-  if (stats.overall.accuracy < 75) {
-    recommendations.push('Overall chunking accuracy is below 75% - review boundary detection logic');
-  }
-  
-  // Find patterns in failures
-  const failedTests = results.filter(r => 
-    Object.values(r.strategies).every(s => !s.passed)
-  );
-  
-  if (failedTests.length > 0) {
-    const failurePatterns = failedTests.map(t => t.category);
-    const uniquePatterns = [...new Set(failurePatterns)];
-    recommendations.push(`Consistent failures in: ${uniquePatterns.join(', ')}`);
-  }
-  
-  return recommendations;
-}
-// Add this to chunking.module.js
 
 export const generateTestFile = async () => {
   const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
