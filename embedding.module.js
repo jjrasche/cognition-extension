@@ -21,7 +21,12 @@ export const manifest = {
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '84D57EC981CFC6B46920247B8628610271F59A724D73124E051DA96D6E406293' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'D00DAD6F80B7EAB804479A58634A58A50966366627F847E47848BAC52873995D' },
     { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: '3EA32220C2E21AF4F0BE95E2A43BDC8AC693F8C35C2255127EF680689B469461' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'A783505A4E839B61700AA61D249D381D00ADDFB9CF3221359E2D30A6DA6C6499' }
+    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'A783505A4E839B61700AA61D249D381D00ADDFB9CF3221359E2D30A6DA6C6499' },
+
+    // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/onnx/model_fp16.onnx', destination: 'models/jinaai/jina-embeddings-v3/onnx', sha256: '329C3EA03A1815CC98F6B97EFCAFB9000C6C780C2D89D40D4F541B9A88434C38' },
+    // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/tokenizer.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: 'F59925FCB90C92B894CB93E51BB9B4A6105C5C249FE54CE1C704420AC39B81AF' },
+    // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/tokenizer_config.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: 'E1BC77DA5B90BA65B47AA8BD776C6317F47D50DC6717E92B10177686B3B8F161' },
+    // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/config.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: '556941599709401B3DC94ACF775526F1C4670ABE5E123CB53CCA8EB5250B0CB5' },
   ],
   localModels : [
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
@@ -40,10 +45,14 @@ export const manifest = {
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'q4f16', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } }, 
+    { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
+    
+    // { name: "jinaai/jina-embeddings-v3", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
+    // { name: "jinaai/jina-embeddings-v3", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } }, 
   ],
   cloudModels: [
     'jina-embeddings-v4',
+    'jina-embeddings-v3',
     'jina-embeddings-v2-base-en'
   ]
 };
@@ -139,27 +148,38 @@ const embedTextCloud = async (text, modelName) => {
   const apiKey = await getJinaApiKey();
   const startTime = performance.now();
   
+  // Jina API expects different format - just model and input
+  const requestBody = {
+    model: modelName,
+    input: [text]
+  };
+  
+  runtime.log(`[Embedding] Cloud request:`, { model: modelName, inputLength: text.length });
+  
   const response = await fetch('https://api.jina.ai/v1/embeddings', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      model: modelName,
-      input: [text],
-      encoding_format: 'float'
-    })
+    body: JSON.stringify(requestBody)
   });
   
   if (!response.ok) {
-    throw new Error(`Jina API error: ${response.status} - ${await response.text()}`);
+    const errorText = await response.text();
+    runtime.logError(`[Embedding] Jina API error ${response.status}:`, errorText);
+    throw new Error(`Jina API error: ${response.status} - ${errorText}`);
   }
   
   const result = await response.json();
   const endTime = performance.now();
   
   runtime.log(`[Embedding] Cloud inference completed in ${(endTime - startTime).toFixed(2)}ms`);
+  runtime.log(`[Embedding] Response structure:`, { 
+    dataLength: result.data?.length, 
+    embeddingLength: result.data?.[0]?.embedding?.length,
+    usage: result.usage 
+  });
   
   return {
     embedding: result.data[0].embedding,

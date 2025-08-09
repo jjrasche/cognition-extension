@@ -4,7 +4,7 @@ export const manifest = {
   description: "Semantic chunking for documents and text with flexible size boundaries",
   context: "service-worker",
   permissions: ["storage"],
-  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData", "runAllChunkingTests", "analyzeConversationChunking","extractTestCases", "generateStaticTestCases", "validateRealWorldChunking"],
+  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData", "runAllChunkingTests", "analyzeConversationChunking","extractTestCases", "generateStaticTestCases", "validateRealWorldChunking", "runRealTests", "generateTestFile"],
   dependencies: ["embedding"],
   state: {
     reads: [],
@@ -196,6 +196,13 @@ const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
       }
     }
     
+    // CRITICAL FIX: Ensure we always make progress
+    if (chunkEnd <= currentStart) {
+      // Force progress - take at least some content
+      chunkEnd = Math.min(currentStart + 1000, text.length); // Move forward by at least 1000 chars
+      console.warn(`[Chunking] Forced progress from ${currentStart} to ${chunkEnd}`);
+    }
+    
     const chunkText = text.slice(currentStart, chunkEnd).trim();
     
     if (chunkText.length > 0) {
@@ -221,14 +228,19 @@ const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
         if (overlapBoundaries.length > 0) {
           currentStart = overlapBoundaries[overlapBoundaries.length - 1].position;
         } else {
-          currentStart = chunkEnd;
+          currentStart = chunkEnd; // No overlap if no good boundary
+        }
+        
+        // CRITICAL FIX: Ensure we always move forward
+        if (currentStart <= chunkEnd - chunkText.length) {
+          currentStart = chunkEnd; // Force forward if overlap would go backwards
         }
       } else {
         currentStart = chunkEnd;
       }
     } else {
-      // Safety: prevent infinite loop
-      currentStart = chunkEnd + 1;
+      // Safety: prevent infinite loop on empty chunk
+      currentStart = Math.min(currentStart + 100, text.length);
     }
   }
   
@@ -1367,3 +1379,123 @@ function generateValidationRecommendations(results, stats) {
   
   return recommendations;
 }
+// Add this to chunking.module.js
+
+export const generateTestFile = async () => {
+  const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
+  const conversations = await response.json();
+  const interactions = await processClaudeConversations({ conversations });
+  
+  // Pick diverse samples by length
+  const samples = [
+    interactions.find(i => i.aiResponse.length < 500),           // short
+    interactions.find(i => i.aiResponse.length > 1000 && i.aiResponse.length < 2000),  // medium
+    interactions.find(i => i.aiResponse.length > 5000),           // long
+    interactions.find(i => i.aiResponse.includes('```')),         // code
+    interactions.find(i => i.aiResponse.includes('##')),          // headers
+    interactions.find(i => i.aiResponse.match(/^\d+\./m)),        // lists
+  ].filter(Boolean).slice(0, 6);
+  
+  const tests = samples.map((s, i) => ({
+    name: `real_${i}`,
+    input: s.aiResponse.substring(0, 10000), // Cap length
+    tokens: estimateTokenCount(s.aiResponse),
+    expected: {
+      small: Math.ceil(estimateTokenCount(s.aiResponse) / 250),   // ~300 max
+      medium: Math.ceil(estimateTokenCount(s.aiResponse) / 500),  // ~600 max  
+      large: Math.ceil(estimateTokenCount(s.aiResponse) / 800)    // ~1000 max
+    }
+  }));
+  
+  // Copy to clipboard for pasting into test file
+  const testCode = `export const realWorldTests = ${JSON.stringify(tests, null, 2)};`;
+  console.log(testCode)
+  console.table(tests.map(t => ({ name: t.name, tokens: t.tokens, ...t.expected })));
+  return tests;
+};
+
+export const realWorldTests = [
+  {
+    "name": "real_0",
+    "input": " Yes! Here's a one-liner using `flatMap()`:\n\n```javascript\nconst allModels = new Set(\n  runtime.getModulesWithProperty('localModels')\n    .flatMap(module => module.manifest.localModels || [])\n);\n```\n\nThis:\n1. Gets modules with `localModels` property\n2. `flatMap()` flattens all the model arrays into one array (handles undefined/null with `|| []`)\n3. `Set()` constructor removes duplicates\n\nMuch cleaner than the forEach approach!",
+    "tokens": 183,
+    "expected": {
+      "small": 1,
+      "medium": 1,
+      "large": 1
+    }
+  },
+  {
+    "name": "real_1",
+    "input": " There are several approaches to compile your Chrome extension to a CRX file. Let me explain the options from simplest to most robust:\n\n## Approach Options:\n\n### 1. **Chrome Developer Dashboard (Recommended for Distribution)**\n- Upload your `build/` folder as a ZIP to the Chrome Web Store Developer Dashboard\n- Google automatically generates the CRX during the review process\n- Best for actual distribution\n\n### 2. **Chrome CLI with Private Key (Development/Testing)**\n- Use Chrome's built-in packing via command line\n- Requires generating and managing a private key\n- Good for testing signed builds locally\n\n### 3. **Build Script Integration (Most Convenient)**\n- Add CRX generation to your existing `scripts/build.js`\n- Automate the entire build-to-CRX process\n- Best for development workflow\n\n### 4. **Third-party Tools**\n- Use tools like `crx3` or `chrome-webstore-upload-cli`\n- More flexible but requires additional dependencies\n\n## Questions Before I Implement:\n\n1. **What's your primary use case?**\n   - Local testing of signed builds?\n   - Preparing for Chrome Web Store submission?\n   - Internal distribution to team members?\n\n2. **Do you want this integrated into your build process?**\n   - Should `npm run build` also generate a CRX?\n   - Or do you prefer a separate `npm run build:crx` command?\n\n3. **Key management preference?**\n   - Auto-generate and store private key?\n   - Use existing key file?\n   - No key management (just ZIP for upload)?\n\nThe simplest approach for most development workflows is option #3 (build script integration), but I want to confirm your specific needs before writing the implementation.\n\nWhich approach sounds best for your workflow?",
+    "tokens": 491,
+    "expected": {
+      "small": 2,
+      "medium": 1,
+      "large": 1
+    }
+  },
+  {
+    "name": "real_2",
+    "input": "The user is right to challenge my assumptions. Let me reconsider:\n\n1. They're saying the prebuilt browser bundle for Transformers.js v3 doesn't exist or isn't available\n2. They want to go the WebGPU route if it's not much harder\n3. They want to \"get it right first\" rather than just making it work with CPU\n\nLet me think about what WebGPU requires:\n- WebGPU support in the browser (Chrome has this)\n- ONNX Runtime WebGPU backend\n- Proper WASM files for WebGPU execution\n- Correct configuration\n\nLooking at the error messages and code, the issue is that Transformers.js is trying to load ONNX Runtime files from CDN. For WebGPU, it would need:\n- ort-wasm-simd-threaded.jsep.mjs (or similar WebGPU-enabled ONNX Runtime)\n- The associated WASM files\n\nThe challenge is that Transformers.js v3 is relatively new and the documentation might not be complete. Let me search for the correct approach.## You're Right - Let's Reassess\n\nYou're correct - Transformers.js v3 doesn't have a pre-built browser bundle like v2 did. Let's go straight for WebGPU since that's what you want.\n\n## WebGPU Route Analysis\n\nLooking at your error and the actual Transformers.js v3 architecture:\n\n### What WebGPU Needs:\n1. **ONNX Runtime WebGPU/JSEP files** - The actual execution engine\n2. **Proper WASM paths configuration** - Tell it where to find local files  \n3. **WebGPU-compatible models** - Your model (all-MiniLM-L6-v2) should work\n\n### The Real Issue:\nYour current code tries to load: `ort-wasm-simd-threaded.jsep.mjs` from CDN. This is the WebGPU-enabled ONNX Runtime.\n\n## Solution for WebGPU\n```\nThis block is not supported on your current device yet.\n```\n\nLooking at the search results, I can see several key insights:\n\n1. **WebGPU in Service Workers is problematic** - From the GitHub issue #20876, WebGPU doesn't work in service workers due to import() restrictions. The error \"import() is disallowed on ServiceWorkerGlobalScope\" is a known issue.\n\n2. **Offscreen Documents are the solution** - Multiple sources show that Chrome extensions need to use offscreen documents to access WebGPU. The user already has this set up!\n\n3. **ONNX Runtime WASM paths** - The key configuration needed is:\n   - `env.backends.onnx.wasm.wasmPaths` needs to point to local WASM files\n   - These files need to be downloaded from the ONNX Runtime CDN\n\n4. **WebGPU-specific ONNX files needed**:\n   - `ort-wasm-simd-threaded.jsep.mjs` (or similar WebGPU-enabled runtime)\n   - Associated WASM files\n\nLet me check what specific files are needed and provide a solution.## Critical Finding: WebGPU Won't Work in Service Workers\n\nLooking at the search results, there's a fundamental issue: WebGPU is not available in Service Workers - you get \"TypeError: import() is disallowed on ServiceWorkerGlobalScope\". \n\n**BUT** - you're already using offscreen documents which is the correct solution! In order to access WebGPU API, it launches the offscreen.html which includes offscreen.js. In offscreen.js the WebGPU is accessible.\n\n## WebGPU Solution for Your Setup\n\nSince your transformer module already runs in the offscreen context, you're perfectly positioned for WebGPU. Here's what's needed:\n\n### Step 1: Download ONNX Runtime WebGPU Files\n\nBased on the search results, you need these specific files from ONNX Runtime:\n```\nThis block is not supported on your current device yet.\n```\n\nI can't fetch that directly, but I can provide the user with the specific files they need to download based on the search results.### Files You Need to Download\n\nBased on the search results, download these ONNX Runtime WebGPU files:\n\n```\n# Core WebGPU files (from https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/)\n- ort.webgpu.min.js (or ort.webgpu.mjs) \n- ort-wasm-simd-threaded.jsep.wasm\n- ort-wasm-simd.wasm\n- ort-wasm.wasm\n```\n\n### Step 2: Update Your Build Script\n\nAdd to `scripts/build.js`:\n\n```javascript\n// Add after copyModels()\nconst copyOnnxRuntime = async () => {\n  const onnxDir = path.join(buildDir, 'onnx-runtime');\n  await fs.mkdir(onnxDir, { recursive: true });\n  \n  // Copy ONNX Runtime files you downloaded\n  const onnxFiles = [\n    'ort-wasm-simd-threaded.jsep.wasm',\n    'ort-wasm-simd.wasm', \n    'ort-wasm.wasm'\n  ];\n  \n  for (const file of onnxFiles) {\n    await fs.copyFile(\n      path.join(rootDir, 'onnx-runtime', file),\n      path.join(onnxDir, file)\n    );\n  }\n};\n```\n\n### Step 3: Update transformer.module.js for WebGPU\n\n```javascript\nexport const manifest = {\n  name: 'transformer',\n  context: \"offscreen\",\n  version: \"1.0.0\",\n  description: 'Hugging Face Transformers.js runtime for WebGPU acceleration',\n  actions: [\"getModel\", \"listModels\"],\n};\n\nconst pipelineCache = new Map();\nlet runtime;\n\nexport const initialize = async (rt) => {\n  runtime = rt;\n  initializeEnvironment();\n  await preloadModels();\n};\n\nconst initializeEnvironment = () => {\n  const env = Transformer.env;\n  \n  // Core settings\n  env.allowRemoteModels = false;\n  env.allowLocalModels = true;\n  env.localModelPath = chrome.runtime.getURL('models/');\n  \n  // Critical: Set WASM paths for WebGPU\n  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('onnx-runtime/');\n  \n  // WebGPU optimizations\n  if (env.backends?.onnx?.wasm) {\n    env.backends.onnx.wasm.numThreads = 1; // Service worker limitation\n  }\n};\n\nconst loadModel = async (params) => {\n  const { modelId, options = {} } = params;\n  if (pipelineCache.has(modelId)) return;\n  \n  try {\n    // Try WebGPU first (fastest)\n    const pipe = await Transformer.pipeline('feature-extraction', modelId, { \n      device: 'webgpu',\n      dtype: 'fp32',  // WebGPU default\n      local_files_only: true,\n      ...options\n    });\n    \n    pipelineCache.set(modelId, pipe);\n    runtime.log(`[Transformer] ✅ Loaded ${modelId} with WebGPU`);\n    \n  } catch (webgpuError) {\n    runtime.log(`[Transformer] WebGPU failed for ${modelId}, trying CPU...`, webgpuError.message);\n    \n    // Fallback to CPU\n    const pipe = await Transformer.pipeline('feature-extraction', modelId, { \n      device: 'cpu',  // Most compatible\n      dtype: 'q8',    // Quantized for CPU\n      local_files_only: true,\n      ...options\n    });\n    \n    pipelineCache.set(modelId, pipe);\n    runtime.log(`[Transformer] ✅ Loaded ${modelId} with CPU fallback`);\n  }\n};\n```\n\n### Step 4: Quick Test First\n\nBefore dealing with WASM files, let's verify WebGPU detection works:\n\n```javascript\n// Add this test function to transformer.module.js\nexport const testWebGPU = async () => {\n  try {\n    if (!navigator.gpu) {\n      return { available: false, reason: 'navigator.gpu not found' };\n    }\n    \n    const adapter = await navigator.gpu.requestAdapter();\n    if (!adapter) {\n      return { available: false, reason: 'No GPU adapter found' };\n    }\n    \n    const hasF16 = adapter.features.has('shader-f16');\n    return { \n      available: true, \n      adapter: adapter.name,\n      supportsF16: hasF16 \n    };\n  } catch (error) {\n    return { available: false, error: error.message };\n  }\n};\n```\n\n## The Real Challenge\n\nThe tricky part is that env.backends.onnx.wasm.wasmPaths defaults to use a CDN, but your CSP blocks external loading. You need to:\n\n1. **Download the WASM files manually** from `https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/`\n2. **Place them in your extension** at `onnx-runtime/`  \n3. **Configure the path** as shown above\n\nWould you like me to:\n1. Help you identify the exact WASM files to download?\n2. Create a download script to automate this?\n3. Test with CPU-only first to ensure the basic setup works?\n\nThe WebGPU route isn't much harder - it's mostly about getting the right files in place. The code complexity is similar.",
+    "tokens": 3200,
+    "expected": {
+      "small": 13,
+      "medium": 7,
+      "large": 4
+    }
+  },
+  {
+    "name": "real_3",
+    "input": " Perfect! Here's how to stop tracking `transformers.min.js` while keeping your local copy:\n\n## Steps to Stop Tracking the File:\n\n### 1. Remove from Git tracking (but keep local file)\n```bash\ngit rm --cached transformers.min.js\n```\n\n### 2. Add to .gitignore to prevent future tracking\n```bash\necho \"transformers.min.js\" >> .gitignore\n```\n\n### 3. Commit the changes\n```bash\ngit add .gitignore\ngit commit -m \"Stop tracking transformers.min.js, add to .gitignore\"\n```\n\n## What this does:\n- ✅ Removes the file from Git's tracking system\n- ✅ Keeps your local copy intact\n- ✅ Prevents accidentally committing it again\n- ✅ Future pulls/clones won't include this file\n\n## Important Notes:\n- **Other team members**: When they pull this change, their local `transformers.min.js` will be deleted\n- **If they need the file**: They'll need to download/generate it separately\n- **The file remains in Git history**: Previous commits still contain it, but it won't be tracked going forward\n\nDoes this approach work for your needs? Should I proceed with these exact commands, or do you need any modifications (like adding it to a specific location in .gitignore)?",
+    "tokens": 392,
+    "expected": {
+      "small": 2,
+      "medium": 1,
+      "large": 1
+    }
+  },
+  {
+    "name": "real_4",
+    "input": " There are several approaches to compile your Chrome extension to a CRX file. Let me explain the options from simplest to most robust:\n\n## Approach Options:\n\n### 1. **Chrome Developer Dashboard (Recommended for Distribution)**\n- Upload your `build/` folder as a ZIP to the Chrome Web Store Developer Dashboard\n- Google automatically generates the CRX during the review process\n- Best for actual distribution\n\n### 2. **Chrome CLI with Private Key (Development/Testing)**\n- Use Chrome's built-in packing via command line\n- Requires generating and managing a private key\n- Good for testing signed builds locally\n\n### 3. **Build Script Integration (Most Convenient)**\n- Add CRX generation to your existing `scripts/build.js`\n- Automate the entire build-to-CRX process\n- Best for development workflow\n\n### 4. **Third-party Tools**\n- Use tools like `crx3` or `chrome-webstore-upload-cli`\n- More flexible but requires additional dependencies\n\n## Questions Before I Implement:\n\n1. **What's your primary use case?**\n   - Local testing of signed builds?\n   - Preparing for Chrome Web Store submission?\n   - Internal distribution to team members?\n\n2. **Do you want this integrated into your build process?**\n   - Should `npm run build` also generate a CRX?\n   - Or do you prefer a separate `npm run build:crx` command?\n\n3. **Key management preference?**\n   - Auto-generate and store private key?\n   - Use existing key file?\n   - No key management (just ZIP for upload)?\n\nThe simplest approach for most development workflows is option #3 (build script integration), but I want to confirm your specific needs before writing the implementation.\n\nWhich approach sounds best for your workflow?",
+    "tokens": 491,
+    "expected": {
+      "small": 2,
+      "medium": 1,
+      "large": 1
+    }
+  },
+  {
+    "name": "real_5",
+    "input": " There are several approaches to compile your Chrome extension to a CRX file. Let me explain the options from simplest to most robust:\n\n## Approach Options:\n\n### 1. **Chrome Developer Dashboard (Recommended for Distribution)**\n- Upload your `build/` folder as a ZIP to the Chrome Web Store Developer Dashboard\n- Google automatically generates the CRX during the review process\n- Best for actual distribution\n\n### 2. **Chrome CLI with Private Key (Development/Testing)**\n- Use Chrome's built-in packing via command line\n- Requires generating and managing a private key\n- Good for testing signed builds locally\n\n### 3. **Build Script Integration (Most Convenient)**\n- Add CRX generation to your existing `scripts/build.js`\n- Automate the entire build-to-CRX process\n- Best for development workflow\n\n### 4. **Third-party Tools**\n- Use tools like `crx3` or `chrome-webstore-upload-cli`\n- More flexible but requires additional dependencies\n\n## Questions Before I Implement:\n\n1. **What's your primary use case?**\n   - Local testing of signed builds?\n   - Preparing for Chrome Web Store submission?\n   - Internal distribution to team members?\n\n2. **Do you want this integrated into your build process?**\n   - Should `npm run build` also generate a CRX?\n   - Or do you prefer a separate `npm run build:crx` command?\n\n3. **Key management preference?**\n   - Auto-generate and store private key?\n   - Use existing key file?\n   - No key management (just ZIP for upload)?\n\nThe simplest approach for most development workflows is option #3 (build script integration), but I want to confirm your specific needs before writing the implementation.\n\nWhich approach sounds best for your workflow?",
+    "tokens": 491,
+    "expected": {
+      "small": 2,
+      "medium": 1,
+      "large": 1
+    }
+  }
+];
+
+// Run validation
+export const runRealTests = async () => {
+  // const tests = await generateTestFile();
+  const results = [];
+  
+  for (const test of realWorldTests) {
+    const small = (await chunkText({ text: test.input, minTokens: 50, maxTokens: 300 })).chunks.length;
+    const medium = (await chunkText({ text: test.input, minTokens: 100, maxTokens: 600 })).chunks.length;
+    const large = (await chunkText({ text: test.input, minTokens: 200, maxTokens: 1000 })).chunks.length;
+    
+    results.push({
+      name: test.name,
+      tokens: test.tokens,
+      small: `${small}/${test.expected.small} ${small === test.expected.small ? '✅' : '❌'}`,
+      medium: `${medium}/${test.expected.medium} ${medium === test.expected.medium ? '✅' : '❌'}`,
+      large: `${large}/${test.expected.large} ${large === test.expected.large ? '✅' : '❌'}`
+    });
+  }
+  
+  console.table(results);
+  return results;
+};
