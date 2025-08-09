@@ -235,7 +235,6 @@ const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
   return chunks;
 };
 
-// UPDATED PREDICTION LOGIC
 function predictChunkingBehavior(text, analysis) {
   const tokens = estimateTokenCount(text);
   
@@ -1162,42 +1161,6 @@ export const generateStaticTestCases = async (params = {}) => {
     summary: analysis.summary
   };
 };
-
-function predictChunkingBehavior(text, analysis) {
-  const tokens = estimateTokenCount(text);
-  
-  // Predict chunks for different strategies
-  const strategies = {
-    small: { minTokens: 50, maxTokens: 300 },
-    medium: { minTokens: 100, maxTokens: 600 },
-    large: { minTokens: 200, maxTokens: 1000 }
-  };
-  
-  const predictions = {};
-  
-  Object.entries(strategies).forEach(([name, strategy]) => {
-    if (tokens <= strategy.minTokens) {
-      predictions[name] = { expectedChunks: 1, reason: 'Below minimum threshold' };
-    } else if (tokens <= strategy.maxTokens) {
-      predictions[name] = { expectedChunks: 1, reason: 'Within single chunk limit' };
-    } else {
-      // Estimate chunks based on semantic boundaries
-      let estimatedChunks = Math.ceil(tokens / strategy.maxTokens);
-      
-      // Adjust for semantic structure
-      if (analysis.headers >= 3) {
-        estimatedChunks = Math.max(estimatedChunks, Math.min(analysis.headers, 5));
-      }
-      
-      predictions[name] = { 
-        expectedChunks: estimatedChunks, 
-        reason: `Multiple chunks needed (${tokens} tokens)` 
-      };
-    }
-  });
-  
-  return predictions;
-}
 
 // Run validation tests on generated test cases
 export const validateRealWorldChunking = async (params = {}) => {

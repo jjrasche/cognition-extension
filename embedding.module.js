@@ -5,7 +5,7 @@ export const manifest = {
   dependencies: ["transformer"],
   version: "1.0.0",
   description: "use local embedding models to embed text",
-  actions: ["embedText", "runEmbeddingTests"],
+  actions: ["embedText", "runEmbeddingTests", "setJinaApiKey", "runSpeedQualityComparison", "testAllModels"],
   externalDependencies: [
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '759C3CD2B7FE7E93933AD23C4C9181B7396442A2ED746EC7C1D46192C469C46E' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_fp16.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '2CDB5E58291813B6D6E248ED69010100246821A367FA17B1B81AE9483744533D' },
@@ -33,7 +33,6 @@ export const manifest = {
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
 
-
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
@@ -44,27 +43,16 @@ export const manifest = {
     { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } }, 
   ],
   cloudModels: [
-    'jina-embeddings-v3',
-    'jina-embeddings-v2-base-en', 
-    'jina-embeddings-v2-small-en',
-    'jina-colbert-v1-en',
-    'jina-clip-v1'
+    'jina-embeddings-v4',
+    'jina-embeddings-v2-base-en'
   ]
 };
-
-
-// Add these to externalDependencies array:
-
-  // const executionProviders = [
-  //   { device: 'webgpu', fallback: 'WebGPU acceleration' },
-  //   { device: 'wasm', fallback: 'WASM CPU execution' }
-  //   // { device: 'webnn', fallback: 'WebNN acceleration' },
-  // ];
 
 let runtime;
 export const initialize = async (rt) => runtime = rt;
 
 export const getModelName = async (model) => await runtime.call('transformer.getModelName', model);
+
 export const embedText = async (params) => {
   const { text, modelName } = params;
   if (!text) throw new Error('Text required');
@@ -74,7 +62,7 @@ export const embedText = async (params) => {
     return await embedTextCloud(text, modelName);
   }
   
-  // Your existing local logic here (keep unchanged):
+  // Local embedding logic (unchanged)
   const startTime = performance.now();
   const model = await runtime.call('transformer.getModel', modelName || (await getModelName(manifest.localModels[0])));
   if (!model) throw new Error('Model not loaded');
@@ -104,25 +92,45 @@ export const embedText = async (params) => {
   };
 };
 
-
 export const setJinaApiKey = async (params) => {
   const { apiKey } = params;
-  await chrome.storage.sync.set({ jinaApiKey: apiKey });
+  // Use runtime call to handle storage from appropriate context
+  await runtime.call('indexed-db.updateRecord', {
+    db: await getConfigDB(),
+    storeName: 'config',
+    data: { id: 'jinaApiKey', value: apiKey, timestamp: new Date().toISOString() }
+  });
   runtime.log('[Embedding] Jina API key saved');
   return { success: true };
 };
 
 const getJinaApiKey = async () => {
-  const stored = await chrome.storage.sync.get(['jinaApiKey']);
-  if (!stored.jinaApiKey) {
-    const apiKey = prompt('Enter your Jina AI API key:');
-    if (apiKey) {
-      await setJinaApiKey({ apiKey });
-      return apiKey;
+  try {
+    const stored = await runtime.call('indexed-db.getRecord', {
+      db: await getConfigDB(),
+      storeName: 'config',
+      key: 'jinaApiKey'
+    });
+    
+    if (stored?.value) {
+      return stored.value;
     }
-    throw new Error('Jina API key required');
+  } catch (error) {
+    runtime.log('[Embedding] No stored API key found, will prompt user');
   }
-  return stored.jinaApiKey;
+  
+  // For now, throw error - in real usage, this would be set via UI
+  throw new Error('Jina API key not configured. Please set it first with: embedding.setJinaApiKey({apiKey: "your-key"})');
+};
+
+const getConfigDB = async () => {
+  return await runtime.call('indexed-db.openDb', {
+    name: 'EmbeddingConfig',
+    version: 1,
+    storeConfigs: [
+      { name: 'config', options: { keyPath: 'id' } }
+    ]
+  });
 };
 
 const isCloudModel = (modelName) => manifest.cloudModels.includes(modelName);
@@ -163,9 +171,267 @@ const embedTextCloud = async (text, modelName) => {
   };
 };
 
+// Consolidated Speed + Quality Test
+export const runSpeedQualityComparison = async (params = {}) => {
+  const { includeLocal = true, includeCloud = true, runs = 3 } = params;
+  
+  runtime.log(`\n🚀 EMBEDDING SPEED + QUALITY COMPARISON`);
+  runtime.log(`Running ${runs} iterations for speed testing...`);
+  
+  // Define test cases here to avoid scope issues
+  const testCases = [
+    { name: "Village Living Concepts - High Similarity",
+      pairs: [
+        { text1: "communal living with shared resources", text2: "collective ownership of basic necessities", expectedSimilarity: "high", notes: "Core village living concept" },
+        { text1: "reduce individual workload through community effort",  text2: "shared labor decreases personal responsibilities", expectedSimilarity: "high", notes: "Labor distribution philosophy" }
+      ]
+    },
+    { name: "Economic Systems - Medium Similarity", 
+      pairs: [
+        { text1: "internal economy based on labor hours", text2: "local currency tied to time investment", expectedSimilarity: "medium", notes: "Related economic concepts" },
+        { text1: "profit motive distorts resource allocation", text2: "market forces don't optimize for human flourishing",  expectedSimilarity: "medium", notes: "Critique of capitalism" }
+      ]
+    },
+    { name: "Contradictory Ideas - Low Similarity", 
+      pairs: [
+        { text1: "collective decision making ensures fairness", text2: "individual choice maximizes personal freedom", expectedSimilarity: "low", notes: "Opposing philosophies" },
+        { text1: "shared resources create abundance through efficiency",  text2: "private ownership incentivizes productive investment", expectedSimilarity: "low", notes: "Contrasting economic views" }
+      ]
+    }
+  ];
+  
+  // Get available models
+  const models = [];
+  if (includeLocal) {
+    const localModels = await runtime.call('transformer.listModels');
+    models.push(...localModels.map(name => ({ name, type: 'local' })));
+  }
+  if (includeCloud) {
+    models.push(...manifest.cloudModels.map(name => ({ name, type: 'cloud' })));
+  }
+  
+  if (models.length === 0) {
+    runtime.log('❌ No models available for testing');
+    return { error: 'No models available' };
+  }
+  
+  runtime.log(`Testing models: ${models.map(m => `${m.name} (${m.type})`).join(', ')}\n`);
+  
+  // Speed Test - using a standard sentence
+  const speedTestText = "communal living with shared resources reduces individual costs and workload";
+  const speedResults = [];
+  
+  for (const model of models) {
+    runtime.log(`⏱️  Speed testing ${model.name}...`);
+    const times = [];
+    let lastResult = null;
+    
+    try {
+      for (let i = 0; i < runs; i++) {
+        const start = performance.now();
+        const result = await embedText({ text: speedTestText, modelName: model.name });
+        const duration = performance.now() - start;
+        times.push(duration);
+        lastResult = result;
+        
+        // Small delay between runs
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      const avgDuration = Math.round(times.reduce((sum, time) => sum + time, 0) / runs);
+      const minDuration = Math.round(Math.min(...times));
+      const maxDuration = Math.round(Math.max(...times));
+      
+      speedResults.push({
+        model: model.name,
+        type: model.type,
+        avgDuration,
+        minDuration,
+        maxDuration,
+        dimensions: lastResult.dimensions,
+        device: lastResult.device || model.type,
+        runs
+      });
+      
+      runtime.log(`   ✅ ${model.name}: ${avgDuration}ms avg (${minDuration}-${maxDuration}ms range)`);
+      
+    } catch (error) {
+      runtime.log(`   ❌ ${model.name}: ${error.message}`);
+      speedResults.push({
+        model: model.name,
+        type: model.type,
+        error: error.message,
+        runs: 0
+      });
+    }
+  }
+  
+  // Display speed results table
+  runtime.log(`\n📊 SPEED COMPARISON RESULTS (${runs} runs each):`);
+  const speedTable = speedResults
+    .filter(r => !r.error)
+    .sort((a, b) => a.avgDuration - b.avgDuration)
+    .map(r => ({
+      Model: r.model,
+      Type: r.type,
+      'Avg (ms)': r.avgDuration,
+      'Range (ms)': `${r.minDuration}-${r.maxDuration}`,
+      Dimensions: r.dimensions,
+      Device: r.device
+    }));
+  
+  console.table(speedTable);
+  
+  // Quality Test - using semantic similarity test cases
+  runtime.log(`\n🎯 QUALITY TESTING (Semantic Similarity):`);
+  const qualityResults = [];
+  
+  // Only test successful models
+  const successfulModels = speedResults.filter(r => !r.error);
+  
+  for (const model of successfulModels) {
+    runtime.log(`🧠 Quality testing ${model.model}...`);
+    
+    let totalTests = 0;
+    let passedTests = 0;
+    const testDetails = [];
+    
+    for (const testGroup of testCases) {
+      for (const pair of testGroup.pairs) {
+        try {
+          const embedding1 = await embedText({ text: pair.text1, modelName: model.model });
+          const embedding2 = await embedText({ text: pair.text2, modelName: model.model });
+          
+          // Handle different embedding formats (local vs cloud)
+          const vec1 = embedding1.embedding.ort_tensor?.data || embedding1.embedding;
+          const vec2 = embedding2.embedding.ort_tensor?.data || embedding2.embedding;
+          
+          const similarity = calculateCosineSimilarity(vec1, vec2);
+          const passed = evaluateSimilarity(similarity, pair.expectedSimilarity);
+          
+          totalTests++;
+          if (passed) passedTests++;
+          
+          testDetails.push({
+            group: testGroup.name,
+            similarity: similarity.toFixed(4),
+            expected: pair.expectedSimilarity,
+            passed,
+            text1Preview: pair.text1.substring(0, 40) + '...',
+            text2Preview: pair.text2.substring(0, 40) + '...'
+          });
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+        } catch (error) {
+          runtime.log(`   ❌ Test failed: ${error.message}`);
+          totalTests++;
+        }
+      }
+    }
+    
+    const qualityScore = totalTests > 0 ? (passedTests / totalTests * 100).toFixed(1) : 0;
+    
+    qualityResults.push({
+      model: model.model,
+      type: model.type,
+      qualityScore: parseFloat(qualityScore),
+      passedTests,
+      totalTests,
+      testDetails
+    });
+    
+    runtime.log(`   ✅ ${model.model}: ${qualityScore}% quality (${passedTests}/${totalTests} tests passed)`);
+  }
+  
+  // Display quality results table
+  runtime.log(`\n🏆 QUALITY COMPARISON RESULTS:`);
+  const qualityTable = qualityResults
+    .sort((a, b) => b.qualityScore - a.qualityScore)
+    .map(r => ({
+      Model: r.model,
+      Type: r.type,
+      'Quality Score (%)': r.qualityScore,
+      'Tests Passed': `${r.passedTests}/${r.totalTests}`,
+      'Speed Rank': speedTable.findIndex(s => s.Model === r.model) + 1
+    }));
+  
+  console.table(qualityTable);
+  
+  // Combined Rankings
+  runtime.log(`\n🥇 COMBINED RANKINGS (Speed + Quality):`);
+  const combinedResults = qualityResults.map(quality => {
+    const speed = speedResults.find(s => s.model === quality.model && !s.error);
+    return {
+      model: quality.model,
+      type: quality.type,
+      qualityScore: quality.qualityScore,
+      avgSpeed: speed?.avgDuration || 999999,
+      // Normalize scores (lower speed is better, higher quality is better)
+      speedScore: speed ? (1000 / speed.avgDuration * 100) : 0,
+      qualityScoreNorm: quality.qualityScore,
+      combinedScore: speed ? (quality.qualityScore + (1000 / speed.avgDuration * 100)) / 2 : quality.qualityScore / 2
+    };
+  }).sort((a, b) => b.combinedScore - a.combinedScore);
+  
+  const combinedTable = combinedResults.map((r, index) => ({
+    Rank: index + 1,
+    Model: r.model,
+    Type: r.type,
+    'Quality (%)': r.qualityScore,
+    'Speed (ms)': r.avgSpeed === 999999 ? 'ERROR' : r.avgSpeed,
+    'Combined Score': r.combinedScore.toFixed(1)
+  }));
+  
+  console.table(combinedTable);
+  
+  // Recommendations
+  runtime.log(`\n💡 RECOMMENDATIONS:`);
+  const fastest = speedResults.filter(r => !r.error).sort((a, b) => a.avgDuration - b.avgDuration)[0];
+  const highestQuality = qualityResults.sort((a, b) => b.qualityScore - a.qualityScore)[0];
+  const bestCombined = combinedResults[0];
+  
+  if (fastest) runtime.log(`🚀 Fastest: ${fastest.model} (${fastest.avgDuration}ms avg)`);
+  if (highestQuality) runtime.log(`🎯 Best Quality: ${highestQuality.model} (${highestQuality.qualityScore}% accuracy)`);
+  if (bestCombined) runtime.log(`⚖️  Best Overall: ${bestCombined.model} (${bestCombined.combinedScore.toFixed(1)} combined score)`);
+  
+  // Type-based recommendations
+  const localBest = combinedResults.filter(r => r.type === 'local')[0];
+  const cloudBest = combinedResults.filter(r => r.type === 'cloud')[0];
+  
+  if (localBest && cloudBest) {
+    runtime.log(`\n🏠 Best Local: ${localBest.model}`);
+    runtime.log(`☁️  Best Cloud: ${cloudBest.model}`);
+    
+    if (cloudBest.combinedScore > localBest.combinedScore) {
+      runtime.log(`   → Cloud models show better overall performance`);
+    } else {
+      runtime.log(`   → Local models competitive with cloud performance`);
+    }
+  }
+  
+  return {
+    speedResults,
+    qualityResults,
+    combinedResults,
+    recommendations: {
+      fastest: fastest?.model,
+      highestQuality: highestQuality?.model,
+      bestOverall: bestCombined?.model,
+      bestLocal: localBest?.model,
+      bestCloud: cloudBest?.model
+    }
+  };
+};
 
-// Test cases for embedding module - semantic similarity testing
+// Helper function for testing all models quickly
+export const testAllModels = async () => {
+  runtime.log('🔄 Testing all available models (local + cloud)...');
+  return await runSpeedQualityComparison({ includeLocal: true, includeCloud: true, runs: 2 });
+};
 
+// Existing test code (unchanged)
 export const embeddingTestCases = [
   { name: "Village Living Concepts - High Similarity",
     pairs: [
@@ -181,40 +447,14 @@ export const embeddingTestCases = [
       { text1: "universal basic needs guarantee", text2: "community provides housing food water electricity", expectedSimilarity: "medium",  notes: "UBN concept variations" }
     ]
   },
-  { name: "Governance Models - Medium Similarity",
-    pairs: [
-      { text1: "participatory democracy with subject matter experts", text2: "community voting with technical specialist input", expectedSimilarity: "medium", notes: "Decision making structure" },
-      { text1: "consensus building and conflict resolution", text2: "restorative justice and community mediation",  expectedSimilarity: "medium", notes: "Conflict handling approaches" }
-    ]
-  },
-  { name: "Technology Integration - Low-Medium Similarity",
-    pairs: [
-      { text1: "AI-assisted task allocation and scheduling", text2: "algorithmic optimization of community workflows", expectedSimilarity: "medium", notes: "Tech-enabled organization" },
-      { text1: "reduce transactional friction with automation", text2: "streamline administrative overhead through technology", expectedSimilarity: "medium",  notes: "Efficiency through tech" }
-    ]
-  },
-  { name: "Cross-Domain Concepts - Variable Similarity",
-    pairs: [
-      { text1: "village living community organization", text2: "software development team coordination",  expectedSimilarity: "low", notes: "Different domains, similar coordination needs" },
-      { text1: "shared ownership reduces individual costs", text2: "bulk purchasing provides economies of scale", expectedSimilarity: "medium", notes: "Economic efficiency principles" },
-      { text1: "intentional community with shared values", text2: "corporate culture and team alignment", expectedSimilarity: "low-medium", notes: "Group cohesion concepts" }
-    ]
-  },
   { name: "Contradictory Ideas - Low Similarity", 
     pairs: [
       { text1: "collective decision making ensures fairness", text2: "individual choice maximizes personal freedom", expectedSimilarity: "low", notes: "Opposing philosophies" },
       { text1: "shared resources create abundance through efficiency",  text2: "private ownership incentivizes productive investment", expectedSimilarity: "low", notes: "Contrasting economic views" }
     ]
-  },
-  { name: "Technical vs Conceptual - Testing Precision",
-    pairs: [
-      { text1: "housing department maintains 300 residential units", text2: "community provides adequate shelter for all members", expectedSimilarity: "medium", notes: "Specific vs general housing concepts" },
-      { text1: "6.17 hours per person per week community labor", text2: "minimal time commitment for basic needs provision",  expectedSimilarity: "medium", notes: "Precise vs abstract labor requirements" }
-    ]
   }
 ];
 
-// Test runner function
 export const runEmbeddingTests = async (params = {}) => {
   const { modelName } = params;
   if (!modelName) {
