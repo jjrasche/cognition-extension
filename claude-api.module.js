@@ -250,36 +250,30 @@ export const processConversationsToGraph = async ({batchSize = 5, skipExisting =
 const processConversation = async (conversation, skipExisting) => {
   const interactions = extractMessagePairs(conversation.chat_messages);
   let [processedInteractions, skippedInteractions] = [0, 0];
-  
   for (const interaction of interactions) {
     if (skipExisting && await runtime.call('graph-db.findInteractionByIds', { humanMessageId: interaction.humanMessageId, assistantMessageId: interaction.assistantMessageId })) {
       skippedInteractions++;
       continue;
     }
-    
-    try {
-      const interactionNodeId = await runtime.call('graph-db.addInferenceNode', {
-        userPrompt: interaction.userPrompt,
-        assembledPrompt: interaction.userPrompt,
-        response: interaction.aiResponse,
-        model: 'claude-conversation-export',
-        context: { conversationId: conversation.uuid, conversationName: conversation.name, timestamp: interaction.timestamp, messageIds: { human: interaction.humanMessageId, assistant: interaction.assistantMessageId } }
-      });
-      
-      const [promptChunks, responseChunks] = await Promise.all([
-        runtime.call('chunking.chunkText', { text: interaction.userPrompt, minTokens: 30, maxTokens: 200 }),
-        runtime.call('chunking.chunkText', { text: interaction.aiResponse, minTokens: 100, maxTokens: 500 })
-      ]);
-      
-      await Promise.all([
-        storeChunkReferences(promptChunks.chunks, interactionNodeId, 'prompt_chunk'),
-        storeChunkReferences(responseChunks.chunks, interactionNodeId, 'response_chunk')
-      ]);
-      
-      processedInteractions++;
-    } catch (error) {
-      runtime.logError(`[Claude] Failed to process interaction in ${conversation.name}:`, error);
-    }
+    const interactionNodeId = await runtime.call('graph-db.addInferenceNode', {
+      userPrompt: interaction.userPrompt,
+      assembledPrompt: interaction.userPrompt,
+      response: interaction.aiResponse,
+      model: 'claude-conversation-export',
+      context: { conversationId: conversation.uuid, conversationName: conversation.name, timestamp: interaction.timestamp, messageIds: { human: interaction.humanMessageId, assistant: interaction.assistantMessageId } }
+    });
+    if (!interactionNodeId) throw new Error(`Failed to create interaction node for conversation ${conversation.name}`);
+    const [promptChunks, responseChunks] = await Promise.all([
+      runtime.call('chunking.chunkText', { text: interaction.userPrompt, minTokens: 30, maxTokens: 200 }),
+      runtime.call('chunking.chunkText', { text: interaction.aiResponse, minTokens: 100, maxTokens: 500 })
+    ]);
+    if (!promptChunks || !responseChunks) throw new Error(`Failed to chunk interaction in conversation ${conversation.name}`);
+    const [promptStore, responseStore] = await Promise.all([
+      storeChunkReferences(promptChunks.chunks, interactionNodeId, 'prompt_chunk'),
+      storeChunkReferences(responseChunks.chunks, interactionNodeId, 'response_chunk')
+    ]);
+    if (!promptStore || !responseStore) throw new Error(`Failed to store chunk references in conversation ${conversation.name}`);
+    processedInteractions++;
   }
   
   return { interactions: processedInteractions, skipped: skippedInteractions };
