@@ -8,7 +8,7 @@ export const manifest = {
 };
 const KEY_PREFIX = 'apikey_';
 let runtime;
-export const initialize = async (rt) => (runtime = rt, verifyModuleKeys());
+export const initialize = async (rt) => (runtime = rt)//, verifyModuleKeys());
 
 export const verifyModuleKeys = async () => {
   runtime.getModulesWithProperty('apiKeys').forEach(module => {

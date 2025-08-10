@@ -44,6 +44,16 @@ export const searchWeb = async (params) => {
     const results = result.result;
     runtime.log(`[WebSearch] Found ${results.length} results`);
     
+    // Convert to web tree and render
+    const webTree = searchResultsToWebTree({
+      results,
+      query,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Render in UI
+    await runtime.call('ui.renderTree', { tree: webTree });
+    
     return { 
       success: true, 
       results, 
@@ -61,6 +71,52 @@ export const searchWeb = async (params) => {
     return { success: false, error: error.message, query };
   }
 };
+
+// Convert search results to flattened web tree
+function searchResultsToWebTree(searchResults) {
+  const tree = {
+    "search-container": { 
+      tag: "div", 
+      class: "search-results" 
+    },
+    "results-header": { 
+      tag: "h2", 
+      text: `Results for "${searchResults.query}"`,
+      parent: "search-container"
+    }
+  };
+  
+  searchResults.results.forEach((result, i) => {
+    const resultId = `result-${i}`;
+    tree[resultId] = {
+      tag: "div",
+      class: "search-result clickable",
+      parent: "search-container",
+      data: { url: result.url },
+      events: { click: "handleResultClick" }
+    };
+    tree[`${resultId}-title`] = {
+      tag: "h3", 
+      text: result.title,
+      parent: resultId,
+      class: "result-title"
+    };
+    tree[`${resultId}-snippet`] = {
+      tag: "p", 
+      text: result.snippet,
+      parent: resultId,
+      class: "result-snippet"
+    };
+    tree[`${resultId}-url`] = {
+      tag: "small",
+      text: result.url,
+      parent: resultId,
+      class: "result-url"
+    };
+  });
+  
+  return tree;
+}
 
 // Function that runs inside the DuckDuckGo tab - BACK TO WORKING VERSION
 function scrapeResultsInTab(maxResults) {

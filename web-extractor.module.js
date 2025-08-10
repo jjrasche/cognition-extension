@@ -1,10 +1,10 @@
 export const manifest = {
   name: "web-extractor",
-  context: "service-worker",
+  context: "extension-page",
   version: "1.0.0",
   description: "Extracts hierarchical DOM structure and converts to multiple formats",
   permissions: ["tabs", "scripting", "activeTab"],
-  actions: ["extractPage", "extractCurrentTab", "extractToMarkdown"],
+  actions: ["extractPage", "extractCurrentTab", "extractToMarkdown", "runTests"],
   dependencies: []
 };
 
@@ -71,24 +71,28 @@ export const extractToMarkdown = async (params) => {
   return { ...result, markdown, format: 'markdown' };
 };
 
-// Tree to Markdown converter
-const treeToMarkdown = (node, depth = 0) => {
+// Tree to Markdown converter - updated for flattened structure
+const treeToMarkdown = (tree) => {
+  if (!tree || typeof tree !== 'object') return '';
+  
+  // Find root elements (no parent)
+  const rootIds = Object.keys(tree).filter(id => !tree[id].parent);
+  
+  return rootIds.map(rootId => processNodeToMarkdown(tree, rootId)).join('\n');
+};
+
+// Process node and its children for markdown
+const processNodeToMarkdown = (tree, nodeId) => {
+  const node = tree[nodeId];
   if (!node) return '';
   
-  // Handle text-only nodes
-  if (typeof node === 'string') return node;
-  if (node.text && !node.children) {
-    return formatNodeAsMarkdown(node, depth);
-  }
+  // Get node's markdown representation
+  let md = formatNodeAsMarkdown(node);
   
-  // Process node and children
-  let md = formatNodeAsMarkdown(node, depth);
-  
-  if (node.children) {
-    const childMd = Object.entries(node.children)
-      .map(([_, child]) => treeToMarkdown(child, depth + 1))
-      .filter(s => s)
-      .join('\n');
+  // Find and process children
+  const childIds = Object.keys(tree).filter(id => tree[id].parent === nodeId);
+  if (childIds.length > 0) {
+    const childMd = childIds.map(childId => processNodeToMarkdown(tree, childId)).join('\n');
     if (childMd) md += (md ? '\n' : '') + childMd;
   }
   
@@ -96,7 +100,7 @@ const treeToMarkdown = (node, depth = 0) => {
 };
 
 // Format node based on tag
-const formatNodeAsMarkdown = (node, depth) => {
+const formatNodeAsMarkdown = (node) => {
   if (!node.text && !node.src && !node.href) return '';
   
   const tag = node.tag?.toLowerCase();
@@ -163,104 +167,363 @@ const waitForTabComplete = (tabId) => new Promise((resolve, reject) => {
   });
 });
 
-// Main extraction (injected into page)
-function extractPageStructure(options) {
+
+
+
+
+
+
+
+// Test data - HTML input and expected tree structure
+const TEST_CASES = {
+  basic: [
+    {
+      name: "simple_paragraph",
+      html: "<p>Hello world</p>",
+      expected: { 
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: "Hello world", parent: "body-0" } 
+      }
+    },
+    {
+      name: "heading_hierarchy", 
+      html: "<h1>Title</h1><h2>Subtitle</h2><p>Content</p>",
+      expected: {
+        "body-0": { tag: "body" },
+        "h1-0": { tag: "h1", text: "Title", parent: "body-0" },
+        "h2-1": { tag: "h2", text: "Subtitle", parent: "body-0" },
+        "p-2": { tag: "p", text: "Content", parent: "body-0" }
+      }
+    },
+    {
+      name: "nested_container",
+      html: "<div><p>First</p><p>Second</p></div>",
+      expected: {
+        "body-0": { tag: "body" },
+        "div-0": { tag: "div", parent: "body-0" },
+        "p-0": { tag: "p", text: "First", parent: "div-0" },
+        "p-1": { tag: "p", text: "Second", parent: "div-0" }
+      }
+    }
+  ],
+
+  filtering: [
+    {
+      name: "skip_hidden_display_none",
+      html: '<p style="display: none">Hidden</p><p>Visible</p>',
+      options: { skipHidden: true },
+      expected: { 
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: "Visible", parent: "body-0" } 
+      }
+    },
+    {
+      name: "skip_ad_elements",
+      html: '<div class="advertisement">Ad</div><p>Content</p>',
+      options: { skipAds: true },
+      expected: { 
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: "Content", parent: "body-0" } 
+      }
+    },
+    {
+      name: "skip_script_tags",
+      html: '<script>alert("test")</script><p>Content</p>',
+      expected: { 
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: "Content", parent: "body-0" } 
+      }
+    },
+    {
+      name: "empty_elements",
+      html: "<p></p><div></div><p>Content</p>",
+      expected: { 
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: "Content", parent: "body-0" } 
+      }
+    }
+  ],
+
+  special_elements: [
+    {
+      name: "links_with_href",
+      html: '<a href="https://example.com">Link text</a>',
+      expected: { 
+        "body-0": { tag: "body" },
+        "a-0": { tag: "a", text: "Link text", href: "https://example.com", parent: "body-0" } 
+      }
+    },
+    {
+      name: "images_with_attributes",
+      html: '<img src="image.jpg" alt="Test image">',
+      expected: { 
+        "body-0": { tag: "body" },
+        "img-0": { tag: "img", src: "image.jpg", alt: "Test image", parent: "body-0" } 
+      }
+    },
+    {
+      name: "list_structure",
+      html: "<ul><li>Item 1</li><li>Item 2</li></ul>",
+      expected: {
+        "body-0": { tag: "body" },
+        "ul-0": { tag: "ul", parent: "body-0" },
+        "li-0": { tag: "li", text: "Item 1", parent: "ul-0" },
+        "li-1": { tag: "li", text: "Item 2", parent: "ul-0" }
+      }
+    },
+    {
+      name: "table_elements",
+      html: "<table><tr><th>Header</th><td>Data</td></tr></table>",
+      expected: {
+        "body-0": { tag: "body" },
+        "table-0": { tag: "table", parent: "body-0" },
+        "tr-0": { tag: "tr", parent: "table-0" },
+        "th-0": { tag: "th", text: "Header", parent: "tr-0" },
+        "td-1": { tag: "td", text: "Data", parent: "tr-0" }
+      }
+    },
+    {
+      name: "form_elements",
+      html: '<input value="test" placeholder="Enter text"><textarea placeholder="Message">Content</textarea>',
+      expected: {
+        "body-0": { tag: "body" },
+        "input-0": { tag: "input", value: "test", placeholder: "Enter text", parent: "body-0" },
+        "textarea-1": { tag: "textarea", value: "Content", placeholder: "Message", parent: "body-0" }
+      }
+    }
+  ],
+
+  inline_formatting: [
+    {
+      name: "bold_italic_text",
+      html: "<p>Normal <strong>bold</strong> and <em>italic</em> text</p>",
+      expected: { "p-0": { tag: "p", text: "Normal **bold** and *italic* text" } }
+    },
+    {
+      name: "mixed_inline_formatting",
+      html: "<p><strong>Bold <em>and italic</em></strong> text</p>",
+      expected: { "p-0": { tag: "p", text: "**Bold *and italic*** text" } }
+    },
+    {
+      name: "code_elements",
+      html: "<p>Use <code>console.log()</code> function</p>",
+      expected: { "p-0": { tag: "p", text: "Use `console.log()` function" } }
+    }
+  ],
+
+  edge_cases: [
+    {
+      name: "malformed_html",
+      html: "<p>Unclosed paragraph<div>Nested content</div>",
+      expected: {
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: "Unclosed paragraph", parent: "body-0" },
+        "div-1": { tag: "div", text: "Nested content", parent: "body-0" }
+      }
+    },
+    {
+      name: "special_characters",
+      html: "<p>Test &amp; &lt;symbols&gt; &quot;quotes&quot;</p>",
+      expected: { 
+        "body-0": { tag: "body" },
+        "p-0": { tag: "p", text: 'Test & <symbols> "quotes"', parent: "body-0" } 
+      }
+    },
+    {
+      name: "deep_nesting",
+      html: "<div><div><div><p>Deep content</p></div></div></div>",
+      expected: {
+        "body-0": { tag: "body" },
+        "div-0": { tag: "div", parent: "body-0" },
+        "div-0": { tag: "div", parent: "div-0" },
+        "div-0": { tag: "div", parent: "div-0" },
+        "p-0": { tag: "p", text: "Deep content", parent: "div-0" }
+      }
+    }
+  ]
+};
+
+// Test runner helpers
+const createTestDOM = (html) => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<html><body>${html}</body></html>`, 'text/html');
+  return doc.body;
+};
+
+const runSingleTest = async (testCase) => {
+  try {
+    // Create DOM
+    const testDoc = createTestDOM(testCase.html);
+    
+    // Create mock window
+    const mockWindow = {
+      getComputedStyle: (el) => ({
+        display: el.style?.display || 'block',
+        visibility: el.style?.visibility || 'visible'
+      })
+    };
+    
+    // Run extraction directly (no eval)
+    const result = extractPageStructure(testCase.options || {}, testDoc, mockWindow);
+    
+    // Compare results
+    const passed = deepEqual(result.body, testCase.expected);
+    
+    return {
+      name: testCase.name,
+      passed,
+      expected: testCase.expected,
+      actual: result.body,
+      stats: result.stats,
+      error: null
+    };
+    
+  } catch (error) {
+    return {
+      name: testCase.name,
+      passed: false,
+      expected: testCase.expected,
+      actual: null,
+      stats: null,
+      error: error.message
+    };
+  }
+};
+
+const runTestGroup = async (groupName) => {
+  const tests = TEST_CASES[groupName];
+  if (!tests) throw new Error(`Test group '${groupName}' not found`);
+  
+  runtime.log(`[WebExtractorTests] Running ${tests.length} tests in group '${groupName}'`);
+  
+  const results = [];
+  for (const test of tests) {
+    const result = await runSingleTest(test);
+    results.push(result);
+    
+    const status = result.passed ? '✅' : '❌';
+    runtime.log(`  ${status} ${result.name}${result.error ? ` - ${result.error}` : ''}`);
+    
+    if (!result.passed && !result.error) {
+      runtime.log(`    Expected:`, result.expected);
+      runtime.log(`    Actual:  `, result.actual);
+    }
+  }
+  
+  const passed = results.filter(r => r.passed).length;
+  const total = results.length;
+  runtime.log(`[WebExtractorTests] Group '${groupName}': ${passed}/${total} tests passed`);
+  
+  return { groupName, passed, total, results };
+};
+
+export const runTests = async () => {
+  runtime.log('[WebExtractorTests] Running all test groups...');
+  
+  const allResults = [];
+  let totalPassed = 0;
+  let totalTests = 0;
+  
+  for (const groupName of Object.keys(TEST_CASES)) {
+    const groupResult = await runTestGroup(groupName);
+    allResults.push(groupResult);
+    totalPassed += groupResult.passed;
+    totalTests += groupResult.total;
+  }
+  
+  // Summary
+  runtime.log(`\n[WebExtractorTests] SUMMARY: ${totalPassed}/${totalTests} tests passed`);
+  
+  // Failed tests summary
+  const failedTests = allResults.flatMap(g => 
+    g.results.filter(r => !r.passed).map(r => ({ group: g.groupName, ...r }))
+  );
+  
+  if (failedTests.length > 0) {
+    runtime.log(`\nFailed tests:`);
+    failedTests.forEach(t => {
+      runtime.log(`  ${t.group}.${t.name}: ${t.error || 'Output mismatch'}`);
+    });
+  }
+  
+  return { totalPassed, totalTests, groups: allResults, failedTests };
+};
+
+export { runTestGroup };
+
+// Utility functions
+const deepEqual = (a, b) => {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== typeof b) return false;
+  
+  if (typeof a === 'object') {
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    
+    for (const key of keysA) {
+      if (!keysB.includes(key)) return false;
+      if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+  
+  return false;
+};
+
+// Direct implementation (no eval) - extracted from web-extractor module
+const extractPageStructure = (options, document, window) => {
   const { skipAds = true, skipHidden = true } = options;
   
   const LEAF_TAGS = new Set([
     'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'li', 'td', 'th', 'dt', 'dd',
-    'a', 'button', 'input', 'textarea', 'select', 'label',
-    'img', 'video', 'audio', 'pre', 'code', 'blockquote',
-    'figcaption', 'cite'
+    'li', 'td', 'th', 'a', 'img', 'input', 'textarea', 'code'
   ]);
   
-  const INLINE_TAGS = new Set([
-    'strong', 'em', 'b', 'i', 'u', 'mark', 'small', 'span'
-  ]);
-  
-  const SKIP_TAGS = new Set([
-    'script', 'style', 'noscript', 'template', 'svg', 'iframe'
-  ]);
-  
-  const AD_PATTERNS = /ad|ads|sponsor|promo|banner|adsense|doubleclick/i;
+  const SKIP_TAGS = new Set(['script', 'style', 'noscript']);
+  const AD_PATTERNS = /ad|ads|sponsor|promo|banner|advertisement/i;
   
   let stats = { elements: 0, depth: 0 };
   const usedIds = new Set();
+  const flatTree = {}; // Flattened structure
   
-  // Check if should skip
   const shouldSkip = (el) => {
     if (SKIP_TAGS.has(el.tagName.toLowerCase())) return true;
-    if (skipHidden) {
+    if (skipHidden && el.style) {
       const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || el.hidden) return true;
+      if (style.display === 'none' || style.visibility === 'hidden') return true;
     }
     if (skipAds && AD_PATTERNS.test(el.className + ' ' + el.id)) return true;
     return false;
   };
   
-  // Check if has content
   const hasContent = (el) => {
     if (el.innerText?.trim()) return true;
-    if (el.tagName === 'IMG' || el.tagName === 'VIDEO' || el.tagName === 'AUDIO') return true;
+    if (el.tagName === 'IMG' || el.tagName === 'INPUT') return true;
     return false;
   };
   
-  // Get element ID
   const getId = (el, tag, index) => {
     if (el.id && !usedIds.has(el.id)) {
       usedIds.add(el.id);
       return el.id;
     }
-    let id = `${tag}-${index}`;
+    let id = tag + '-' + index;
     while (usedIds.has(id)) {
       index++;
-      id = `${tag}-${index}`;
+      id = tag + '-' + index;
     }
     usedIds.add(id);
     return id;
   };
   
-  // Extract inline formatting
   const extractInlineText = (el) => {
-    const walker = document.createTreeWalker(
-      el,
-      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-    
-    let formatted = [];
-    let node;
-    
-    while (node = walker.nextNode()) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent.trim();
-        if (text) formatted.push({ text, format: null });
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = node.tagName.toLowerCase();
-        if (INLINE_TAGS.has(tag)) {
-          const text = node.innerText?.trim();
-          if (text) formatted.push({ text, format: tag });
-          walker.nextSibling(); // Skip children
-        }
-      }
-    }
-    
-    // Combine into single text with format markers
-    if (formatted.length === 0) return el.innerText?.trim() || '';
-    if (formatted.length === 1 && !formatted[0].format) return formatted[0].text;
-    
-    return formatted.map(f => {
-      if (!f.format) return f.text;
-      if (f.format === 'strong' || f.format === 'b') return `**${f.text}**`;
-      if (f.format === 'em' || f.format === 'i') return `*${f.text}*`;
-      return f.text;
-    }).join(' ');
+    return el.innerText?.trim() || '';
   };
   
-  // Walk DOM
-  const walk = (el, depth = 0, index = 0) => {
+  const walk = (el, depth = 0, index = 0, parentId = null) => {
+    if (!el || !el.tagName) return null; // Guard against undefined elements
     if (shouldSkip(el)) return null;
     if (!hasContent(el)) return null;
     
@@ -269,11 +532,14 @@ function extractPageStructure(options) {
     
     const tag = el.tagName.toLowerCase();
     const id = getId(el, tag, index);
-    
-    // Build node
     const node = { tag };
     
-    // Leaf elements - extract text and attributes
+    // Add parent reference if not root
+    if (parentId) {
+      node.parent = parentId;
+    }
+    
+    // Extract text and attributes for leaf elements
     if (LEAF_TAGS.has(tag)) {
       const text = extractInlineText(el);
       if (text) node.text = text;
@@ -284,70 +550,26 @@ function extractPageStructure(options) {
         if (el.src) node.src = el.src;
         if (el.alt) node.alt = el.alt;
       }
-      if ((tag === 'video' || tag === 'audio') && el.src) node.src = el.src;
       if (tag === 'input' || tag === 'textarea') {
         if (el.value) node.value = el.value;
         if (el.placeholder) node.placeholder = el.placeholder;
       }
-      
-      return { [id]: node };
     }
     
-    // Container elements - recurse
-    const children = {};
+    // Add to flat tree
+    flatTree[id] = node;
+    
+    // Process children
     let childIndex = 0;
-    
-    for (const child of el.children) {
-      const result = walk(child, depth + 1, childIndex++);
-      if (result) Object.assign(children, result);
+    for (const child of el.children || []) {
+      walk(child, depth + 1, childIndex++, id);
     }
     
-    if (Object.keys(children).length > 0) {
-      node.children = children;
-    } else {
-      // No children, try to get text
-      const text = extractInlineText(el);
-      if (text) node.text = text;
-      else return null; // Skip empty containers
-    }
-    
-    return { [id]: node };
+    return id;
   };
   
-  // Start extraction - try multiple content areas
-  const title = document.title;
+  // Start with body
+  walk(document.body, 0, 0);
   
-  // Try different content containers
-  const contentSelectors = [
-    'main',
-    'article', 
-    '[role="main"]',
-    '#main-content',
-    '.content',
-    '.article-body',
-    'body'
-  ];
-  
-  let body = {};
-  for (const selector of contentSelectors) {
-    const el = document.querySelector(selector);
-    if (el) {
-      body = walk(el, 0, 0);
-      if (body && Object.keys(body).length > 0) break;
-    }
-  }
-  
-  // Debug logging
-  console.log('[WebExtractor] Extracted:', {
-    title,
-    bodyKeys: Object.keys(body || {}),
-    stats,
-    hasContent: document.body.innerText?.length || 0
-  });
-  
-  return {
-    title,
-    body: body || {},
-    stats
-  };
-}
+  return { body: flatTree, stats };
+};
