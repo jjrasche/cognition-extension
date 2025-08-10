@@ -22,6 +22,7 @@ import * as chunkingModule from './chunking.module.js';
 import * as indexedDbModule from './indexed-db.module.js';
 import * as apiKeysModule from './api-keys.module.js';
 import * as webSearchModule from './web-search.module.js';
+import * as webExtractorModule from './web-extractor.module.js';
 
 export const modules = [
     // tabManagerModule,
@@ -46,6 +47,7 @@ export const modules = [
     // fileModule,
     apiKeysModule,
     webSearchModule,
+    webExtractorModule,
 ];
 
 export const coreFiles = [
