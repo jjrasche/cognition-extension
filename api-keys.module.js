@@ -35,8 +35,10 @@ export const setKey = async (params) => {
 export const getKey = async (params) => {
     const { service, keyOnly = true }= params, keyID = getKeyId(service);
     let ret = await chrome.storage.sync.get(keyID)
-    ret = ret[keyID];
-    return keyOnly ? ret.key : ret;
+    if (!ret && !ret[keyID]) {
+        ret = ret[keyID];
+        return keyOnly ? ret.key : ret;
+    }
 };
 export const hasKey = async (params) => {
     const key = await chrome.storage.sync.get([getKeyId(params.service)])[getKeyId(params.service)];

@@ -167,70 +167,53 @@ manifest.models = [
 
 
 export const searchExportedConversations = async (params) => {
-  const { query, caseSensitive = false } = params;
+  const { query, caseSensitive = false, operator = "OR" } = params;
+  
   if (!query) {
     runtime.log('[Dev] Search query required');
     return { success: false, error: 'Search query required' };
   }
   
   try {
+    // Parse query for exact phrases and individual terms
+    const { phrases, terms } = parseSearchQuery(query);
+    
     // Load conversations
     const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
     const conversations = await response.json();
     
     // Search for matching conversations
-    const searchTerm = caseSensitive ? query : query.toLowerCase();
     const matches = conversations.filter(conv => {
-      // Check conversation name
-      if ((caseSensitive ? conv.name : conv.name?.toLowerCase())?.includes(searchTerm)) {
-        return true;
-      }
-      
-      // Check message content
-      return conv.chat_messages?.some(msg => 
-        (caseSensitive ? msg.text : msg.text?.toLowerCase())?.includes(searchTerm)
-      );
+      return matchesConversation(conv, phrases, terms, caseSensitive, operator);
     });
     
-    // Display results in console
+    // Display results (keep existing format)
     if (matches.length === 0) {
-      console.log(`No conversations found matching "${query}"`);
+      console.log(`No conversations found matching "${query}" (${operator})`);
       return { success: true, count: 0 };
     }
     
-    console.log(`Found ${matches.length} conversations matching "${query}":`);
+    console.log(`Found ${matches.length} conversations matching "${query}" (${operator}):`);
     
-    // Format and display each conversation
+    // Same display logic as before...
     matches.forEach((conv, index) => {
-      // Format timestamp
       const created = new Date(conv.created_at).toLocaleString();
-      
-      // Count messages by type
       const humanMsgs = conv.chat_messages?.filter(m => m.sender === 'human').length || 0;
       const aiMsgs = conv.chat_messages?.filter(m => m.sender === 'assistant').length || 0;
       
-      // Display conversation header
       console.group(`${index + 1}. ${conv.name} (${created})`);
-      console.log(`ID: ${conv.uuid}`);
+      console.log(`ID: https://claude.ai/chat/${conv.uuid}`);
       console.log(`Messages: ${conv.chat_messages?.length || 0} (${humanMsgs} human, ${aiMsgs} AI)`);
       
-      // Find matching messages
-      const matchingMsgs = conv.chat_messages?.filter(msg => 
-        (caseSensitive ? msg.text : msg.text?.toLowerCase())?.includes(searchTerm)
-      ) || [];
-      
+      // Show matching messages
+      const matchingMsgs = findMatchingMessages(conv, phrases, terms, caseSensitive, operator);
       if (matchingMsgs.length > 0) {
         console.log(`Matching messages: ${matchingMsgs.length}`);
-        
-        // Display first matching message preview
-        if (matchingMsgs.length > 0) {
-          const msg = matchingMsgs[0];
-          const preview = msg.text.length > 150 ? 
-            msg.text.substring(0, 150) + '...' : 
-            msg.text;
-          
-          console.log(`Preview (${msg.sender}): ${preview}`);
-        }
+        const msg = matchingMsgs[0];
+        const preview = msg.text.length > 150 ? 
+          msg.text.substring(0, 150) + '...' : 
+          msg.text;
+        console.log(`Preview (${msg.sender}): ${preview}`);
       }
       
       console.groupEnd();
@@ -239,10 +222,81 @@ export const searchExportedConversations = async (params) => {
     return { 
       success: true, 
       count: matches.length, 
-      conversations: matches
+      conversations: matches,
+      query: { original: query, phrases, terms, operator }
     };
   } catch (error) {
     console.error('[Dev] Error searching conversations:', error);
     return { success: false, error: error.message };
   }
 };
+
+// Helper function to parse search query
+function parseSearchQuery(query) {
+  const phrases = [];
+  const terms = [];
+  
+  // Extract quoted phrases first
+  const phraseMatches = query.match(/"([^"]*)"/g);
+  let remainingQuery = query;
+  
+  if (phraseMatches) {
+    phraseMatches.forEach(match => {
+      const phrase = match.slice(1, -1); // Remove quotes
+      if (phrase.trim()) {
+        phrases.push(phrase.trim());
+      }
+      remainingQuery = remainingQuery.replace(match, '');
+    });
+  }
+  
+  // Extract individual terms from remaining query
+  const individualTerms = remainingQuery.trim().split(/\s+/).filter(term => term.length > 0);
+  terms.push(...individualTerms);
+  
+  return { phrases, terms };
+}
+
+// Helper function to check if conversation matches
+function matchesConversation(conv, phrases, terms, caseSensitive, operator) {
+  // Collect all searchable text
+  const searchTexts = [
+    conv.name || '',
+    ...(conv.chat_messages || []).map(msg => msg.text || '')
+  ];
+  
+  const allText = searchTexts.join(' ');
+  const searchIn = caseSensitive ? allText : allText.toLowerCase();
+  
+  // Prepare search terms
+  const searchPhrases = caseSensitive ? phrases : phrases.map(p => p.toLowerCase());
+  const searchTerms = caseSensitive ? terms : terms.map(t => t.toLowerCase());
+  
+  // Combine all search items
+  const allSearchItems = [...searchPhrases, ...searchTerms];
+  
+  if (allSearchItems.length === 0) return false;
+  
+  if (operator === "AND") {
+    return allSearchItems.every(item => searchIn.includes(item));
+  } else {
+    return allSearchItems.some(item => searchIn.includes(item));
+  }
+}
+
+// Helper function to find matching messages
+function findMatchingMessages(conv, phrases, terms, caseSensitive, operator) {
+  return (conv.chat_messages || []).filter(msg => {
+    const text = caseSensitive ? msg.text : msg.text?.toLowerCase();
+    const searchPhrases = caseSensitive ? phrases : phrases.map(p => p.toLowerCase());
+    const searchTerms = caseSensitive ? terms : terms.map(t => t.toLowerCase());
+    
+    const allSearchItems = [...searchPhrases, ...searchTerms];
+    
+    if (operator === "AND") {
+      return allSearchItems.every(item => text?.includes(item));
+    } else {
+      return allSearchItems.some(item => text?.includes(item));
+    }
+  });
+}
