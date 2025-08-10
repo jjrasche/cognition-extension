@@ -5,12 +5,12 @@ export const manifest = {
     description: "Graph database for storing knowledge and relationships",
     permissions: ["storage"],
     dependencies: ["indexed-db"],
-    actions: ["addInferenceNode", "addNode", "getNode", "removeNode", "getNodesByType", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes", "printNodes", "findInteractionByIds", "updateNode"],
+    actions: ["addInferenceNode", "addNode", "getNode", "removeNode", "getNodesByType", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes", "findInteractionByIds", "updateNode"],
     indexeddb: {
         name: 'CognitionGraph',
         version: 1,
         storeConfigs: [
-            { name: 'nodes', options: { keyPath: 'id', autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
+            { name: 'nodes', options: { autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
             { name: 'edges',  options: { keyPath: ['from', 'to', 'type'] }, indexes: [ { name: 'by-from', keyPath: 'from' }, { name: 'by-to', keyPath: 'to' } ] },
         ]
     },

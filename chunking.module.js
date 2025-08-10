@@ -206,7 +206,7 @@ const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
   const expectedChunks = Math.ceil(totalTokens / optimalChunkSize);
   const actualTargetTokens = Math.floor(totalTokens / expectedChunks);
   
-  console.log(`[Chunking] Total tokens: ${totalTokens}, Target per chunk: ${actualTargetTokens}, Expected chunks: ${expectedChunks}`);
+  runtime.log(`[Chunking] Total tokens: ${totalTokens}, Target per chunk: ${actualTargetTokens}, Expected chunks: ${expectedChunks}`);
   
   while (currentStart < text.length) {
     const remainingText = text.slice(currentStart);
@@ -298,7 +298,7 @@ const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
         endPos: chunkEnd,
         chunkIndex: chunks.length
       });
-      console.log(`[Chunking] Chunk ${chunks.length}: ${tokenCount} tokens`);
+      runtime.log(`[Chunking] Chunk ${chunks.length}: ${tokenCount} tokens`);
     }
     
     // Simple overlap handling - just move forward
@@ -799,7 +799,7 @@ export async function testWithClaudeData() {
   try {
     const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
     const conversations = await response.json();
-    console.log(`Loaded ${conversations.length} conversations`);
+    runtime.log(`Loaded ${conversations.length} conversations`);
     
     const interactions = await processClaudeConversations({ conversations });
     
@@ -829,7 +829,7 @@ export async function testWithClaudeData() {
       sampleInteractions: interactions.slice(0, 3)
     };
   } catch (error) {
-    console.error('Test failed:', error);
+    runtime.logError('Test failed:', error);
     return { error: error.message };
   }
 }
@@ -867,7 +867,7 @@ export const generateTestFile = async () => {
   
   // Copy to clipboard for pasting into test file
   const testCode = `export const realWorldTests = ${JSON.stringify(tests, null, 2)};`;
-  console.log(testCode)
+  runtime.log(testCode)
   console.table(tests.map(t => ({ name: t.name, tokens: t.tokens, ...t.expected })));
   return tests;
 };
@@ -962,22 +962,22 @@ export const runRealTests = async () => {
 export const debugChunking = async (params = { testIndex: 2 }) => {
   const testIndex = params.testIndex || 2;
   const test = realWorldTests[testIndex];
-  console.log(`\n=== DEBUGGING TEST ${testIndex} ===`);
-  console.log(`Original text length: ${test.input.length} chars`);
-  console.log(`Original token estimate: ${estimateTokenCount(test.input)}`);
+  runtime.log(`\n=== DEBUGGING TEST ${testIndex} ===`);
+  runtime.log(`Original text length: ${test.input.length} chars`);
+  runtime.log(`Original token estimate: ${estimateTokenCount(test.input)}`);
   
   // Check preprocessing
   const processed = preprocessText(test.input);
-  console.log(`After preprocessing: ${processed.length} chars`);
-  console.log(`After preprocessing tokens: ${estimateTokenCount(processed)}`);
-  console.log(`Content removed: ${test.input.length - processed.length} chars`);
+  runtime.log(`After preprocessing: ${processed.length} chars`);
+  runtime.log(`After preprocessing tokens: ${estimateTokenCount(processed)}`);
+  runtime.log(`Content removed: ${test.input.length - processed.length} chars`);
   
   // Check if it has code blocks
   const codeBlocks = test.input.match(/```[\s\S]*?```/g) || [];
-  console.log(`Code blocks found: ${codeBlocks.length}`);
+  runtime.log(`Code blocks found: ${codeBlocks.length}`);
   if (codeBlocks.length > 0) {
     const codeContent = codeBlocks.join('').length;
-    console.log(`Code content length: ${codeContent} chars (${(codeContent/test.input.length*100).toFixed(1)}% of text)`);
+    runtime.log(`Code content length: ${codeContent} chars (${(codeContent/test.input.length*100).toFixed(1)}% of text)`);
   }
   
   // Test with different preprocessing
@@ -985,8 +985,8 @@ export const debugChunking = async (params = { testIndex: 2 }) => {
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+/g, ' ')
     .trim();
-  console.log(`\nWithout code removal: ${withoutCodeRemoval.length} chars`);
-  console.log(`Without code removal tokens: ${estimateTokenCount(withoutCodeRemoval)}`);
+  runtime.log(`\nWithout code removal: ${withoutCodeRemoval.length} chars`);
+  runtime.log(`Without code removal tokens: ${estimateTokenCount(withoutCodeRemoval)}`);
   
   // Test chunking with both
   const chunksWithRemoval = await chunkText({ 
@@ -994,7 +994,7 @@ export const debugChunking = async (params = { testIndex: 2 }) => {
     minTokens: 50, 
     maxTokens: 300 
   });
-  console.log(`\nChunks with code removal: ${chunksWithRemoval.chunks.length}`);
+  runtime.log(`\nChunks with code removal: ${chunksWithRemoval.chunks.length}`);
   
   // Try without removing code
   const chunksWithoutRemoval = await createChunks(withoutCodeRemoval, {
@@ -1002,7 +1002,7 @@ export const debugChunking = async (params = { testIndex: 2 }) => {
     maxTokens: 300,
     preserveStructure: true
   });
-  console.log(`Chunks without code removal: ${chunksWithoutRemoval.length}`);
+  runtime.log(`Chunks without code removal: ${chunksWithoutRemoval.length}`);
   
   return {
     original: test.input.length,
@@ -1046,7 +1046,7 @@ export const testTokenEstimation = async () => {
       expected: 16, tolerance: 2 },
   ];
   
-  console.log("=== TOKEN ESTIMATION TESTS ===");
+  runtime.log("=== TOKEN ESTIMATION TESTS ===");
   const results = [];
   
   for (const test of testCases) {
@@ -1066,7 +1066,7 @@ export const testTokenEstimation = async () => {
   console.table(results);
   
   const passRate = results.filter(r => r.passed === '✅').length / results.length;
-  console.log(`Pass rate: ${(passRate * 100).toFixed(1)}%`);
+  runtime.log(`Pass rate: ${(passRate * 100).toFixed(1)}%`);
   
   return results;
 };
@@ -1099,7 +1099,7 @@ export const recalculateTestExpectations = async () => {
     });
   }
   
-  console.log("=== RECALCULATED EXPECTATIONS ===");
+  runtime.log("=== RECALCULATED EXPECTATIONS ===");
   console.table(updatedTests);
   
   return updatedTests;
@@ -1208,9 +1208,9 @@ export const visualizeChunking = async (testIndex = 1, strategy = 'small') => {
   
   const options = strategies[strategy];
   
-  console.log('\n' + '═'.repeat(80));
-  console.log(`📊 CHUNKING VISUALIZATION - Test ${testIndex} (${test.name}) - ${strategy.toUpperCase()} strategy`);
-  console.log('═'.repeat(80));
+  runtime.log('\n' + '═'.repeat(80));
+  runtime.log(`📊 CHUNKING VISUALIZATION - Test ${testIndex} (${test.name}) - ${strategy.toUpperCase()} strategy`);
+  runtime.log('═'.repeat(80));
   
   // Process text
   const processed = preprocessText(test.input);
@@ -1223,17 +1223,17 @@ export const visualizeChunking = async (testIndex = 1, strategy = 'small') => {
   });
   
   // Summary
-  console.log(`\n📈 SUMMARY:`);
-  console.log(`   Original: ${test.input.length} chars, ${test.tokens} tokens (estimated)`);
-  console.log(`   Processed: ${processed.length} chars, ${totalTokens} tokens`);
-  console.log(`   Removed: ${test.input.length - processed.length} chars (${((test.input.length - processed.length) / test.input.length * 100).toFixed(1)}%)`);
-  console.log(`   Strategy: ${strategy} (${options.minTokens}-${options.maxTokens} tokens)`);
-  console.log(`   Target size: ~${Math.floor((options.minTokens + options.maxTokens) / 2)} tokens`);
-  console.log(`   Expected chunks: ${Math.ceil(totalTokens / ((options.minTokens + options.maxTokens) / 2))}`);
-  console.log(`   Actual chunks: ${result.chunks.length}`);
+  runtime.log(`\n📈 SUMMARY:`);
+  runtime.log(`   Original: ${test.input.length} chars, ${test.tokens} tokens (estimated)`);
+  runtime.log(`   Processed: ${processed.length} chars, ${totalTokens} tokens`);
+  runtime.log(`   Removed: ${test.input.length - processed.length} chars (${((test.input.length - processed.length) / test.input.length * 100).toFixed(1)}%)`);
+  runtime.log(`   Strategy: ${strategy} (${options.minTokens}-${options.maxTokens} tokens)`);
+  runtime.log(`   Target size: ~${Math.floor((options.minTokens + options.maxTokens) / 2)} tokens`);
+  runtime.log(`   Expected chunks: ${Math.ceil(totalTokens / ((options.minTokens + options.maxTokens) / 2))}`);
+  runtime.log(`   Actual chunks: ${result.chunks.length}`);
   
   // Visual representation of token distribution
-  console.log(`\n📏 TOKEN DISTRIBUTION:`);
+  runtime.log(`\n📏 TOKEN DISTRIBUTION:`);
   const maxBarLength = 60;
   result.chunks.forEach((chunk, i) => {
     const barLength = Math.floor((chunk.tokenCount / options.maxTokens) * maxBarLength);
@@ -1246,47 +1246,47 @@ export const visualizeChunking = async (testIndex = 1, strategy = 'small') => {
     if (chunk.tokenCount < options.minTokens) indicator = '⚠️ ';  // Too small
     if (chunk.tokenCount > options.maxTokens) indicator = '❌';  // Too large
     
-    console.log(`   Chunk ${i + 1}: ${bar}${padding} │ ${chunk.tokenCount} tokens (${percentage}%) ${indicator}`);
+    runtime.log(`   Chunk ${i + 1}: ${bar}${padding} │ ${chunk.tokenCount} tokens (${percentage}%) ${indicator}`);
   });
   
   // Detailed chunk breakdown
-  console.log(`\n📝 CHUNK DETAILS:`);
+  runtime.log(`\n📝 CHUNK DETAILS:`);
   result.chunks.forEach((chunk, i) => {
-    console.log(`\n   ${'-'.repeat(70)}`);
-    console.log(`   CHUNK ${i + 1}/${result.chunks.length}`);
-    console.log(`   ${'-'.repeat(70)}`);
-    console.log(`   Tokens: ${chunk.tokenCount}`);
-    console.log(`   Position: chars ${chunk.startPos}-${chunk.endPos}`);
+    runtime.log(`\n   ${'-'.repeat(70)}`);
+    runtime.log(`   CHUNK ${i + 1}/${result.chunks.length}`);
+    runtime.log(`   ${'-'.repeat(70)}`);
+    runtime.log(`   Tokens: ${chunk.tokenCount}`);
+    runtime.log(`   Position: chars ${chunk.startPos}-${chunk.endPos}`);
     
     // Show first and last 100 chars of chunk
     const preview = chunk.text.length > 200 
       ? chunk.text.substring(0, 100) + '\n   [...]\n   ' + chunk.text.substring(chunk.text.length - 100)
       : chunk.text;
     
-    console.log(`   Content preview:`);
-    console.log(`   "${preview.replace(/\n/g, '\n   ')}"`);
+    runtime.log(`   Content preview:`);
+    runtime.log(`   "${preview.replace(/\n/g, '\n   ')}"`);
     
     // Show what boundary was used (if we can detect it)
     const lastChar = processed[chunk.endPos - 1];
     const nextChar = processed[chunk.endPos];
     if (chunk.endPos < processed.length) {
-      console.log(`   Split at: '${processed.substring(chunk.endPos - 10, chunk.endPos)}|${processed.substring(chunk.endPos, chunk.endPos + 10).replace(/\n/g, '\\n')}'`);
+      runtime.log(`   Split at: '${processed.substring(chunk.endPos - 10, chunk.endPos)}|${processed.substring(chunk.endPos, chunk.endPos + 10).replace(/\n/g, '\\n')}'`);
     }
   });
   
   // Show boundaries detected
   const boundaries = detectSemanticBoundaries(processed);
-  console.log(`\n🔍 BOUNDARIES DETECTED: ${boundaries.length} total`);
+  runtime.log(`\n🔍 BOUNDARIES DETECTED: ${boundaries.length} total`);
   const boundaryTypes = {};
   boundaries.forEach(b => {
     boundaryTypes[b.type] = (boundaryTypes[b.type] || 0) + 1;
   });
   Object.entries(boundaryTypes).forEach(([type, count]) => {
-    console.log(`   ${type}: ${count}`);
+    runtime.log(`   ${type}: ${count}`);
   });
   
   // Visual text map showing where splits occurred
-  console.log(`\n🗺️  SPLIT MAP (first 500 chars):`);
+  runtime.log(`\n🗺️  SPLIT MAP (first 500 chars):`);
   const textSnippet = processed.substring(0, 500);
   let visualMap = textSnippet.replace(/\n/g, '⏎\n');
   
@@ -1301,7 +1301,7 @@ export const visualizeChunking = async (testIndex = 1, strategy = 'small') => {
     }
   });
   
-  console.log(visualMap);
+  runtime.log(visualMap);
   
   return {
     test: test.name,
@@ -1319,19 +1319,19 @@ export const visualizeChunking = async (testIndex = 1, strategy = 'small') => {
 
 // Batch visualization for all tests
 export const visualizeAllTests = async (strategy = 'small') => {
-  console.log('\n' + '🎯'.repeat(40));
-  console.log(`RUNNING ALL VISUALIZATIONS - ${strategy.toUpperCase()} STRATEGY`);
-  console.log('🎯'.repeat(40));
+  runtime.log('\n' + '🎯'.repeat(40));
+  runtime.log(`RUNNING ALL VISUALIZATIONS - ${strategy.toUpperCase()} STRATEGY`);
+  runtime.log('🎯'.repeat(40));
   
   const results = [];
   for (let i = 0; i < realWorldTests.length; i++) {
     const result = await visualizeChunking(i, strategy);
     results.push(result);
-    console.log('\n' + '='.repeat(80) + '\n');
+    runtime.log('\n' + '='.repeat(80) + '\n');
   }
   
   // Summary table
-  console.log('📊 FINAL SUMMARY TABLE:');
+  runtime.log('📊 FINAL SUMMARY TABLE:');
   console.table(results.map(r => ({
     test: r.test,
     expected: r.expectedChunks,
@@ -1358,37 +1358,37 @@ export const exploreChunk = async (testIndex = 1, chunkIndex = 0, strategy = 'sm
   });
   
   if (chunkIndex >= result.chunks.length) {
-    console.error(`Chunk ${chunkIndex} doesn't exist. Test has ${result.chunks.length} chunks.`);
+    runtime.logError(`Chunk ${chunkIndex} doesn't exist. Test has ${result.chunks.length} chunks.`);
     return;
   }
   
   const chunk = result.chunks[chunkIndex];
   const processed = preprocessText(test.input);
   
-  console.log('\n' + '📄'.repeat(30));
-  console.log(`CHUNK EXPLORER - Test ${testIndex}, Chunk ${chunkIndex + 1}/${result.chunks.length}`);
-  console.log('📄'.repeat(30));
+  runtime.log('\n' + '📄'.repeat(30));
+  runtime.log(`CHUNK EXPLORER - Test ${testIndex}, Chunk ${chunkIndex + 1}/${result.chunks.length}`);
+  runtime.log('📄'.repeat(30));
   
   // Show context (what comes before and after)
   const contextBefore = processed.substring(Math.max(0, chunk.startPos - 100), chunk.startPos);
   const contextAfter = processed.substring(chunk.endPos, Math.min(processed.length, chunk.endPos + 100));
   
-  console.log('\n📌 CONTEXT BEFORE (last 100 chars):');
-  console.log(`"...${contextBefore}"`);
+  runtime.log('\n📌 CONTEXT BEFORE (last 100 chars):');
+  runtime.log(`"...${contextBefore}"`);
   
-  console.log('\n📦 CHUNK CONTENT:');
-  console.log('---START---');
-  console.log(chunk.text);
-  console.log('---END---');
+  runtime.log('\n📦 CHUNK CONTENT:');
+  runtime.log('---START---');
+  runtime.log(chunk.text);
+  runtime.log('---END---');
   
-  console.log('\n📌 CONTEXT AFTER (next 100 chars):');
-  console.log(`"${contextAfter}..."`);
+  runtime.log('\n📌 CONTEXT AFTER (next 100 chars):');
+  runtime.log(`"${contextAfter}..."`);
   
-  console.log('\n📊 METRICS:');
-  console.log(`   Tokens: ${chunk.tokenCount}`);
-  console.log(`   Characters: ${chunk.text.length}`);
-  console.log(`   Token density: ${(chunk.tokenCount / chunk.text.length).toFixed(3)} tokens/char`);
-  console.log(`   Position: ${chunk.startPos}-${chunk.endPos}`);
+  runtime.log('\n📊 METRICS:');
+  runtime.log(`   Tokens: ${chunk.tokenCount}`);
+  runtime.log(`   Characters: ${chunk.text.length}`);
+  runtime.log(`   Token density: ${(chunk.tokenCount / chunk.text.length).toFixed(3)} tokens/char`);
+  runtime.log(`   Position: ${chunk.startPos}-${chunk.endPos}`);
   
   // Analyze why it split here
   const boundaries = detectSemanticBoundaries(processed);
@@ -1397,10 +1397,10 @@ export const exploreChunk = async (testIndex = 1, chunkIndex = 0, strategy = 'sm
   );
   
   if (nearbyBoundaries.length > 0) {
-    console.log('\n🔍 NEARBY BOUNDARIES:');
+    runtime.log('\n🔍 NEARBY BOUNDARIES:');
     nearbyBoundaries.forEach(b => {
       const distance = b.position - chunk.endPos;
-      console.log(`   ${b.type} boundary at ${distance > 0 ? '+' : ''}${distance} chars (strength: ${b.strength})`);
+      runtime.log(`   ${b.type} boundary at ${distance > 0 ? '+' : ''}${distance} chars (strength: ${b.strength})`);
     });
   }
   
@@ -1419,9 +1419,9 @@ export const visualizeChunkingWithMap = async (testIndex = 1, strategy = 'small'
   
   const options = strategies[strategy];
   
-  console.log('\n' + '═'.repeat(80));
-  console.log(`📊 CHUNKING VISUALIZATION - Test ${testIndex} (${test.name}) - ${strategy.toUpperCase()} strategy`);
-  console.log('═'.repeat(80));
+  runtime.log('\n' + '═'.repeat(80));
+  runtime.log(`📊 CHUNKING VISUALIZATION - Test ${testIndex} (${test.name}) - ${strategy.toUpperCase()} strategy`);
+  runtime.log('═'.repeat(80));
   
   // Process text
   const processed = preprocessText(test.input);
@@ -1436,27 +1436,27 @@ export const visualizeChunkingWithMap = async (testIndex = 1, strategy = 'small'
   const boundaries = detectSemanticBoundaries(processed);
   
   // Summary
-  console.log(`\n📈 SUMMARY:`);
-  console.log(`   Strategy: ${strategy} (${options.minTokens}-${options.maxTokens} tokens, target: ${options.target})`);
-  console.log(`   Processed: ${processed.length} chars, ${totalTokens} tokens`);
-  console.log(`   Expected chunks: ${Math.ceil(totalTokens / options.target)}`);
-  console.log(`   Actual chunks: ${result.chunks.length}`);
+  runtime.log(`\n📈 SUMMARY:`);
+  runtime.log(`   Strategy: ${strategy} (${options.minTokens}-${options.maxTokens} tokens, target: ${options.target})`);
+  runtime.log(`   Processed: ${processed.length} chars, ${totalTokens} tokens`);
+  runtime.log(`   Expected chunks: ${Math.ceil(totalTokens / options.target)}`);
+  runtime.log(`   Actual chunks: ${result.chunks.length}`);
   
   // Create visual map with emoji markers
-  console.log(`\n🗺️  VISUAL TEXT MAP WITH BOUNDARIES AND CHUNKS:`);
-  console.log(`   Legend:`);
-  console.log(`   📑 = Header boundary (strength 6-7)`);
-  console.log(`   📄 = Strong paragraph break (strength 5)`);
-  console.log(`   ¶ = Paragraph boundary (strength 4)`);
-  console.log(`   📍 = List item (strength 3)`);
-  console.log(`   • = Sentence boundary (strength 2)`);
-  console.log(`   , = Comma boundary (strength 1)`);
-  console.log(`   🔹 = Code boundary`);
-  console.log(`   ⏎ = Newline`);
-  console.log(`   ╰─🎯 = Target token size reached (~${options.target} tokens)`);
-  console.log(`   ╰─✂️ = Actual chunk split`);
-  console.log(`   ╰─⚠️ = Forced split (no boundary)`);
-  console.log('\n' + '-'.repeat(80));
+  runtime.log(`\n🗺️  VISUAL TEXT MAP WITH BOUNDARIES AND CHUNKS:`);
+  runtime.log(`   Legend:`);
+  runtime.log(`   📑 = Header boundary (strength 6-7)`);
+  runtime.log(`   📄 = Strong paragraph break (strength 5)`);
+  runtime.log(`   ¶ = Paragraph boundary (strength 4)`);
+  runtime.log(`   📍 = List item (strength 3)`);
+  runtime.log(`   • = Sentence boundary (strength 2)`);
+  runtime.log(`   , = Comma boundary (strength 1)`);
+  runtime.log(`   🔹 = Code boundary`);
+  runtime.log(`   ⏎ = Newline`);
+  runtime.log(`   ╰─🎯 = Target token size reached (~${options.target} tokens)`);
+  runtime.log(`   ╰─✂️ = Actual chunk split`);
+  runtime.log(`   ╰─⚠️ = Forced split (no boundary)`);
+  runtime.log('\n' + '-'.repeat(80));
   
   // Build the visual map
   let visualMap = '';
@@ -1523,11 +1523,11 @@ export const visualizeChunkingWithMap = async (testIndex = 1, strategy = 'small'
     }
   }
   
-  console.log(visualMap);
+  runtime.log(visualMap);
   
   // Token distribution visualization
-  console.log('\n' + '='.repeat(80));
-  console.log(`📊 TOKEN DISTRIBUTION:`);
+  runtime.log('\n' + '='.repeat(80));
+  runtime.log(`📊 TOKEN DISTRIBUTION:`);
   const maxBarLength = 60;
   const targetLinePos = Math.floor((options.target / options.maxTokens) * maxBarLength);
   
@@ -1553,10 +1553,10 @@ export const visualizeChunkingWithMap = async (testIndex = 1, strategy = 'small'
     if (chunk.tokenCount < options.minTokens) indicator = '⚠️ ';
     if (chunk.tokenCount > options.maxTokens) indicator = '❌';
     
-    console.log(`   Chunk ${i + 1}: ${barWithTarget} │ ${chunk.tokenCount}/${options.target} tokens (${percentage}%) ${indicator}`);
+    runtime.log(`   Chunk ${i + 1}: ${barWithTarget} │ ${chunk.tokenCount}/${options.target} tokens (${percentage}%) ${indicator}`);
   });
   
-  console.log(`\n   Legend: │ = Target size (${options.target} tokens)`);
+  runtime.log(`\n   Legend: │ = Target size (${options.target} tokens)`);
   
   return {
     test: test.name,
@@ -1599,9 +1599,9 @@ export const visualizeChunkSplits = async (testIndex = 1, strategy = 'small') =>
     maxTokens: options.maxTokens 
   });
   
-  console.log('\n' + '🎯'.repeat(40));
-  console.log(`CHUNK SPLIT VISUALIZATION - ${test.name}`);
-  console.log('🎯'.repeat(40));
+  runtime.log('\n' + '🎯'.repeat(40));
+  runtime.log(`CHUNK SPLIT VISUALIZATION - ${test.name}`);
+  runtime.log('🎯'.repeat(40));
   
   // Show text with chunk markers
   let markedText = processed;
@@ -1629,12 +1629,12 @@ export const visualizeChunkSplits = async (testIndex = 1, strategy = 'small') =>
     }
   });
   
-  console.log(markedText);
+  runtime.log(markedText);
   
   // Summary
-  console.log('\n📊 SUMMARY:');
-  console.log(`   Target tokens per chunk: ${options.target}`);
-  console.log(`   Actual chunks: ${result.chunks.map((c, i) => `Chunk ${i + 1}: ${c.tokenCount} tokens`).join(', ')}`);
+  runtime.log('\n📊 SUMMARY:');
+  runtime.log(`   Target tokens per chunk: ${options.target}`);
+  runtime.log(`   Actual chunks: ${result.chunks.map((c, i) => `Chunk ${i + 1}: ${c.tokenCount} tokens`).join(', ')}`);
   
   return result.chunks;
 };

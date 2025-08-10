@@ -25,17 +25,21 @@ const createActionShortcuts = () => {
     runtime.log('[Dev] Production mode - skipping dev shortcuts');
     return;
   }
-  
+  addModuleManifestsToConsole();
   addModuleActionsToConsole();
   addEasyAccessVariablesToConsole();
 };
+const addModuleManifestsToConsole = () => runtime.getModules().forEach(module => {
+  const camelModuleName = kebabToCamel(module.manifest.name);
+  globalThis[camelModuleName] = {};
+  globalThis[camelModuleName].manifest = module.manifest;
+});
 
 const addModuleActionsToConsole = () => {
   // Create shortcuts for all registered actions
   for (let [name] of runtime.getActions().entries()) {
     const [moduleName, actionName] = name.split('.');
     const camelModuleName = kebabToCamel(moduleName);
-    
     globalThis[camelModuleName] ??= {};
     globalThis[camelModuleName][actionName] = (params = {}) => {
       return runtime.call(name, params)
@@ -47,11 +51,7 @@ const addModuleActionsToConsole = () => {
 
 const addEasyAccessVariablesToConsole = () => {
   // Add runtime reference
-  globalThis.runtime = runtime;
-  
-  // Add module list
-  globalThis.modules = runtime.getModules();
-  
+  globalThis.runtime = runtime;  
   // Add pretty print functions
   globalThis.printActions = prettyPrintActions;
   globalThis.printModules = prettyPrintModules;

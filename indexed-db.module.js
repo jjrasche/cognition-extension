@@ -65,11 +65,11 @@ const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
 
 
 
-export const deleteDB = ({dbName}) => {
+export const deleteDB = ({name}) => {
   return new Promise((resolve, reject) => {
-    const deleteReq = indexedDB.deleteDatabase(dbName);
-    deleteReq.onsuccess = () => (runtime.log(`✅ ${dbName} database deleted successfully`), resolve());
-    deleteReq.onerror = () => (runtime.logError(`❌ Failed to delete ${dbName} database:`, deleteReq.error), reject(deleteReq.error));
-    deleteReq.onblocked = () => runtime.logError(`⚠️ ${dbName} database deletion blocked - close all tabs using this database`);
+    const deleteReq = indexedDB.deleteDatabase(name);
+    deleteReq.onsuccess = () => (runtime.log(`✅ ${name} database deleted successfully`, deleteReq), resolve());
+    deleteReq.onerror = () => (runtime.logError(`❌ Failed to delete ${name} database:`, deleteReq.error), reject(deleteReq.error));
+    deleteReq.onblocked = () => runtime.logError(`⚠️ ${name} database deletion blocked - close all tabs using this database`);
   });
 };

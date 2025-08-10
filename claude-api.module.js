@@ -227,9 +227,13 @@ const logConversation = (conv, index, phrases, terms, caseSensitive, operator) =
   console.groupEnd();
 };
 
+
+
 export const processConversationsToGraph = async ({batchSize = 5, skipExisting = true }) => {
   let [totalProcessed, totalInteractions, totalSkipped] = [0, 0, 0];
   const conversations = await getConversations();
+  runtime.log(`[Claude] Starting to process ${conversations.length} conversations with batchSize=${batchSize}, skipExisting=${skipExisting}`);
+  
   for (let i = 0; i < conversations.length; i += batchSize) {
     const batch = conversations.slice(i, i + batchSize);
     runtime.log(`[Claude] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(conversations.length/batchSize)} (${batch.length} conversations)`);
@@ -248,55 +252,190 @@ export const processConversationsToGraph = async ({batchSize = 5, skipExisting =
 };
 
 const processConversation = async (conversation, skipExisting) => {
+  runtime.log(`[Claude] Processing conversation: "${conversation.name}" (${conversation.uuid})`);
+  
   const interactions = extractMessagePairs(conversation.chat_messages);
+  runtime.log(`[Claude] Extracted ${interactions.length} message pairs from conversation "${conversation.name}"`);
+  
   let [processedInteractions, skippedInteractions] = [0, 0];
-  for (const interaction of interactions) {
-    if (skipExisting && await runtime.call('graph-db.findInteractionByIds', { humanMessageId: interaction.humanMessageId, assistantMessageId: interaction.assistantMessageId })) {
-      skippedInteractions++;
-      continue;
+  
+  for (let i = 0; i < interactions.length; i++) {
+    const interaction = interactions[i];
+    runtime.log(`[Claude] Processing interaction ${i + 1}/${interactions.length} in conversation "${conversation.name}"`);
+    
+    try {
+      // Check if already exists
+      if (skipExisting && await runtime.call('graph-db.findInteractionByIds', { 
+        humanMessageId: interaction.humanMessageId, 
+        assistantMessageId: interaction.assistantMessageId 
+      })) {
+        runtime.log(`[Claude] Skipping existing interaction ${i + 1} in conversation "${conversation.name}"`);
+        skippedInteractions++;
+        continue;
+      }
+      
+      // Create the interaction node
+      runtime.log(`[Claude] Creating interaction node for interaction ${i + 1} in conversation "${conversation.name}"`);
+      const interactionNodeId = await runtime.call('graph-db.addInferenceNode', {
+        userPrompt: interaction.userPrompt,
+        assembledPrompt: interaction.userPrompt,
+        response: interaction.aiResponse,
+        model: 'claude-conversation-export',
+        context: { 
+          conversationId: conversation.uuid, 
+          conversationName: conversation.name, 
+          timestamp: interaction.timestamp, 
+          messageIds: { human: interaction.humanMessageId, assistant: interaction.assistantMessageId } 
+        }
+      });
+      
+      runtime.log(`[Claude] Created interaction node with ID: ${interactionNodeId} for conversation "${conversation.name}"`);
+      
+      if (!interactionNodeId) {
+        throw new Error(`Failed to create interaction node for conversation ${conversation.name} - received null/undefined ID`);
+      }
+      
+      // Chunk the text
+      runtime.log(`[Claude] Chunking texts for interaction ${i + 1} in conversation "${conversation.name}"`);
+      runtime.log(`[Claude] Prompt length: ${interaction.userPrompt?.length || 0} chars, Response length: ${interaction.aiResponse?.length || 0} chars`);
+      
+      const [promptChunks, responseChunks] = await Promise.all([
+        runtime.call('chunking.chunkText', { text: interaction.userPrompt, minTokens: 30, maxTokens: 200 }),
+        runtime.call('chunking.chunkText', { text: interaction.aiResponse, minTokens: 100, maxTokens: 500 })
+      ]);
+      
+      runtime.log(`[Claude] Chunking results for interaction ${i + 1}: prompt chunks=${promptChunks?.chunks?.length || 0}, response chunks=${responseChunks?.chunks?.length || 0}`);
+      
+      if (!promptChunks || !responseChunks) {
+        throw new Error(`Failed to chunk interaction ${i + 1} in conversation ${conversation.name} - promptChunks: ${!!promptChunks}, responseChunks: ${!!responseChunks}`);
+      }
+      
+      if (!promptChunks.chunks || !responseChunks.chunks) {
+        throw new Error(`Chunks property missing - promptChunks.chunks: ${!!promptChunks.chunks}, responseChunks.chunks: ${!!responseChunks.chunks}`);
+      }
+      
+      // Store chunk references
+      runtime.log(`[Claude] Storing chunk references for interaction ${i + 1} in conversation "${conversation.name}"`);
+      
+      const [promptStore, responseStore] = await Promise.all([
+        storeChunkReferences(promptChunks.chunks, interactionNodeId, 'prompt_chunk', conversation.name, i + 1),
+        storeChunkReferences(responseChunks.chunks, interactionNodeId, 'response_chunk', conversation.name, i + 1)
+      ]);
+      
+      runtime.log(`[Claude] Chunk storage results for interaction ${i + 1}: promptStore=${!!promptStore}, responseStore=${!!responseStore}`);
+      
+      if (promptStore === false || responseStore === false) {
+        throw new Error(`Failed to store chunk references for interaction ${i + 1} in conversation ${conversation.name} - promptStore: ${promptStore}, responseStore: ${responseStore}`);
+      }
+      
+      processedInteractions++;
+      runtime.log(`[Claude] ✅ Successfully processed interaction ${i + 1}/${interactions.length} in conversation "${conversation.name}"`);
+      
+    } catch (error) {
+      runtime.logError(`[Claude] ❌ Error processing interaction ${i + 1} in conversation "${conversation.name}":`, error);
+      throw new Error(`Failed to process interaction ${i + 1} in conversation ${conversation.name}: ${error.message}`);
     }
-    const interactionNodeId = await runtime.call('graph-db.addInferenceNode', {
-      userPrompt: interaction.userPrompt,
-      assembledPrompt: interaction.userPrompt,
-      response: interaction.aiResponse,
-      model: 'claude-conversation-export',
-      context: { conversationId: conversation.uuid, conversationName: conversation.name, timestamp: interaction.timestamp, messageIds: { human: interaction.humanMessageId, assistant: interaction.assistantMessageId } }
-    });
-    if (!interactionNodeId) throw new Error(`Failed to create interaction node for conversation ${conversation.name}`);
-    const [promptChunks, responseChunks] = await Promise.all([
-      runtime.call('chunking.chunkText', { text: interaction.userPrompt, minTokens: 30, maxTokens: 200 }),
-      runtime.call('chunking.chunkText', { text: interaction.aiResponse, minTokens: 100, maxTokens: 500 })
-    ]);
-    if (!promptChunks || !responseChunks) throw new Error(`Failed to chunk interaction in conversation ${conversation.name}`);
-    const [promptStore, responseStore] = await Promise.all([
-      storeChunkReferences(promptChunks.chunks, interactionNodeId, 'prompt_chunk'),
-      storeChunkReferences(responseChunks.chunks, interactionNodeId, 'response_chunk')
-    ]);
-    if (!promptStore || !responseStore) throw new Error(`Failed to store chunk references in conversation ${conversation.name}`);
-    processedInteractions++;
   }
   
+  runtime.log(`[Claude] Completed conversation "${conversation.name}": ${processedInteractions} processed, ${skippedInteractions} skipped`);
   return { interactions: processedInteractions, skipped: skippedInteractions };
 };
 
-const storeChunkReferences = async (chunks, parentInteractionId, chunkType) => 
-  chunks.length > 0 && await runtime.call('graph-db.updateNode', {
-    nodeId: parentInteractionId,
-    updateData: { [`${chunkType}s`]: chunks.map(c => ({ text: c.text, tokenCount: c.tokenCount, chunkIndex: c.chunkIndex, startPos: c.startPos, endPos: c.endPos })) }
-  });
+const storeChunkReferences = async (chunks, parentInteractionId, chunkType, conversationName, interactionIndex) => {
+  runtime.log(`[Claude] storeChunkReferences called with ${chunks?.length || 0} chunks, nodeId: ${parentInteractionId}, type: ${chunkType}`);
+  
+  if (!chunks || chunks.length === 0) {
+    runtime.log(`[Claude] No chunks to store for ${chunkType} in conversation "${conversationName}" interaction ${interactionIndex}`);
+    return true; // No chunks to store is not an error
+  }
+  
+  if (!parentInteractionId) {
+    throw new Error(`Invalid parentInteractionId: ${parentInteractionId} for ${chunkType} in conversation "${conversationName}" interaction ${interactionIndex}`);
+  }
+  
+  try {
+    const chunkData = chunks.map(c => {
+      if (!c) {
+        runtime.logError(`[Claude] Null/undefined chunk found in ${chunkType} for conversation "${conversationName}" interaction ${interactionIndex}`);
+        return null;
+      }
+      
+      return {
+        text: c.text || '',
+        tokenCount: c.tokenCount || 0,
+        chunkIndex: c.chunkIndex || 0,
+        startPos: c.startPos || 0,
+        endPos: c.endPos || 0
+      };
+    }).filter(Boolean); // Remove any null chunks
+    
+    runtime.log(`[Claude] Updating node ${parentInteractionId} with ${chunkData.length} ${chunkType}s`);
+    
+    const result = await runtime.call('graph-db.updateNode', {
+      nodeId: parentInteractionId,
+      updateData: { [`${chunkType}s`]: chunkData }
+    });
+    
+    runtime.log(`[Claude] Successfully updated node ${parentInteractionId} with ${chunkType}s`);
+    return result;
+    
+  } catch (error) {
+    runtime.logError(`[Claude] Error storing ${chunkType} references for node ${parentInteractionId} in conversation "${conversationName}" interaction ${interactionIndex}:`, error);
+    throw error;
+  }
+};
 
 const extractMessagePairs = (chatMessages) => {
+  runtime.log(`[Claude] Extracting message pairs from ${chatMessages?.length || 0} chat messages`);
+  
+  if (!chatMessages || !Array.isArray(chatMessages)) {
+    runtime.logError(`[Claude] Invalid chatMessages:`, chatMessages);
+    return [];
+  }
+  
   const interactions = [];
   let currentHuman = null;
+  let unpairedHuman = 0;
+  let unpairedAssistant = 0;
   
-  for (const message of chatMessages) {
+  for (let i = 0; i < chatMessages.length; i++) {
+    const message = chatMessages[i];
+    
+    if (!message) {
+      runtime.logError(`[Claude] Null/undefined message at index ${i}`);
+      continue;
+    }
+    
     if (message.sender === 'human') {
-      currentHuman = { userPrompt: message.text, humanMessageId: message.uuid, timestamp: message.created_at };
+      if (currentHuman) {
+        runtime.log(`[Claude] Found unpaired human message, replacing with new one at index ${i}`);
+        unpairedHuman++;
+      }
+      
+      currentHuman = { 
+        userPrompt: message.text || '',
+        humanMessageId: message.uuid,
+        timestamp: message.created_at 
+      };
     } else if (message.sender === 'assistant' && currentHuman) {
-      interactions.push({ ...currentHuman, aiResponse: message.text, assistantMessageId: message.uuid, timestamp: message.created_at });
+      interactions.push({ 
+        ...currentHuman, 
+        aiResponse: message.text || '',
+        assistantMessageId: message.uuid,
+        timestamp: message.created_at 
+      });
       currentHuman = null;
+    } else if (message.sender === 'assistant') {
+      runtime.log(`[Claude] Found unpaired assistant message at index ${i}`);
+      unpairedAssistant++;
     }
   }
+  
+  if (currentHuman) {
+    unpairedHuman++;
+  }
+  
+  runtime.log(`[Claude] Message pair extraction complete: ${interactions.length} pairs, ${unpairedHuman} unpaired human, ${unpairedAssistant} unpaired assistant`);
   
   return interactions;
 };

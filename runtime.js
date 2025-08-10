@@ -237,7 +237,7 @@ class Runtime {
     getActions = () => new Map(this.actions);
     getModulesWithProperty = (prop) => modules.filter(module => prop in module || prop in module.manifest);
 
-    log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
+    log = (message, data) => {}//console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
 }
 
