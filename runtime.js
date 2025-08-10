@@ -24,7 +24,6 @@ class Runtime {
 
     loadModulesForContext = async () => {
         this.modules = modules.filter(module => module.manifest.context && (module.manifest.context === this.runtimeName || module.manifest.context.includes(this.runtimeName)));
-        this.log(`Loading modules:`, this.modules.map(m => JSON.stringify(m.manifest)));
     }
 
     getModuleActions = (module) => module.manifest.actions?.filter(action => this.exportedActions(module).includes(action)) || [];
@@ -45,7 +44,6 @@ class Runtime {
                 this.logError(` Failed to register [${module.manifest.name}] actions:`, { error: error.message });
             }
         });
-        this.log(`[Runtime] Registered actions in ${this.runtimeName}:`, Array.from(this.actions.keys()));
     }
 
     setupMessageListener = () => {
@@ -182,9 +180,10 @@ class Runtime {
         // Check if this action is in the same context
         if (this.modules.find(m => m.manifest.name === moduleName)) {
             // Direct call for same context
+            // this.log(`[Runtime] Calling action ${actionName} directly in ${this.runtimeName}`);
             return this.executeAction(actionName, params);
         }
-        
+        // this.log(`[Runtime] Calling action ${actionName} indirectly in ${this.runtimeName}`);
         // Send the message
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(

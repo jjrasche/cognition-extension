@@ -8,7 +8,7 @@ export const manifest = {
 };
 const KEY_PREFIX = 'apikey_';
 let runtime;
-export const initialize = async (rt) => (runtime = rt)//, verifyModuleKeys());
+export const initialize = async (rt) => (runtime = rt, verifyModuleKeys());
 
 export const verifyModuleKeys = async () => {
   runtime.getModulesWithProperty('apiKeys').forEach(module => {
@@ -33,17 +33,19 @@ export const setKey = async (params) => {
     await chrome.storage.sync.set({ [getKeyId(service)]: keyData });
 };
 export const getKey = async (params) => {
-    const { service, keyOnly = true }= params, keyID = getKeyId(service);
-    let ret = await chrome.storage.sync.get(keyID)
-    if (!ret && !ret[keyID]) {
-        ret = ret[keyID];
-        return keyOnly ? ret.key : ret;
+    const { service, keyOnly = true } = params;
+    const keyID = getKeyId(service);
+    const ret = await chrome.storage.sync.get(keyID);
+    if (ret && ret[keyID]) {
+        return keyOnly ? ret[keyID].key : ret[keyID];
     }
+    return null;
 };
 export const hasKey = async (params) => {
-    const key = await chrome.storage.sync.get([getKeyId(params.service)])[getKeyId(params.service)];
-    return !!key;
-}
+    const keyID = getKeyId(params.service);
+    const result = await chrome.storage.sync.get([keyID]);
+    return !!result[keyID];
+};
 export const listKeys = async () => Object.keys(await chrome.storage.sync.get(null)).filter(key => key.startsWith(KEY_PREFIX));
 export const clearKeys = async () => await chrome.storage.sync.remove(await listKeys());
 const getKeyId = (service) => `${KEY_PREFIX}${service}`;

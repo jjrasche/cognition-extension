@@ -43,8 +43,6 @@ const addModuleActionsToConsole = () => {
         .catch(err => (runtime.logError(`[Dev] ${camelModuleName}.${actionName} ✗`, err), Promise.reject(err)));
     };
   }
-  
-  runtime.log('[Dev] Created action shortcuts:', Array.from(runtime.getActions().keys()));
 };
 
 const addEasyAccessVariablesToConsole = () => {

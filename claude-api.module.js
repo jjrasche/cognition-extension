@@ -4,9 +4,9 @@ export let manifest = {
   context: "service-worker",
   version: "1.0.0",
   permissions: ["storage"],
-  dependencies: ["api-keys"],
+  dependencies: ["api-keys", "graph-db", "chunking", "embedding"],
   apiKeys: ["claude"],
-  actions: ["setApiKey", "viewModels", "makeRequest", "searchExportedConversations"],
+  actions: ["setApiKey", "viewModels", "makeRequest", "searchExportedConversations", "processConversationsToGraph"], // Added new action
   defaultModel: "claude-3-5-sonnet-20241022"
 };
 
@@ -164,139 +164,145 @@ manifest.models = [
 
 
 
-
-
+const getConversations = async () => await (await fetch(chrome.runtime.getURL('data/conversations.json'))).json();
 export const searchExportedConversations = async (params) => {
   const { query, caseSensitive = false, operator = "OR" } = params;
-  
-  if (!query) {
-    runtime.log('[Dev] Search query required');
-    return { success: false, error: 'Search query required' };
-  }
+  if (!query) return { success: false, error: 'Search query required' };
   
   try {
-    // Parse query for exact phrases and individual terms
     const { phrases, terms } = parseSearchQuery(query);
+    const conversations = await getConversations();
+    const matches = conversations.filter(conv => matchesConversation(conv, phrases, terms, caseSensitive, operator));
     
-    // Load conversations
-    const response = await fetch(chrome.runtime.getURL('data/conversations.json'));
-    const conversations = await response.json();
-    
-    // Search for matching conversations
-    const matches = conversations.filter(conv => {
-      return matchesConversation(conv, phrases, terms, caseSensitive, operator);
-    });
-    
-    // Display results (keep existing format)
     if (matches.length === 0) {
       console.log(`No conversations found matching "${query}" (${operator})`);
       return { success: true, count: 0 };
     }
     
     console.log(`Found ${matches.length} conversations matching "${query}" (${operator}):`);
+    matches.forEach((conv, i) => logConversation(conv, i, phrases, terms, caseSensitive, operator));
     
-    // Same display logic as before...
-    matches.forEach((conv, index) => {
-      const created = new Date(conv.created_at).toLocaleString();
-      const humanMsgs = conv.chat_messages?.filter(m => m.sender === 'human').length || 0;
-      const aiMsgs = conv.chat_messages?.filter(m => m.sender === 'assistant').length || 0;
-      
-      console.group(`${index + 1}. ${conv.name} (${created})`);
-      console.log(`ID: https://claude.ai/chat/${conv.uuid}`);
-      console.log(`Messages: ${conv.chat_messages?.length || 0} (${humanMsgs} human, ${aiMsgs} AI)`);
-      
-      // Show matching messages
-      const matchingMsgs = findMatchingMessages(conv, phrases, terms, caseSensitive, operator);
-      if (matchingMsgs.length > 0) {
-        console.log(`Matching messages: ${matchingMsgs.length}`);
-        const msg = matchingMsgs[0];
-        const preview = msg.text.length > 150 ? 
-          msg.text.substring(0, 150) + '...' : 
-          msg.text;
-        console.log(`Preview (${msg.sender}): ${preview}`);
-      }
-      
-      console.groupEnd();
-    });
-    
-    return { 
-      success: true, 
-      count: matches.length, 
-      conversations: matches,
-      query: { original: query, phrases, terms, operator }
-    };
+    return { success: true, count: matches.length, conversations: matches, query: { original: query, phrases, terms, operator } };
   } catch (error) {
     console.error('[Dev] Error searching conversations:', error);
     return { success: false, error: error.message };
   }
 };
 
-// Helper function to parse search query
-function parseSearchQuery(query) {
-  const phrases = [];
-  const terms = [];
-  
-  // Extract quoted phrases first
-  const phraseMatches = query.match(/"([^"]*)"/g);
-  let remainingQuery = query;
-  
-  if (phraseMatches) {
-    phraseMatches.forEach(match => {
-      const phrase = match.slice(1, -1); // Remove quotes
-      if (phrase.trim()) {
-        phrases.push(phrase.trim());
-      }
-      remainingQuery = remainingQuery.replace(match, '');
-    });
-  }
-  
-  // Extract individual terms from remaining query
-  const individualTerms = remainingQuery.trim().split(/\s+/).filter(term => term.length > 0);
-  terms.push(...individualTerms);
-  
+const parseSearchQuery = (query) => {
+  const phrases = (query.match(/"([^"]*)"/g) || []).map(m => m.slice(1, -1).trim()).filter(Boolean);
+  const terms = query.replace(/"[^"]*"/g, '').trim().split(/\s+/).filter(Boolean);
   return { phrases, terms };
-}
+};
 
-// Helper function to check if conversation matches
-function matchesConversation(conv, phrases, terms, caseSensitive, operator) {
-  // Collect all searchable text
-  const searchTexts = [
-    conv.name || '',
-    ...(conv.chat_messages || []).map(msg => msg.text || '')
-  ];
-  
-  const allText = searchTexts.join(' ');
-  const searchIn = caseSensitive ? allText : allText.toLowerCase();
-  
-  // Prepare search terms
-  const searchPhrases = caseSensitive ? phrases : phrases.map(p => p.toLowerCase());
-  const searchTerms = caseSensitive ? terms : terms.map(t => t.toLowerCase());
-  
-  // Combine all search items
-  const allSearchItems = [...searchPhrases, ...searchTerms];
-  
-  if (allSearchItems.length === 0) return false;
-  
-  if (operator === "AND") {
-    return allSearchItems.every(item => searchIn.includes(item));
-  } else {
-    return allSearchItems.some(item => searchIn.includes(item));
-  }
-}
+const matchesConversation = (conv, phrases, terms, caseSensitive, operator) => {
+  const searchText = [conv.name || '', ...(conv.chat_messages || []).map(m => m.text || '')].join(' ');
+  const text = caseSensitive ? searchText : searchText.toLowerCase();
+  const items = [...(caseSensitive ? phrases : phrases.map(p => p.toLowerCase())), ...(caseSensitive ? terms : terms.map(t => t.toLowerCase()))];
+  return items.length > 0 && (operator === "AND" ? items.every(item => text.includes(item)) : items.some(item => text.includes(item)));
+};
 
-// Helper function to find matching messages
-function findMatchingMessages(conv, phrases, terms, caseSensitive, operator) {
+const findMatchingMessages = (conv, phrases, terms, caseSensitive, operator) => {
+  const items = [...(caseSensitive ? phrases : phrases.map(p => p.toLowerCase())), ...(caseSensitive ? terms : terms.map(t => t.toLowerCase()))];
   return (conv.chat_messages || []).filter(msg => {
     const text = caseSensitive ? msg.text : msg.text?.toLowerCase();
-    const searchPhrases = caseSensitive ? phrases : phrases.map(p => p.toLowerCase());
-    const searchTerms = caseSensitive ? terms : terms.map(t => t.toLowerCase());
-    
-    const allSearchItems = [...searchPhrases, ...searchTerms];
-    
-    if (operator === "AND") {
-      return allSearchItems.every(item => text?.includes(item));
-    } else {
-      return allSearchItems.some(item => text?.includes(item));
-    }
+    return operator === "AND" ? items.every(item => text?.includes(item)) : items.some(item => text?.includes(item));
   });
-}
+};
+
+const logConversation = (conv, index, phrases, terms, caseSensitive, operator) => {
+  const created = new Date(conv.created_at).toLocaleString();
+  const [humanMsgs, aiMsgs] = [conv.chat_messages?.filter(m => m.sender === 'human').length || 0, conv.chat_messages?.filter(m => m.sender === 'assistant').length || 0];
+  
+  console.group(`${index + 1}. ${conv.name} (${created})`);
+  console.log(`ID: https://claude.ai/chat/${conv.uuid}`);
+  console.log(`Messages: ${conv.chat_messages?.length || 0} (${humanMsgs} human, ${aiMsgs} AI)`);
+  
+  const matchingMsgs = findMatchingMessages(conv, phrases, terms, caseSensitive, operator);
+  if (matchingMsgs.length > 0) {
+    console.log(`Matching messages: ${matchingMsgs.length}`);
+    const preview = matchingMsgs[0].text.length > 150 ? matchingMsgs[0].text.substring(0, 150) + '...' : matchingMsgs[0].text;
+    console.log(`Preview (${matchingMsgs[0].sender}): ${preview}`);
+  }
+  console.groupEnd();
+};
+
+export const processConversationsToGraph = async ({batchSize = 5, skipExisting = true }) => {
+  let [totalProcessed, totalInteractions, totalSkipped] = [0, 0, 0];
+  const conversations = await getConversations();
+  for (let i = 0; i < conversations.length; i += batchSize) {
+    const batch = conversations.slice(i, i + batchSize);
+    runtime.log(`[Claude] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(conversations.length/batchSize)} (${batch.length} conversations)`);
+    
+    const batchResults = await Promise.all(batch.map(conv => processConversation(conv, skipExisting)));
+    const { processed, interactions, skipped } = batchResults.reduce((acc, r) => ({ processed: acc.processed + 1, interactions: acc.interactions + r.interactions, skipped: acc.skipped + r.skipped }), { processed: 0, interactions: 0, skipped: 0 });
+    
+    [totalProcessed, totalInteractions, totalSkipped] = [totalProcessed + processed, totalInteractions + interactions, totalSkipped + skipped];
+    runtime.log(`[Claude] Batch complete: ${interactions} interactions, ${skipped} skipped`);
+    
+    if (i + batchSize < conversations.length) await new Promise(r => setTimeout(r, 100));
+  }
+  
+  runtime.log(`[Claude] Processing complete: ${totalProcessed} conversations, ${totalInteractions} interactions, ${totalSkipped} skipped`);
+  return { success: true, processedConversations: totalProcessed, totalInteractions, skipped: totalSkipped };
+};
+
+const processConversation = async (conversation, skipExisting) => {
+  const interactions = extractMessagePairs(conversation.chat_messages);
+  let [processedInteractions, skippedInteractions] = [0, 0];
+  
+  for (const interaction of interactions) {
+    if (skipExisting && await runtime.call('graph-db.findInteractionByIds', { humanMessageId: interaction.humanMessageId, assistantMessageId: interaction.assistantMessageId })) {
+      skippedInteractions++;
+      continue;
+    }
+    
+    try {
+      const interactionNodeId = await runtime.call('graph-db.addInferenceNode', {
+        userPrompt: interaction.userPrompt,
+        assembledPrompt: interaction.userPrompt,
+        response: interaction.aiResponse,
+        model: 'claude-conversation-export',
+        context: { conversationId: conversation.uuid, conversationName: conversation.name, timestamp: interaction.timestamp, messageIds: { human: interaction.humanMessageId, assistant: interaction.assistantMessageId } }
+      });
+      
+      const [promptChunks, responseChunks] = await Promise.all([
+        runtime.call('chunking.chunkText', { text: interaction.userPrompt, minTokens: 30, maxTokens: 200 }),
+        runtime.call('chunking.chunkText', { text: interaction.aiResponse, minTokens: 100, maxTokens: 500 })
+      ]);
+      
+      await Promise.all([
+        storeChunkReferences(promptChunks.chunks, interactionNodeId, 'prompt_chunk'),
+        storeChunkReferences(responseChunks.chunks, interactionNodeId, 'response_chunk')
+      ]);
+      
+      processedInteractions++;
+    } catch (error) {
+      runtime.logError(`[Claude] Failed to process interaction in ${conversation.name}:`, error);
+    }
+  }
+  
+  return { interactions: processedInteractions, skipped: skippedInteractions };
+};
+
+const storeChunkReferences = async (chunks, parentInteractionId, chunkType) => 
+  chunks.length > 0 && await runtime.call('graph-db.updateNode', {
+    nodeId: parentInteractionId,
+    updateData: { [`${chunkType}s`]: chunks.map(c => ({ text: c.text, tokenCount: c.tokenCount, chunkIndex: c.chunkIndex, startPos: c.startPos, endPos: c.endPos })) }
+  });
+
+const extractMessagePairs = (chatMessages) => {
+  const interactions = [];
+  let currentHuman = null;
+  
+  for (const message of chatMessages) {
+    if (message.sender === 'human') {
+      currentHuman = { userPrompt: message.text, humanMessageId: message.uuid, timestamp: message.created_at };
+    } else if (message.sender === 'assistant' && currentHuman) {
+      interactions.push({ ...currentHuman, aiResponse: message.text, assistantMessageId: message.uuid, timestamp: message.created_at });
+      currentHuman = null;
+    }
+  }
+  
+  return interactions;
+};

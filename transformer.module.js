@@ -33,6 +33,7 @@ const initializeEnvironment = async () => {
   env.useBrowserCache = false;
   env.allowLocalModels = true;
   env.localModelPath = chrome.runtime.getURL('models/');
+  env.backends.onnx.logLevel = 'fatal';
   
   // Configure WASM paths for JSEP (WebGPU/WebNN support)
   if (env.backends?.onnx?.wasm) {
