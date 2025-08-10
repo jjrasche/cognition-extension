@@ -10,7 +10,7 @@ export const manifest = {
     name: 'FileHandlers',
     version: 1,
     storeConfigs: [
-      { name: 'handles', options: { keyPath: 'id' } },
+      { name: 'handles', options: { keyPath: 'id', autoIncrement: true } },
       { name: 'operations', options: { autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] }
     ]
   }

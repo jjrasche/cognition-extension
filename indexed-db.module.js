@@ -4,7 +4,7 @@ export const manifest = {
     version: "1.0.0",
     description: "Generic IndexedDB operations extracted from graph-db",
     permissions: [],
-    actions: ["openDb", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId"],
+    actions: ["openDb", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId", "deleteDB"],
 };
 
 let runtime;
@@ -61,4 +61,23 @@ const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
         };
         cursorRequest.onerror = () => reject(cursorRequest.error);
     });
+};
+
+
+
+export const deleteDB = () => {
+  return new Promise((resolve, reject) => {
+    const deleteReq = indexedDB.deleteDatabase('CognitionGraph');
+    deleteReq.onsuccess = () => {
+      console.log('✅ CognitionGraph database deleted successfully');
+      resolve();
+    };
+    deleteReq.onerror = () => {
+      console.error('❌ Failed to delete database:', deleteReq.error);
+      reject(deleteReq.error);
+    };
+    deleteReq.onblocked = () => {
+      console.warn('⚠️ Database deletion blocked - close all tabs using this database');
+    };
+  });
 };

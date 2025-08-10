@@ -10,7 +10,7 @@ export const manifest = {
         name: 'CognitionGraph',
         version: 1,
         storeConfigs: [
-            { name: 'nodes', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
+            { name: 'nodes', options: { keyPath: 'id', autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
             { name: 'edges',  options: { keyPath: ['from', 'to', 'type'] }, indexes: [ { name: 'by-from', keyPath: 'from' }, { name: 'by-to', keyPath: 'to' } ] },
         ]
     },
@@ -19,27 +19,30 @@ const similiarityThreshold = 0.7;
 let runtime, db;
 export const initialize = async (rt) => (runtime = rt, db = await getDB());
 // handle db
-const getDB = async () => await runtime.call('indexed-db.openDb', manifest.indexeddb);
+const getDB = async () => await indexedDB('openDb', manifest.indexeddb);
+const indexedDB = async (method, params) => {
+    try {
+        return await runtime.call(`indexed-db.${method}`, { db, ...params });
+    } catch (error) {
+        console.error(`Error calling indexed-db.${method}:`, error);
+    }
+};
 // Main node operations
 export const addInferenceNode = async (params) => {
     const { userPrompt, assembledPrompt, response, model, context } = params;
-    const nodeId = await runtime.call('indexed-db.getNextId', { db, type: 'inference' });
-    const node = { id: nodeId, timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
-    await runtime.call('indexed-db.addRecord', { db, storeName: 'nodes', data: node });
-    await findAndCreateSimilarEdges(nodeId);
-    return nodeId;
+    const node = { timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
+    return await indexedDB('addRecord', { storeName: 'nodes', data: node });
 };
 export const addNode = async (params) => {
-    const { id, type = 'generic', ...nodeData } = params;
-    const nodeId = id || await runtime.call('indexed-db.getNextId', { db, type });
-    const node = { id: nodeId, type, timestamp: new Date().toISOString(), ...nodeData };  
-    await runtime.call('indexed-db.addRecord', { db, storeName: 'nodes', data: node });
-    return nodeId;
+    const { type = 'generic', ...nodeData } = params;
+
+    const node = { type, timestamp: new Date().toISOString(), ...nodeData };
+    await indexedDB('addRecord', { storeName: 'nodes', data: node });
 };
-export const getNode = async (params) => await runtime.call('indexed-db.getRecord', { db, storeName: 'nodes', key: params.nodeId });
-export const removeNode = async (params) => await runtime.call('indexed-db.removeRecord', { db, storeName: 'nodes', key: params.nodeId });
-export const getNodesByType = async (params) => (await runtime.call('indexed-db.getAllRecords', { db, storeName: 'nodes' })).filter(node => node.type === params.type);
-export const getRecentNodes = async (params) => await runtime.call('indexed-db.getByIndex', { db, storeName: 'nodes', indexName: 'by-timestamp', limit: params?.limit || 20, direction: 'prev' });
+export const getNode = async (params) => await indexedDB('getRecord', { storeName: 'nodes', key: params.nodeId });
+export const removeNode = async (params) => await indexedDB('removeRecord', { storeName: 'nodes', key: params.nodeId });
+export const getNodesByType = async (params) => (await indexedDB('getAllRecords', { storeName: 'nodes' })).filter(node => node.type === params.type);
+export const getRecentNodes = async (params) => await indexedDB('getByIndex', { storeName: 'nodes', indexName: 'by-timestamp', limit: params?.limit || 20, direction: 'prev' });
 // Search operations
 export const findSimilarNodes = async (params) => {
     const { nodeId, threshold = similiarityThreshold } = params;
@@ -65,18 +68,18 @@ export const getConnectedNodes = async (params) => {
     const edges = [];
     const nodeIds = new Set(); 
     if (direction === 'outgoing' || direction === 'both') {
-        (await runtime.call('indexed-db.getByIndex', { db, storeName: 'edges', indexName: 'by-from', value: nodeId }))
+        (await indexedDB('getByIndex', { storeName: 'edges', indexName: 'by-from', value: nodeId }))
             .forEach(edge => (edges.push(edge), nodeIds.add(edge.to)));
     }
     if (direction === 'incoming' || direction === 'both') {
-        (await runtime.call('indexed-db.getByIndex', { db, storeName: 'edges', indexName: 'by-to', value: nodeId }))
+        (await indexedDB('getByIndex', { storeName: 'edges', indexName: 'by-to', value: nodeId }))
             .forEach(edge => (edges.push(edge), nodeIds.add(edge.from)));
     }
     const nodes = await Promise.all([...nodeIds].map(id => getNode({ nodeId: id })));
     return nodes.filter(Boolean);
 };
 // Edge operations
-const createEdge = async (from, to, type, weights) => await runtime.call('indexed-db.addRecord', { db, storeName: 'edges', data: { from, to, type, weights } });
+const createEdge = async (from, to, type, weights) => await indexedDB('addRecord', { storeName: 'edges', data: { from, to, type, weights } });
 const findAndCreateSimilarEdges = async (nodeId) => {
     const node = await getNode({ nodeId });
     if (!node.embedding) return;
@@ -90,7 +93,7 @@ const findAndCreateSimilarEdges = async (nodeId) => {
     }
 };
 // Utility functions
-const getAllNodesWithEmbeddings = async () => await runtime.call('indexed-db.getAllRecords', { db, storeName: 'nodes' }).filter(node => node.embedding);
+const getAllNodesWithEmbeddings = async () => (await indexedDB('getAllRecords', { storeName: 'nodes' })).filter(node => node.embedding);
 const cosineSimilarity = (a, b) => {
     const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
     const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
@@ -100,10 +103,10 @@ const cosineSimilarity = (a, b) => {
 
 export const findInteractionByIds = async (params) => {
   const { humanMessageId, assistantMessageId } = params;
-  const allNodes = await runtime.call('indexed-db.getAllRecords', { db, storeName: 'nodes' });
-  
-  return allNodes.find(node => 
-    node.context?.messageIds?.human === humanMessageId && 
+  const allNodes = await indexedDB('getAllRecords', { storeName: 'nodes' });
+
+  return allNodes.find(node =>
+    node.context?.messageIds?.human === humanMessageId &&
     node.context?.messageIds?.assistant === assistantMessageId
   );
 };
@@ -114,6 +117,6 @@ export const updateNode = async (params) => {
   if (!existingNode) throw new Error(`Node ${nodeId} not found`);
   
   const updatedNode = { ...existingNode, ...updateData };
-  await runtime.call('indexed-db.updateRecord', { db, storeName: 'nodes', data: updatedNode });
+  await indexedDB('updateRecord', { storeName: 'nodes', data: updatedNode });
   return updatedNode;
 };
