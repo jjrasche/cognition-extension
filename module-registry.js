@@ -1,7 +1,7 @@
 import './helpers.js';
 // import * as fitbitModule from './fitbit.module.js';
 import * as uiModule from './ui.module.js';
-// import * as transcriptModule from './transcript.module.js';
+import * as transcriptModule from './transcript.module.js';
 // import * as textInputModule from './text-input.module.js';
 // import * as emailModule from './outlook-email.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
@@ -49,7 +49,8 @@ export const modules = [
     apiKeysModule,
     webSearchModule,
     webExtractorModule,
-    chromeSyncModule
+    chromeSyncModule,
+    transcriptModule,
 ];
 
 export const coreFiles = [
