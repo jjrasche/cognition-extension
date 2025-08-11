@@ -3,38 +3,52 @@ export const manifest = {
   context: "service-worker",
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
+  dependencies: ["chrome-sync", "graph-db"],
   permissions: ["storage"],
-  actions: ["prompt", "setProvider"],
-  state: {
-    reads: [],
-    writes: ["inference.current", "inference.stream.content"]
-  }
+  actions: ["prompt"],
 };
+let runtime, model, provider, providers = [];
+export const initialize = async (rt) => {
+  runtime = rt;
+  await registerProviders(runtime);
+  provider = await getProvider();
+  model = await getModel();
+}
 
-const providers = []; // all inference providers
-const getCurrent = async () => await _state.read("inference.current") || {};
-
-let _state;
-export const initialize = (state) => _state = state;
-
-export const register = (module) => {
+const registerProviders = async (runtime) => runtime.getModulesWithProperty('inferenceModels').forEach(async provider => {
+  verifyImplementationFunctions(provider);
+  await verifyModels(provider);
   providers.push(module);
-  _state.actions.execute("inference-model-validation.validateModels", { models: module.manifest.models || [] });
-};
+});
+const verifyImplementationFunctions = (provider) => ["formatInteractions", "makeRequest"].forEach(fn => {
+  if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);  
+});
+const verifyModels = (provider) => runtime.call("inference-model-validation.validateModels", { models: provider.manifest.inferenceModels || [] });
+const getProviderName = async () => !(await runtime.call('chrome-sync.get', { key: "inference.provider" })) || await promptForProviderAndModel()
+const getModelName = async () => !(await runtime.call('chrome-sync.get', { key: "inference.model" })) || await promptForProviderAndModel();
+const getProvider = async () => await providers.find(async p => p.manifest.name === await getProviderName()) || (async () => { throw new Error(`Provider ${await getProviderName()} not found`); })();
+const getModel = async () => await provider.manifest.inferenceModels?.find(async m => m.id === await getModelName()) || (async () => { throw new Error(`Model ${await getModelName()} not found for provider ${provider.manifest.name}`); })();
+const changeModelAndProvider = async ({ providerName, modelName }) => {
+  await runtime.call('chrome-sync.set', { key: "inference.provider", value: providerName });
+  await runtime.call('chrome-sync.set', { key: "inference.model", value: modelName });
+}
+const promptForProviderAndModel = async (service) => {
+  // todo: get all the providers and models as select options
+  await runtime.call("ui.showSelect", { 
+    message: `Enter model for ${service}:`,
+    action: "inference.changeModelAndProvider", valueName: "model", actionParams: { service }
+  });
+}
 // handle prompt
 export async function prompt(params) {
-  const { userPrompt } = params;
-  const { providerName, modelName } = await getCurrent();
-  const provider = await getProvider(providerName);
-  const assembledPrompt = await _state.actions.execute("context.assemble", { userPrompt });
-  try {
-    let content = "";
-    const processChunk = async (chunk) => await updateStreamContent((content += chunk))
-    const response = await provider.makeRequest(assembledPrompt, modelName, processChunk);
-    storeInteractionInGraph({ userPrompt, assembledPrompt, response });
-    return response
-  } catch (error) { return { success: false, error: error.message } };
+  const assembledPrompt = await runtime.call("context.assemble", params);
+  let content = "";
+  const processChunk = async (chunk) => await updateStreamContent((content += chunk))
+  const response = await provider.makeRequest(assembledPrompt, model, processChunk);
+  storeInteractionInGraph({ assembledPrompt, response, ...params });
+  return response
 }
+// tooo: first instance of updating the inference content section of ui
 const updateStreamContent = async (content) => await _state.write("inference.content", content);
 // update state
 export const showModelSelector = async () => await _state.actions.execute("ui.pushForm", await createModelSelectorForm());
@@ -47,8 +61,8 @@ export const setProviderAndModel = async (params) => {
   await _state.actions.execute("ui.notify", { message: `Switched to ${validModel.name} (${providerName})`, type: "success" });
   return { success: true, providerName, modelName };
 };
-const getProvider = (providerName) => providers.find(p => p.manifest.name === providerName) || (() => { throw new Error(`Provider ${providerName} not found`); })();
-const getModel = (providerModule, modelName) => providerModule.manifest.models?.find(m => m.id === modelName) || (() => { throw new Error(`Model ${modelName} not found for provider ${providerModule.manifest.name}`); })();
+// const getProvider = (providerName) => providers.find(p => p.manifest.name === providerName) || (() => { throw new Error(`Provider ${providerName} not found`); })();
+// const getModel = (providerModule, modelName) => providerModule.manifest.models?.find(m => m.id === modelName) || (() => { throw new Error(`Model ${modelName} not found for provider ${providerModule.manifest.name}`); })();
 const createModelSelectorForm = async () => {
   const current = await getCurrent();
   const modelOptions = Object.fromEntries(providers.map(p => [p.manifest.name, (p.manifest.models || []).map(m => ({ value: m.id, text: m.name }))]));

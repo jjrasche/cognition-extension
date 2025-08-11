@@ -180,10 +180,10 @@ class Runtime {
         // Check if this action is in the same context
         if (this.modules.find(m => m.manifest.name === moduleName)) {
             // Direct call for same context
-            // this.log(`[Runtime] Calling action ${actionName} directly in ${this.runtimeName}`);
+            this.log(`[Runtime] Calling action ${actionName} directly in ${this.runtimeName}`);
             return this.executeAction(actionName, params);
         }
-        // this.log(`[Runtime] Calling action ${actionName} indirectly in ${this.runtimeName}`);
+        this.log(`[Runtime] Calling action ${actionName} indirectly in ${this.runtimeName}`);
         // Send the message
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
@@ -237,7 +237,7 @@ class Runtime {
     getActions = () => new Map(this.actions);
     getModulesWithProperty = (prop) => modules.filter(module => prop in module || prop in module.manifest);
 
-    log = (message, data) => {}//console.log(`[${this.runtimeName}] ${message}`, data || '');
+    log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
 }
 
