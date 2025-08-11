@@ -6,7 +6,7 @@ export const manifest = {
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
-  actions: ["testEmbeddingSpeed", "updateSuperintendentData", "runModuleTests"],
+  actions: ["testEmbeddingSpeed", "updateSuperintendentData", "runModuleTests", "showFileTestButton", "runFileTests"],
   dependencies: ["file", "inference", "transformer", "embedding"]
 };
 
@@ -256,6 +256,25 @@ const parseSuperintendentResponse = (responseText) => {
       sourceUrl: "", lastUpdated: new Date().toISOString().split('T')[0]
     };
   }
+};
+
+
+export const showFileTestButton = async () => {
+  await runtime.call('ui.renderForm', {
+    title: "File Module Tests",
+    tree: {
+      "test-btn": { 
+        tag: "button", 
+        text: "Run File Tests",
+        data: { action: "dev.runFileTests" }
+      }
+    },
+    onSubmit: "dev.runFileTests"
+  });
+};
+
+export const runFileTests = async () => {
+  return await runModuleTests({ moduleName: "file" });
 };
 
 export const runModuleTests = async ({ moduleName }) => {

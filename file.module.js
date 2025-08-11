@@ -73,20 +73,20 @@ export const deleteHandle = async (key) => await runtime.call('indexed-db.remove
 // tests
 
 export const testFileWrite = async () => {
-  const params = { dir: 'downloads', filename: 'test-write.txt', data: 'Test Write' };
+  const params = { dir: 'Documents', filename: 'test-write.txt', data: 'Test Write' };
   const expect = async () => (await read({ dir: params.dir, filename: params.filename })) === params.data;
   return [await runTest(write, { ...params, expect })];
 };
 
 export const testFileRead = async () => {
-  const params = { dir: 'downloads', filename: 'test-read.txt' };
+  const params = { dir: 'Documents', filename: 'test-read.txt' };
   await write({ ...params, data: 'Test Read' });
   const expect = async (result) => result === 'Test Read';
   return [await runTest(read, { ...params, expect })];
 };
 
 export const testFileAppend = async () => {
-  const params = { dir: 'downloads', filename: 'test-append.txt' };
+  const params = { dir: 'Documents', filename: 'test-append.txt' };
   await write({ ...params, data: 'Initial' });
   const expect = async () => (await read(params)) === 'Initial Appended';
   return [await runTest(write, { ...params, data: ' Appended', append: true, expect })];
