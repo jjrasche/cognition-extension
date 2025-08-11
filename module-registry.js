@@ -18,7 +18,7 @@ import * as embeddingModule from './embedding.module.js';
 // import * as oauthModule from './oauth.module.js';
 import * as transformerModule from './transformer.module.js';
 import * as chunkingModule from './chunking.module.js';
-// import * as fileModule from './file.module.js';
+import * as fileModule from './file.module.js';
 import * as indexedDbModule from './indexed-db.module.js';
 import * as apiKeysModule from './api-keys.module.js';
 import * as webSearchModule from './web-search.module.js';
@@ -45,7 +45,7 @@ export const modules = [
     inferenceModule,
     developmentModule,
     chunkingModule,
-    // fileModule,
+    fileModule,
     apiKeysModule,
     webSearchModule,
     webExtractorModule,

@@ -87,25 +87,18 @@ class Runtime {
         const maxAttempts = 20;
         
         for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
-            if (attempt > 0) {
-                this.log(`Retry attempt ${attempt}, pending modules:`, pending.map(m => m.manifest.name));
-                await new Promise(resolve => setTimeout(resolve, 5000));
-            }
-            
+            if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 5000));
             for (let i = pending.length - 1; i >= 0; i--) {
                 const module = pending[i];
-                
                 if (this.areDependenciesReady(module)) {
                     try {
                         this.log(`Initializing ${module.manifest.name}...`);
-                        
                         if (typeof module.initialize !== 'function') {
                             console.warn(`[${this.runtimeName}] Module ${module.manifest.name} has no initialize function`);
                             this.broadcastModuleReady(module.manifest.name);
                             pending.splice(i, 1);
                             continue;
                         }
-
                         await module.initialize(this);
                         this.log(`✅ ${module.manifest.name} initialized successfully`);
                         this.broadcastModuleReady(module.manifest.name);

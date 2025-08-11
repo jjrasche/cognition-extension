@@ -161,9 +161,10 @@ const registerProviders = async () => {
   runtime.log(`[Inference] Registered ${providers.length} providers`);
 };
 
-// Main inference function (simplified for example)
+
+
 export const prompt = async (params) => {
-  const { userPrompt } = params;
+  const { userPrompt, webSearch } = params;
   
   const current = await getCurrentSelection();
   if (!current.provider || !current.model) {
@@ -173,15 +174,14 @@ export const prompt = async (params) => {
   const provider = providers.find(p => p.manifest.name === current.provider);
   const model = provider.manifest.inferenceModels.find(m => m.id === current.model);
   
-  // Assemble context and make request
   const assembledPrompt = await runtime.call("context.assemble", params);
   const response = await provider.makeRequest({
     model: current.model,
     messages: assembledPrompt,
-    onChunk: (chunk) => runtime.log('[Inference] Chunk:', chunk)
+    onChunk: (chunk) => runtime.log('[Inference] Chunk:', chunk),
+    webSearch
   });
   
-  // Store in graph database
   await runtime.call('graph-db.addInferenceNode', {
     userPrompt,
     assembledPrompt: JSON.stringify(assembledPrompt),

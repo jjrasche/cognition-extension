@@ -1,6 +1,6 @@
 export const manifest = {
     name: "indexed-db",
-    context: ["service-worker", "offscreen"],
+    context: ["service-worker", "extension-page", "offscreen"],
     version: "1.0.0",
     description: "Generic IndexedDB operations extracted from graph-db",
     permissions: [],

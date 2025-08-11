@@ -6,8 +6,8 @@ export const manifest = {
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
-  actions: ["testEmbeddingSpeed"],
-  dependencies: []
+  actions: ["testEmbeddingSpeed", "updateSuperintendentData", "runModuleTests"],
+  dependencies: ["file", "inference", "transformer", "embedding"]
 };
 
 let runtime;
@@ -115,3 +115,153 @@ export const testEmbeddingSpeed = async (text, runs = 10) => {
   console.table(sorted);
   return sorted;
 }
+
+
+
+
+
+export const updateSuperintendentData = async (params = {}) => {
+  const { startIndex = 0, maxProcessed = 1 } = params;
+  const districtFile = 'school-district-data.json';
+  
+  try {
+    // Read existing file
+    const fileContent = await runtime.call('file.read', { dir: 'data', filename: districtFile });
+
+    if (!fileContent) throw new Error(`❌ Could not read ${districtFile} file`);
+    const districts = JSON.parse(fileContent);
+    runtime.log(`📁 Loaded ${districts.length} districts from file`);
+
+    let updated = 0, skipped = 0, errors = 0, processed = 0;
+    districts.slice(startIndex, startIndex + maxProcessed)
+    .map(async (district, i) => {
+      processed++;
+      // Skip if already has sonnet35 data
+      if (district.superIntendent?.sonnet35?.firstName) { skipped++; return; }
+      
+      runtime.log(`🔍 Processing ${district.district} (${i + 1}/${districts.length})`);
+      
+      try {
+        const response = await runtime.call('inference.prompt', {
+          userPrompt: buildSuperintendentPrompt(district),
+          webSearch: { params: { max_uses: 2, allowedDomains: [district.website] } }
+        });
+        
+        // Parse response
+        const extractedData = parseSuperintendentResponse(response.content);
+        
+        // Update district data
+        if (!district.superIntendent) {
+          district.superIntendent = { crm: district.superIntendent?.crm || {} };
+        }
+        
+        district.superIntendent.sonnet35 = extractedData;
+        
+        // Show result
+        if (extractedData.firstName && extractedData.lastName) {
+          runtime.log(`✅ Found: ${extractedData.firstName} ${extractedData.lastName} for ${district.district}`);
+          runtime.log(`📍 Source: ${extractedData.sourceUrl || 'No URL provided'}`);
+          updated++;
+        } else {
+          runtime.log(`⚠️  No superintendent found for ${district.district}`);
+        }
+        
+        // Small delay to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Save updated file
+        await runtime.call('file.write', {
+          dir: 'data',
+          filename: 'districts.json',
+          data: JSON.stringify(districts, null, 2)
+        });
+        
+      } catch (error) {
+        runtime.logError(`❌ Error processing ${district.district}:`, error.message);
+        errors++;
+        
+        // Still update with empty data to mark as processed
+        if (!district.superIntendent) {
+          district.superIntendent = { crm: district.superIntendent?.crm || {} };
+        }
+        district.superIntendent.sonnet35 = {
+          firstName: "", lastName: "", email: "", phone: "", 
+          sourceUrl: "", lastUpdated: new Date().toISOString().split('T')[0]
+        };
+      }
+    });
+    
+    // Summary
+    runtime.log(`\n📊 SUMMARY:`);
+    runtime.log(`✅ Updated: ${updated}`);
+    runtime.log(`⏭️  Skipped: ${skipped}`);
+    runtime.log(`❌ Errors: ${errors}`);
+    runtime.log(`📁 File saved successfully`);
+    
+    return { 
+      success: true, 
+      processed, 
+      updated, 
+      skipped, 
+      errors,
+      nextIndex: startIndex + processed 
+    };
+    
+  } catch (error) {
+    runtime.logError('❌ Fatal error:', error);
+    return { error: error.message };
+  }
+};
+
+const buildSuperintendentPrompt = (district) => `
+Find the current superintendent information for "${district.district}" school district.
+Website: ${district.website}
+
+Please search their website and find:
+- Superintendent's first name
+- Superintendent's last name  
+- Email address (if available)
+- Phone number (if available)
+
+CRITICAL: You must provide the exact URL of the webpage where you found this information.
+
+Return your response in this exact JSON format:
+{
+  "firstName": "John",
+  "lastName": "Smith", 
+  "email": "jsmith@district.edu",
+  "phone": "555-123-4567",
+  "sourceUrl": "https://district.edu/administration/superintendent",
+}
+
+If you cannot with great confidence find the information, return just the word null
+`;
+
+const parseSuperintendentResponse = (responseText) => {
+  try {
+    // Try to extract JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    // Fallback to empty data
+    return {
+      firstName: "", lastName: "", email: "", phone: "", 
+      sourceUrl: "", lastUpdated: new Date().toISOString().split('T')[0]
+    };
+  } catch (error) {
+    console.error('Failed to parse superintendent response:', error);
+    return {
+      firstName: "", lastName: "", email: "", phone: "", 
+      sourceUrl: "", lastUpdated: new Date().toISOString().split('T')[0]
+    };
+  }
+};
+
+export const runModuleTests = async ({ moduleName }) => {
+  const module = runtime.getModulesWithProperty("tests").find(m => m.manifest.name === moduleName);
+  const results = (await Promise.all(module.manifest.tests
+    .filter(testName => module[testName] || runtime.log(`⚠️  Test ${testName} not found in module ${moduleName}`))
+    .map(async testName => await module[testName]()))).flat();
+  return { module: moduleName, totalTests: results.length, passed: results.filter(r => r.passed).length, results };
+};
