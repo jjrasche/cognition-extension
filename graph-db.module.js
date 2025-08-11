@@ -29,8 +29,8 @@ const indexedDB = async (method, params) => {
 };
 // Main node operations
 export const addInferenceNode = async (params) => {
-    const { userPrompt, assembledPrompt, response, model, context } = params;
-    const node = { timestamp: new Date().toISOString(), userPrompt, assembledPrompt, response, model, context, embedding: null };
+    const { query, prompt, response, model, context } = params;
+    const node = { query, prompt, response, model, context, timestamp: new Date().toISOString() };
     return await indexedDB('addRecord', { storeName: 'nodes', data: node });
 };
 export const addNode = async (params) => {

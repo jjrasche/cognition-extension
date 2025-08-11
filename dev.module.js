@@ -7,7 +7,7 @@ export const manifest = {
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
   actions: ["testEmbeddingSpeed", "updateSuperintendentData", "runModuleTests", "showFileTestButton", "runFileTests"],
-  dependencies: ["file", "inference", "transformer", "embedding"]
+  dependencies: ["file"]//, "inference", "transformer", "embedding"]
 };
 
 let runtime;

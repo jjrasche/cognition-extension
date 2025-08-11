@@ -4,7 +4,7 @@ export const manifest = {
   version: "1.0.0",
   description: "Centralized API key management using Chrome's secure sync storage",
   permissions: [],
-  dependencies: ["chrome-sync"],
+  dependencies: ["chrome-sync", "ui"],
   actions: ["setKey", "getKey", "listKeys", "hasKey", "clearKeys"]
 };
 const KEY_PREFIX = 'apikey_';
@@ -13,10 +13,20 @@ export const initialize = async (rt) => (runtime = rt, verifyModuleKeys());
 
 export const verifyModuleKeys = async () => {
   runtime.getModulesWithProperty('apiKeys').forEach(module => {
-    // module.manifest.apiKeys.forEach(async key => !(await hasKey({ service: key })) && await promptForKey(key));
+    module.manifest.apiKeys.forEach(async key => !(await hasKey({ service: key })) && await promptForKey(key));
   });
 };
-const promptForKey = async (service) => await runtime.call("ui.showInput", { message: `Enter API key for ${service}:`, action: "api-keys.setKey", valueName: "key", actionParams: { service } });
+const promptForKey = async (service) => {
+  const tree = {
+    "api-key-form": {
+      tag: "form",
+      "service-label": { tag: "label", text: `Enter API key for ${service}:`, class: "form-label" },
+      "key-input": { tag: "input", name: "key", type: "password", placeholder: "Enter your API key...", required: true },
+      "submit-btn": { tag: "button", type: "submit", text: "Save API Key" }
+    }
+  };
+  return await runtime.call('ui.renderForm', { title: `${service.toUpperCase()} API Key`, tree, onSubmit: "api-keys.setKey", formData: { service } });
+};
 export const setKey = async (params) => {
   const { service, key, metadata = {} } = params;
   const keyData = { key, timestamp: new Date().toISOString(), ...metadata };
@@ -37,7 +47,7 @@ export const hasKey = async (params) => {
   const syncResult = await chromeSyncGet([keyID]);
   return !!(syncResult.success && syncResult.result[keyID]);
 };
-export const listKeys = async () => Object.keys((await chromeSyncGet(null) ?? []).result).filter(key => key.startsWith(KEY_PREFIX));
+export const listKeys = async () => Object.keys((await chromeSyncGet(null))?.result ?? {});
 export const clearKeys = async () => await chromeSyncRemove(await listKeys());
 
 const getKeyId = (service) => `${KEY_PREFIX}${service}`;

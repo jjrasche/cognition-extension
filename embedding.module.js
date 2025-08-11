@@ -16,21 +16,21 @@ export const manifest = {
   description: "use local embedding models to embed text",
   actions: ["embedText", "runEmbeddingTests", "setJinaApiKey", "runSpeedQualityComparison", "testAllModels"],
   externalDependencies: [
-    { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '759C3CD2B7FE7E93933AD23C4C9181B7396442A2ED746EC7C1D46192C469C46E' },
+    // { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '759C3CD2B7FE7E93933AD23C4C9181B7396442A2ED746EC7C1D46192C469C46E' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_fp16.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: '2CDB5E58291813B6D6E248ED69010100246821A367FA17B1B81AE9483744533D' },
-    { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_q4f16.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: 'EB08A666C46109637E0B6CB04F6052A68EFD59BB0252D4E0438D28FB6B2D853D' },
-    { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: 'AFDB6F1A0E45B715D0BB9B11772F032C399BABD23BFC31FED1C170AFC848BDB1' },
+    // { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_q4f16.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: 'EB08A666C46109637E0B6CB04F6052A68EFD59BB0252D4E0438D28FB6B2D853D' },
+    // { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-MiniLM-L6-v2/onnx/', sha256: 'AFDB6F1A0E45B715D0BB9B11772F032C399BABD23BFC31FED1C170AFC848BDB1' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json', destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: 'DA0E79933B9ED51798A3AE27893D3C5FA4A201126CEF75586296DF9B4D2C62A0' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: '9261E7D79B44C8195C1CADA2B453E55B00AEB81E907A6664974B4D7776172AB3' },
     { url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/config.json',  destination: 'models/Xenova/all-MiniLM-L6-v2/', sha256: '7135149F7CFFA1A573466C6E4D8423ED73B62FD2332C575BF738A0D033F70DF7' },
     
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: 'A488B290590D86DA3B81C502B242343CA8312E83CFC618B2CD1AE50C09D8F669' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_fp16.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '4158604FAD17A2C68244122D812A340BF64DA1A048CDA242DABAD5048864A93C' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_q4f16.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '78CF177870851C003763F6E39970F376D69D139DE45037B80CA065DB91524F1B' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '84D57EC981CFC6B46920247B8628610271F59A724D73124E051DA96D6E406293' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'D00DAD6F80B7EAB804479A58634A58A50966366627F847E47848BAC52873995D' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: '3EA32220C2E21AF4F0BE95E2A43BDC8AC693F8C35C2255127EF680689B469461' },
-    { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'A783505A4E839B61700AA61D249D381D00ADDFB9CF3221359E2D30A6DA6C6499' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: 'A488B290590D86DA3B81C502B242343CA8312E83CFC618B2CD1AE50C09D8F669' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_fp16.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '4158604FAD17A2C68244122D812A340BF64DA1A048CDA242DABAD5048864A93C' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_q4f16.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '78CF177870851C003763F6E39970F376D69D139DE45037B80CA065DB91524F1B' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_int8.onnx', destination: 'models/Xenova/all-mpnet-base-v2/onnx/', sha256: '84D57EC981CFC6B46920247B8628610271F59A724D73124E051DA96D6E406293' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'D00DAD6F80B7EAB804479A58634A58A50966366627F847E47848BAC52873995D' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/tokenizer_config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: '3EA32220C2E21AF4F0BE95E2A43BDC8AC693F8C35C2255127EF680689B469461' },
+    // { url: 'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/config.json', destination: 'models/Xenova/all-mpnet-base-v2/', sha256: 'A783505A4E839B61700AA61D249D381D00ADDFB9CF3221359E2D30A6DA6C6499' },
     
     // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/onnx/model_fp16.onnx', destination: 'models/jinaai/jina-embeddings-v3/onnx', sha256: '329C3EA03A1815CC98F6B97EFCAFB9000C6C780C2D89D40D4F541B9A88434C38' },
     // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/tokenizer.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: 'F59925FCB90C92B894CB93E51BB9B4A6105C5C249FE54CE1C704420AC39B81AF' },
@@ -38,23 +38,23 @@ export const manifest = {
     // { url: 'https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main/config.json', destination: 'models/jinaai/jina-embeddings-v3/', sha256: '556941599709401B3DC94ACF775526F1C4670ABE5E123CB53CCA8EB5250B0CB5' },
   ],
   localModels : [
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
     { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } },
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'q4f16', local_files_only: true } },
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
-    { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'q4f16', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
+    // { name: "Xenova/all-MiniLM-L6-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
     
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'q4f16', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
-    { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp32', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'fp32', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'q4f16', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'q4f16', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'webgpu', dtype: 'int8', local_files_only: true } },
+    // { name: "Xenova/all-mpnet-base-v2", options: { device: 'wasm', dtype: 'int8', local_files_only: true } },
     
     // { name: "jinaai/jina-embeddings-v3", options: { device: 'webgpu', dtype: 'fp16', local_files_only: true } },
     // { name: "jinaai/jina-embeddings-v3", options: { device: 'wasm', dtype: 'fp16', local_files_only: true } }, 
@@ -64,11 +64,15 @@ export const manifest = {
     'jina-embeddings-v3',
     'jina-embeddings-v2-base-en'
   ],
+  defaultModel: "Xenova/all-MiniLM-L6-v2",
   apiKeys: ["jina"],
 };
 
 let runtime;
-export const initialize = async (rt) => runtime = rt;
+export const initialize = async (rt) => {
+  runtime = rt;
+
+}
 
 export const getModelName = async (model) => await runtime.call('transformer.getModelName', model);
 const isValidAPIService = (service) => manifest.apiKeys.includes(service) || (() => { throw new Error(`Invalid API service: ${service}. Valid services are: ${manifest.apiKeys.join(', ')}`); })();

@@ -3,192 +3,90 @@ export const manifest = {
   context: "service-worker",
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
-  dependencies: ["chrome-sync", "graph-db", "ui"],
+  dependencies: ["chrome-sync", "graph-db", "embedding", "ui"],
   permissions: ["storage"],
-  actions: ["prompt", "showModelSelector", "updateModelForm", "setProviderAndModel"],
+  actions: ["prompt", "changeModelAndProvider"],
 };
-
-let runtime, providers = [];
-
+let runtime, model, provider, providers = [];
 export const initialize = async (rt) => {
   runtime = rt;
-  await registerProviders();
-};
-
-// Show the model selection form
-export const showModelSelector = async () => {
-  const current = await getCurrentSelection();
-  const providerOptions = providers.map(p => ({ 
-    value: p.manifest.name, 
-    text: p.manifest.name 
-  }));
-  
-  const tree = {
-    "form": { 
-      tag: "form",
-      data: { action: "inference.setProviderAndModel" },
-      "provider-label": { tag: "label", text: "Provider:", class: "form-label" },
-      "provider-select": { tag: "select", name: "provider", value: current.provider, options: providerOptions },
-      "model-label": { tag: "label",  text: "Model:", class: "form-label" },
-      "model-select": { tag: "select", name: "model", value: current.model, dependsOn: "provider-select", optionsByDependency: getModelsByProvider() },
-      "submit-btn": { tag: "button", parent: "form", type: "submit", text: "Select Model" }
-    }
-  };
-  
-  return await runtime.call('ui.renderForm', {
-    title: "Select Inference Provider & Model",
-    tree,
-    onSubmit: "inference.setProviderAndModel",
-    onFieldChange: "inference.updateModelForm",
-    formData: current
-  });
-};
-
-// Handle form updates when provider changes
-export const updateModelForm = async (params) => {
-  const { formData, changedField } = params;
-  
-  if (changedField === 'provider') {
-    // Get models for the newly selected provider
-    const modelOptions = getModelsForProvider(formData.provider);
-    
-    // Return updated tree definition for the model field
-    const updatedTree = {
-      "model-select": {
-        tag: "select",
-        parent: "form", 
-        name: "model",
-        dependsOn: "provider",
-        options: modelOptions,
-        value: "" // Reset model selection when provider changes
-      }
-    };
-    
-    return { success: true, tree: updatedTree };
-  }
-  
-  return { success: true };
-};
-
-// Handle final form submission
-export const setProviderAndModel = async (params) => {
-  const { provider, model } = params;
-  
-  if (!provider || !model) {
-    throw new Error("Both provider and model must be selected");
-  }
-  
-  // Validate the selection
-  const providerModule = providers.find(p => p.manifest.name === provider);
-  if (!providerModule) {
-    throw new Error(`Provider ${provider} not found`);
-  }
-  
-  const modelDef = providerModule.manifest.inferenceModels?.find(m => m.id === model);
-  if (!modelDef) {
-    throw new Error(`Model ${model} not found for provider ${provider}`);
-  }
-  
-  // Save the selection
-  await runtime.call('chrome-sync.set', { 
-    items: { 
-      'inference.provider': provider,
-      'inference.model': model 
-    }
-  });
-  
-  runtime.log(`[Inference] Selected ${modelDef.name} from ${provider}`);
-  
-  return { 
-    success: true, 
-    message: `Selected ${modelDef.name} from ${provider}`,
-    provider, 
-    model 
-  };
-};
-
-// Helper functions
-const getCurrentSelection = async () => {
-  const stored = await runtime.call('chrome-sync.get', { 
-    key: ['inference.provider', 'inference.model'] 
-  });
-  
-  return {
-    provider: stored.result?.['inference.provider'] || providers[0]?.manifest.name || '',
-    model: stored.result?.['inference.model'] || ''
-  };
-};
-
-const getModelsByProvider = () => {
-  const modelsByProvider = {};
-  
-  providers.forEach(provider => {
-    const models = provider.manifest.inferenceModels || [];
-    modelsByProvider[provider.manifest.name] = models.map(m => ({
-      value: m.id,
-      text: m.name || m.id
-    }));
-  });
-  
-  return modelsByProvider;
-};
-
-const getModelsForProvider = (providerName) => {
-  const provider = providers.find(p => p.manifest.name === providerName);
-  if (!provider) return [];
-  
-  return (provider.manifest.inferenceModels || []).map(m => ({
-    value: m.id,
-    text: m.name || m.id
-  }));
-};
-
-const registerProviders = async () => {
-  // Register all modules that have inferenceModels
-  const providerModules = runtime.getModulesWithProperty('inferenceModels');
-  
-  providerModules.forEach(provider => {
-    // Validate provider has required methods
-    if (typeof provider.makeRequest !== 'function') {
-      runtime.logError(`Provider ${provider.manifest.name} missing makeRequest method`);
-      return;
-    }
-    
+  await registerProviders(runtime);
+  provider = await loadProvider();
+  model = await loadModel();
+  if (!provider || !model) promptForProviderAndModel();
+}
+//
+// const getProviderName = async () => !(await runtime.call('chrome-sync.get', { key: "inference.provider" }));
+// const getModelName = async () => !(await runtime.call('chrome-sync.get', { key: "inference.model" }));
+const loadProvider = async () => await providers.find(async p => p.manifest.name === (await runtime.call('chrome-sync.get', { key: "inference.provider" })));
+const loadModel = async () => await provider.manifest.inferenceModels?.find(async m => m.id === (await runtime.call('chrome-sync.get', { key: "inference.model" })));
+// providers
+const registerProviders = async (runtime) => {
+  const mods = runtime.getModulesWithProperty('inferenceModels')
+  mods.forEach(async provider => {
+    verifyImplementationFunctions(provider);
+    // await verifyModels(provider);
     providers.push(provider);
-    runtime.log(`[Inference] Registered provider: ${provider.manifest.name}`);
   });
-  
-  runtime.log(`[Inference] Registered ${providers.length} providers`);
 };
+const verifyImplementationFunctions = (provider) => ["formatInteractions", "makeRequest"].forEach(fn => {
+  if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);  
+});
+// const verifyModels = (provider) => runtime.call("inference-model-validation.validateModels", { models: provider.manifest.inferenceModels || [] });
+// 
+export const changeModelAndProvider = async ({ providerName, modelName }) => {
+  await runtime.call('chrome-sync.set', { key: "inference.provider", value: providerName });
+  await runtime.call('chrome-sync.set', { key: "inference.model", value: modelName });
+}
+const promptForProviderAndModel = async () => {
+  const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.manifest.name }));
+  
+  // todo: figure out how to do the dynamic form business logic within the module updating the form 
+  // https://claude.ai/chat/ea732f00-4b45-42e6-a3df-410d6229173e
 
 
+  // const tree = {
+  //   "form": { 
+  //     tag: "form",
+  //     data: { action: "inference.setProviderAndModel" },
+  //     "provider-label": { tag: "label", text: "Provider:", class: "form-label" },
+  //     "provider-select": { tag: "select", name: "providerName", value: current.provider, options: providerOptions },
+  //     "model-label": { tag: "label",  text: "Model:", class: "form-label" },
+  //     "model-select": { tag: "select", name: "modelName", value: current.model, dependsOn: "provider-select", optionsByDependency: getModelsByProvider() },
+  //     "submit-btn": { tag: "button", parent: "form", type: "submit", text: "Select Model" }
+  //   }
+  // };
+
+  //   return await runtime.call('ui.renderForm', {
+  //   title: "Select Inference Provider & Model",
+  //   tree,
+  //   onSubmit: "inference.changeModelAndProvider",
+  //   onFieldChange: "inference.updateModelForm",
+  //   formData: current
+  // });
+  
+}
 
 export const prompt = async (params) => {
-  const { userPrompt, webSearch } = params;
-  
-  const current = await getCurrentSelection();
-  if (!current.provider || !current.model) {
-    throw new Error("No provider/model selected. Run inference.showModelSelector() first.");
-  }
-  
-  const provider = providers.find(p => p.manifest.name === current.provider);
-  const model = provider.manifest.inferenceModels.find(m => m.id === current.model);
-  
-  const assembledPrompt = await runtime.call("context.assemble", params);
-  const response = await provider.makeRequest({
-    model: current.model,
-    messages: assembledPrompt,
-    onChunk: (chunk) => runtime.log('[Inference] Chunk:', chunk),
-    webSearch
-  });
-  
-  await runtime.call('graph-db.addInferenceNode', {
-    userPrompt,
-    assembledPrompt: JSON.stringify(assembledPrompt),
-    response: response.content,
-    model: `${current.provider}/${current.model}`,
-    context: { provider: current.provider, model: current.model }
-  });
-  
+  const { query, webSearch } = params;
+  const messages = await runtime.call("context.assemble", params);
+  let content = "";
+  const onChunk = async (chunk) => await (runtime.log(content += chunk));
+  const response = (await provider.makeRequest({ model, messages, onChunk, webSearch })).content;
+  const embedding = await runtime.call('embedding.embedText', { text: `${messages}\n${response}` });
+  await runtime.call('graph-db.addInferenceNode', { query, messages, response, model, embedding });
   return response;
 };
+
+
+// // handle prompt
+// export async function prompt(params) {
+//   const assembledPrompt = await runtime.call("context.assemble", params);
+//   let content = "";
+//   const processChunk = async (chunk) => await updateStreamContent((content += chunk))
+//   const response = await provider.makeRequest(assembledPrompt, model, processChunk);
+//   storeInteractionInGraph({ assembledPrompt, response, ...params });
+//   return response
+// }
+// // tooo: first instance of updating the inference content section of ui
+// // const updateStreamContent = async (content) => await _state.write("inference.content", content);

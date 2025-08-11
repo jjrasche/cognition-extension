@@ -39,8 +39,8 @@ export const makeRequest = async (params) => {
     stream: true,
   };
   if (params.webSearch) body.tools = (body.tools ?? []).concat(addWebSearchTool(params.webSearch));
-
-  const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: buildHeaders(), body: JSON.stringify(body) });
+  const request = { method: 'POST', headers: buildHeaders(), body: JSON.stringify(body) }
+  const resp = await fetch('https://api.anthropic.com/v1/messages', request);
   if (!resp.ok) throw new Error(`Claude API error: ${resp.status} - ${await resp.text()}`);
   return await processStream(resp, onChunk);
 };
