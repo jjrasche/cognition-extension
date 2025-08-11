@@ -259,23 +259,9 @@ const parseSuperintendentResponse = (responseText) => {
 };
 
 
-export const showFileTestButton = async () => {
-  await runtime.call('ui.renderForm', {
-    title: "File Module Tests",
-    tree: {
-      "test-btn": { 
-        tag: "button", 
-        text: "Run File Tests",
-        data: { action: "dev.runFileTests" }
-      }
-    },
-    onSubmit: "dev.runFileTests"
-  });
-};
 
-export const runFileTests = async () => {
-  return await runModuleTests({ moduleName: "file" });
-};
+
+
 
 export const runModuleTests = async ({ moduleName }) => {
   const module = runtime.getModulesWithProperty("tests").find(m => m.manifest.name === moduleName);

@@ -34,3 +34,5 @@ export const retryAsync = async (asyncFn, options = {}) => {
     }
   }
 };
+
+export const wait = async (ms = 100) => await new Promise(resolve => setTimeout(resolve, ms));

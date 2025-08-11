@@ -4,7 +4,7 @@ export const manifest = {
     version: "1.0.0",
     description: "Generic IndexedDB operations extracted from graph-db",
     permissions: [],
-    actions: ["openDb", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId", "deleteDB"],
+    actions: ["openDb", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId", "deleteDB", "getAllDatabases"],
 };
 
 let runtime;
@@ -72,4 +72,12 @@ export const deleteDB = ({name}) => {
     deleteReq.onerror = () => (runtime.logError(`❌ Failed to delete ${name} database:`, deleteReq.error), reject(deleteReq.error));
     deleteReq.onblocked = () => runtime.logError(`⚠️ ${name} database deletion blocked - close all tabs using this database`);
   });
+};
+
+
+
+export const getAllDatabases = async () => {
+  try {
+    return 'databases' in indexedDB ? (await indexedDB.databases()).map(db => ({ name: db.name, version: db.version })) : [];
+  } catch (error) { runtime.logError('[IndexedDB] Failed to get database list:', error); }
 };
