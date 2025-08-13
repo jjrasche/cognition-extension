@@ -58,7 +58,10 @@ const QUOTE_BLOCK_PATTERN = /^.+:\n(?:>\s.+(?:\n>\s.+)*)/gm;
 const SENTENCE_POSITION_CALC = (match, text) => !isAbbreviation(text, match.index) ? match.index + 1 : null;
 const PARAGRAPH_POSITION_CALC = (match) => match.index + match[0].length;
 const HEADER_POSITION_CALC = (match) => match.index > 0 ? match.index : null;
-const HORIZONTAL_RULE_POSITION_CALC = (match, text) => match.index > 0 ? match.index : null;
+const HORIZONTAL_RULE_POSITION_CALC = (match) => {
+  if (match.index === 0) return null;
+  return match.index + match[0].length;
+};
 const SENTENCE_END = { pattern: /[.!?](?:\s+[A-Z]|\s*\n)/g, calculatePosition: SENTENCE_POSITION_CALC };
 const PARAGRAPH_END = { pattern: /\n+/g, calculatePosition: PARAGRAPH_POSITION_CALC };
 const MARKDOWN_HEADER = { pattern: /^#{1,6}\s+.+$/gm, calculatePosition: HEADER_POSITION_CALC };
@@ -72,7 +75,9 @@ const GRANULARITY_RULES = {
 const HTML_CONVERTERS = [
   { pattern: /<br\s*\/?>/gi, replacement: '\n' },
   { pattern: /<\/p>\s*<p>/gi, replacement: '\n\n' },
-  { pattern: /<[^>]+>/g, replacement: '' },
+  { pattern: /<\/p>/gi, replacement: '\n' }, // Add newline after closing p tag
+  { pattern: /<p>/gi, replacement: '' },     // Remove opening p tag
+  { pattern: /<[^>]+>/g, replacement: '' },  // Strip remaining tags
   { pattern: /[ \t]+/g, replacement: ' ' },
   { pattern: /\r\n/g, replacement: '\n' },
   { pattern: /\r/g, replacement: '\n' }
@@ -90,7 +95,7 @@ export const test = async () => (await Promise.all([
   { name: "Markdown Formats: Horizontal rules create sections", input: "Section 1 content\n\n---\n\nSection 2 content\n\n___\n\nSection 3 content", granularity: "section", expected: ["Section 1 content", "Section 2 content", "Section 3 content"] },
   { name: "Markdown Formats: Lists preserved in paragraphs", input: "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph", granularity: "paragraph",  expected: ["My todo list:\n- Item 1\n- Item 2\n- Item 3", "Next paragraph"] },
   { name: "Markdown Formats: Block quotes preserved", input: "He said:\n> This is important\n> Really important\n\nI agreed.", granularity: "paragraph", expected: ["He said:\n> This is important\n> Really important", "I agreed."] },
-  { name: "Markdown Formats: Code blocks preserved",  input: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:\n```python\ndef hello():\n    print('world')\n```", "That's it."] },
+  { name: "Markdown Formats: Code blocks preserved", input: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:\n```python\ndef hello():\n    print('world')\n```", "That's it."] },
   { name: "HTML Content: HTML break tags", input: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
   { name: "HTML Content: HTML paragraph tags",  input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
   { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
