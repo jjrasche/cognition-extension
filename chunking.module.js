@@ -12,38 +12,38 @@ export const initialize = async (rt) => runtime = rt;
 
 export const chunkByStructure = async ({ text, granularity = 'paragraph' }) => {
   if (!text?.trim()) return [];
+  
   const processedText = preprocessText(text);
   const rules = getRules(granularity);
   
-  let boundaries = findBoundaries(processedText, rules);  
-  if (boundaries.length === 0) { return [text]; }
+  // Replace all breakpoints with delimiter
+  let delimiterText = replaceBreakpointsWithDelimiter(processedText, rules);
   
-  return chunkAtBoundaries(processedText, boundaries, getPreservedBlocks(text, rules));
+  // Remove delimiters from within preserved blocks
+  delimiterText = removeDelimitersFromPreservedBlocks(delimiterText, rules.preserves);
+  
+  // Split on delimiter and filter empty chunks
+  return delimiterText.split('\0').map(chunk => chunk.trim()).filter(Boolean);
 };
-
-const findBoundaries = (text, rules) => 
- Array.from(new Set(
-   rules.breakpoints.flatMap(({ pattern, calculatePosition }) => 
-     [...text.matchAll(pattern)]
-       .map(match => calculatePosition(match, text))
-       .filter(pos => pos !== null)
-   )
- )).sort((a, b) => a - b);
-const chunkAtBoundaries = (text, boundaries, preservedBlocks = []) => {
-  boundaries = filterBoundariesWithinPreservedBlocks(boundaries, preservedBlocks);
-  if (!boundaries.length) return [text];
-  let start = 0;
-  return [...boundaries, text.length].map(boundary => {
-    const chunk = text.slice(start, boundary).trim();
-    start = boundary;
-    return chunk;
-  }).filter(Boolean);
+const replaceBreakpointsWithDelimiter = (text, rules) => {
+  let result = text;
+  rules.breakpoints.forEach((pattern) => result = result.replace(pattern, '\0'));
+  return result;
+};
+const removeDelimitersFromPreservedBlocks = (text, preservePatterns) => {
+  if (!preservePatterns) return text;
+  
+  let result = text;
+  
+  preservePatterns.forEach(pattern => {
+    result = result.replace(pattern, (match) => {
+      return match.replace(/\0/g, '');
+    });
+  });
+  
+  return result;
 };
 const getRules = (granularity) => GRANULARITY_RULES[granularity] || (() => { throw new Error(`Unknown granularity: ${granularity}`); })();
-const getPreservedBlocks = (text, rules) => rules.preserves ? findPreservedBlocks(text, rules.preserves) : []
-const findPreservedBlocks = (text, preservePatterns) => preservePatterns.flatMap(pattern => [...text.matchAll(pattern)].map(match => ({ start: match.index, end: match.index + match[0].length })));
-const isWithinPreservedBlock = (position, preservedBlocks) => preservedBlocks.some(block => position > block.start && position < block.end);
-const filterBoundariesWithinPreservedBlocks = (boundaries, preservedBlocks) => boundaries.filter(pos => !isWithinPreservedBlock(pos, preservedBlocks));
 const applyConverters = (text, converters) => converters.reduce((result, conv) => result.replace(conv.pattern, conv.replacement), text);
 const preprocessText = (text) => applyConverters(text, HTML_CONVERTERS).trim();
 const isAbbreviation = (text, position) => {
@@ -55,22 +55,15 @@ const ABBREVIATIONS = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'Inc', 'Corp', 'Ltd', 'e
 const CODE_BLOCK_PATTERN = /^.+:\n```[\s\S]*?```/gm;
 const LIST_BLOCK_PATTERN = /^.+:\n(?:[-*+]\s.+(?:\n[-*+]\s.+)*)/gm;
 const QUOTE_BLOCK_PATTERN = /^.+:\n(?:>\s.+(?:\n>\s.+)*)/gm;
-const SENTENCE_POSITION_CALC = (match, text) => !isAbbreviation(text, match.index) ? match.index + 1 : null;
-const PARAGRAPH_POSITION_CALC = (match) => match.index + match[0].length;
-const HEADER_POSITION_CALC = (match) => match.index > 0 ? match.index : null;
-const HORIZONTAL_RULE_POSITION_CALC = (match) => {
-  if (match.index === 0) return null;
-  return match.index + match[0].length;
-};
-const SENTENCE_END = { pattern: /[.!?](?:\s+[A-Z]|\s*\n)/g, calculatePosition: SENTENCE_POSITION_CALC };
-const PARAGRAPH_END = { pattern: /\n+/g, calculatePosition: PARAGRAPH_POSITION_CALC };
-const MARKDOWN_HEADER = { pattern: /^#{1,6}\s+.+$/gm, calculatePosition: HEADER_POSITION_CALC };
-const SECTION_HEADER = { pattern: /^.+\n[=-]+$/gm, calculatePosition: HEADER_POSITION_CALC };
-const HORIZONTAL_RULE = { pattern: /^(-{3,}|_{3,}|\*{3,})$/gm, calculatePosition: HORIZONTAL_RULE_POSITION_CALC };
+const SENTENCE_END_PATTERN = /[.!?](?:\s+[A-Z]|\s*\n)/g;
+const PARAGRAPH_END_PATTERN = /\n+/g;
+const MARKDOWN_HEADER_PATTERN = /^#{1,6}\s+.+$/gm;
+const SECTION_HEADER_PATTERN = /^.+\n[=-]+$/gm;
+const HORIZONTAL_RULE_PATTERN = /^(-{3,}|_{3,}|\*{3,})$/gm;
 const GRANULARITY_RULES = {
-  sentence: { breakpoints: [SENTENCE_END] },
-  paragraph: { breakpoints: [PARAGRAPH_END], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] },
-  section: { breakpoints: [MARKDOWN_HEADER, SECTION_HEADER, HORIZONTAL_RULE], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] }
+  sentence: { breakpoints: [SENTENCE_END_PATTERN] },
+  paragraph: { breakpoints: [PARAGRAPH_END_PATTERN], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] },
+  section: { breakpoints: [MARKDOWN_HEADER_PATTERN, SECTION_HEADER_PATTERN, HORIZONTAL_RULE_PATTERN], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] }
 };
 const HTML_CONVERTERS = [
   { pattern: /<br\s*\/?>/gi, replacement: '\n' },
@@ -109,20 +102,4 @@ const runChunkTest = async (testCase) => {
   } catch (error) {
     return { name, passed: false, error };
   }
-};
-
-
-export const chunkByStructureDebug = async ({ text, granularity = 'paragraph' }) => {
-const testText = "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph";
-const rules = getRules('paragraph');
-console.log('Preserved block patterns:', rules.preserves);
-
-const preservedBlocks = findPreservedBlocks(testText, rules.preserves);
-console.log('Found preserved blocks:', preservedBlocks);
-
-const boundaries = findBoundaries(testText, rules);
-console.log('All boundaries before filtering:', boundaries);
-
-const filtered = filterBoundariesWithinPreservedBlocks(boundaries, preservedBlocks);
-console.log('Boundaries after filtering:', filtered);
 };
