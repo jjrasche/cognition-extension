@@ -1,7 +1,7 @@
 export const manifest = {
   name: "chunking",
-  version: "2.0.0",
-  description: "Structure-based text chunking with format converters",
+  version: "2.1.0",
+  description: "Structure-based text chunking with format converters - paragraph and section granularity",
   context: ["service-worker"],
   permissions: ["storage"],
   actions: ["chunkByStructure", "runChunkingTests", "chunkByStructureDebug"]
@@ -53,42 +53,41 @@ export const chunkByStructure = async ({ text, granularity = 'paragraph' }) => {
 const getRules = (granularity) => GRANULARITY_RULES[granularity] || (() => { throw new Error(`Unknown granularity: ${granularity}`); })();
 const applyConverters = (text, converters) => converters.reduce((result, conv) => result.replace(conv.pattern, conv.replacement), text);
 const preprocessText = (text) => applyConverters(text, HTML_CONVERTERS).trim();
-const isAbbreviation = (text, position) => {
-  const beforeDot = text.slice(Math.max(0, position - 10), position);
-  return ABBREVIATIONS.some(abbr => beforeDot.endsWith(abbr));
-};
-// Patterns
-const ABBREVIATIONS = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'Inc', 'Corp', 'Ltd', 'etc', 'vs', 'e.g', 'i.e', 'Ph.D', 'U.S', 'U.K', 'U.N'];
+
+// Patterns - only what we actually use
 const CODE_BLOCK_PATTERN = /```[\s\S]*?```/gm;
 const QUOTE_BLOCK_PATTERN = /(?:>\s.+(?:\n>\s.+)*)/gm;
 const LIST_BLOCK_PATTERN = /(?:[-*+]\s.+(?:\n[-*+]\s.+)*)/gm;
-const SENTENCE_END_PATTERN = /[.!?](?:\s+[A-Z]|\s*\n)/g;
 const PARAGRAPH_END_PATTERN = /\n+/g;
 const MARKDOWN_HEADER_PATTERN = /^#{1,6}\s+.+$/gm;
 const SECTION_HEADER_PATTERN = /^.+\n[=-]+$/gm;
 const HORIZONTAL_RULE_PATTERN = /^(-{3,}|_{3,}|\*{3,})$/gm;
+
 const GRANULARITY_RULES = {
-  sentence: { breakpoints: [SENTENCE_END_PATTERN] },
-  paragraph: { breakpoints: [PARAGRAPH_END_PATTERN], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] },
-  section: { breakpoints: [MARKDOWN_HEADER_PATTERN, SECTION_HEADER_PATTERN, HORIZONTAL_RULE_PATTERN], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] }
+  paragraph: { 
+    breakpoints: [PARAGRAPH_END_PATTERN], 
+    preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] 
+  },
+  section: { 
+    breakpoints: [MARKDOWN_HEADER_PATTERN, SECTION_HEADER_PATTERN, HORIZONTAL_RULE_PATTERN], 
+    preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] 
+  }
 };
+
 const HTML_CONVERTERS = [
   { pattern: /<br\s*\/?>/gi, replacement: '\n' },
+  { pattern: /<p>(.*?)<\/p>/gi, replacement: '\n\n$1\n\n' },
   { pattern: /<\/p>\s*<p>/gi, replacement: '\n\n' },
-  { pattern: /<\/p>/gi, replacement: '\n' }, // Add newline after closing p tag
-  { pattern: /<p>/gi, replacement: '' },     // Remove opening p tag
-  { pattern: /<[^>]+>/g, replacement: '' },  // Strip remaining tags
+  { pattern: /<[^>]+>/g, replacement: '' },
   { pattern: /[ \t]+/g, replacement: ' ' },
   { pattern: /\r\n/g, replacement: '\n' },
   { pattern: /\r/g, replacement: '\n' }
 ];
+
 // ============================================
-// Tests
+// Tests - removed all sentence tests
 // ============================================
 export const test = async () => (await Promise.all([
-  { name: "Sentence Abbreviations: Common abbreviations preserved", input: "Mr. Smith met Dr. Johnson at Inc. headquarters. They discussed e.g. profits.", granularity: "sentence", expected: ["Mr. Smith met Dr. Johnson at Inc. headquarters.", "They discussed e.g. profits."] },
-  { name: "Sentence Abbreviations: Academic abbreviations", input: "Prof. Lee has a Ph.D from MIT. She studied i.e. machine learning.", granularity: "sentence", expected: ["Prof. Lee has a Ph.D from MIT.", "She studied i.e. machine learning."] },
-  { name: "Sentence Abbreviations: Country abbreviations", input: "U.S. markets opened strong. U.K. followed suit.", granularity: "sentence", expected: ["U.S. markets opened strong.", "U.K. followed suit."] },
   { name: "Paragraph Newlines: Single newlines create paragraphs", input: "First paragraph\nSecond paragraph\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
   { name: "Paragraph Newlines: Multiple newlines treated same as single", input: "First paragraph\n\n\nSecond paragraph\n\n\n\n\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
   { name: "Paragraph Newlines: Windows line endings", input: "First paragraph\r\n\r\nSecond paragraph\r\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
@@ -100,6 +99,7 @@ export const test = async () => (await Promise.all([
   { name: "HTML Content: HTML paragraph tags", input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
   { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
 ].map(runChunkTest))).flat();
+
 const runChunkTest = async (testCase) => {
   const { name, input, granularity, expected } = testCase;
   try {
