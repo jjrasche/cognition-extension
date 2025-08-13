@@ -4,7 +4,7 @@ export const manifest = {
   description: "Structure-based text chunking with format converters",
   context: ["service-worker"],
   permissions: ["storage"],
-  actions: ["chunkByStructure", "runChunkingTests"]
+  actions: ["chunkByStructure", "runChunkingTests", "chunkByStructureDebug"]
 };
 
 let runtime;
@@ -52,16 +52,13 @@ const isAbbreviation = (text, position) => {
 };
 // Patterns
 const ABBREVIATIONS = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'Inc', 'Corp', 'Ltd', 'etc', 'vs', 'e.g', 'i.e', 'Ph.D', 'U.S', 'U.K', 'U.N'];
-const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g;
-const LIST_BLOCK_PATTERN = /^[-*+]\s.+(?:\n[-*+]\s.+)*/gm;
-const QUOTE_BLOCK_PATTERN = /^>\s.+(?:\n>\s.+)*/gm;
+const CODE_BLOCK_PATTERN = /^.+:\n```[\s\S]*?```/gm;
+const LIST_BLOCK_PATTERN = /^.+:\n(?:[-*+]\s.+(?:\n[-*+]\s.+)*)/gm;
+const QUOTE_BLOCK_PATTERN = /^.+:\n(?:>\s.+(?:\n>\s.+)*)/gm;
 const SENTENCE_POSITION_CALC = (match, text) => !isAbbreviation(text, match.index) ? match.index + 1 : null;
 const PARAGRAPH_POSITION_CALC = (match) => match.index + match[0].length;
 const HEADER_POSITION_CALC = (match) => match.index > 0 ? match.index : null;
-const HORIZONTAL_RULE_POSITION_CALC = (match, text) => {
-  const endPos = match.index + match[0].length;
-  return endPos < text.length ? endPos + 1 : null;
-};
+const HORIZONTAL_RULE_POSITION_CALC = (match, text) => match.index > 0 ? match.index : null;
 const SENTENCE_END = { pattern: /[.!?](?:\s+[A-Z]|\s*\n)/g, calculatePosition: SENTENCE_POSITION_CALC };
 const PARAGRAPH_END = { pattern: /\n+/g, calculatePosition: PARAGRAPH_POSITION_CALC };
 const MARKDOWN_HEADER = { pattern: /^#{1,6}\s+.+$/gm, calculatePosition: HEADER_POSITION_CALC };
@@ -76,7 +73,7 @@ const HTML_CONVERTERS = [
   { pattern: /<br\s*\/?>/gi, replacement: '\n' },
   { pattern: /<\/p>\s*<p>/gi, replacement: '\n\n' },
   { pattern: /<[^>]+>/g, replacement: '' },
-  { pattern: /\s+/g, replacement: ' ' },
+  { pattern: /[ \t]+/g, replacement: ' ' },
   { pattern: /\r\n/g, replacement: '\n' },
   { pattern: /\r/g, replacement: '\n' }
 ];
@@ -107,4 +104,20 @@ const runChunkTest = async (testCase) => {
   } catch (error) {
     return { name, passed: false, error };
   }
+};
+
+
+export const chunkByStructureDebug = async ({ text, granularity = 'paragraph' }) => {
+const testText = "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph";
+const rules = getRules('paragraph');
+console.log('Preserved block patterns:', rules.preserves);
+
+const preservedBlocks = findPreservedBlocks(testText, rules.preserves);
+console.log('Found preserved blocks:', preservedBlocks);
+
+const boundaries = findBoundaries(testText, rules);
+console.log('All boundaries before filtering:', boundaries);
+
+const filtered = filterBoundariesWithinPreservedBlocks(boundaries, preservedBlocks);
+console.log('Boundaries after filtering:', filtered);
 };
