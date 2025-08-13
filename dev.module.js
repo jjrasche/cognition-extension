@@ -267,12 +267,15 @@ export const testModules = async ({modulesToTest = []}) => {
   let modules = runtime.getModulesWithProperty("test")
     .filter(module => module.manifest.context.includes(runtime.runtimeName)) // run tests in their context
     .filter(module => modulesToTest.length === 0 || modulesToTest.includes(module.manifest.name));
-  const results = await Promise.all(modules.map(module => module.test()));
+  const results = (await Promise.all(modules.map(async module => {
+    const tests = await module.test();
+    return tests.map(test => ({...test, module: module.manifest.name}));
+  }))).flat();
   showSummary(results);
   showModuleSummary(results);
+  showTestFailures(results);
   return results;
 };
-
 const showSummary = (results) => {
   const totalTests = results.reduce((sum, r) => sum + r.totalTests, 0);
   const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);
@@ -280,28 +283,34 @@ const showSummary = (results) => {
 };
 const showModuleSummary = (results) => {
   console.log('\n=== MODULES TESTED ===');
-  console.table(results.map(result => ({
-    Module: result.module,
-    'Total Tests': result.totalTests,
-    Passed: result.passed,
-    Failed: result.totalTests - result.passed,
-    'Pass Rate': result.totalTests > 0 ? `${Math.round(result.passed / result.totalTests * 100)}%` : '0%'
+  const moduleStats = results.reduce((acc, test) => {
+    if (!acc[test.module]) acc[test.module] = { total: 0, passed: 0 };
+    acc[test.module].total++;
+    if (test.passed) acc[test.module].passed++;
+    return acc;
+  }, {});  
+  console.table(Object.entries(moduleStats).map(([module, stats]) => ({
+    Module: module,
+    'Total Tests': stats.total,
+    Passed: stats.passed,
+    Failed: stats.total - stats.passed,
+    'Pass Rate': stats.total > 0 ? `${Math.round(stats.passed / stats.total * 100)}%` : '0%'
   })));
 };
 const showTestFailures = (results) => {
-  const failedTests = results.flatMap(result => result.results
+  const failedTests = results
     .filter(test => !test.passed)
     .map(test => ({
-      Module: result.module,
+      Module: test.module,
       'Test Name': test.name,
       'Expected': JSON.stringify(test.expected)?.substring(0, 50) + '...' || 'N/A',
       'Actual': JSON.stringify(test.result)?.substring(0, 50) + '...' || 'N/A',
       'Error': test.error?.message || test.error || 'Test failed'
-    })));
+    }));
   if (failedTests.length > 0) {
     console.log('\n=== FAILED TEST DETAILS ===');
     console.table(failedTests);
   } else {
     console.log('\n🎉 All tests passed!');
   }
-}
+};
