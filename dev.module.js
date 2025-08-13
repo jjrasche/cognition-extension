@@ -7,7 +7,7 @@ export const manifest = {
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
   actions: ["testEmbeddingSpeed", "updateSuperintendentData", "testModules"],
-  dependencies: ["file"]//, "inference", "transformer", "embedding"]
+  // dependencies: ["file"]//, "inference", "transformer", "embedding"]
 };
 
 let runtime;
@@ -298,18 +298,17 @@ const showModuleSummary = (results) => {
   })));
 };
 const showTestFailures = (results) => {
-  const failedTests = results
-    .filter(test => !test.passed)
-    .map(test => ({
+  const failedTests = results.filter(test => !test.passed)
+  if (failedTests.length > 0) {
+    console.log('\n=== FAILED TEST DETAILS ===');
+    console.table(failedTests.map(test => ({
       Module: test.module,
       'Test Name': test.name,
       'Expected': JSON.stringify(test.expected)?.substring(0, 50) + '...' || 'N/A',
-      'Actual': JSON.stringify(test.result)?.substring(0, 50) + '...' || 'N/A',
+      'Actual': JSON.stringify(test.actual)?.substring(0, 50) + '...' || 'N/A',
       'Error': test.error?.message || test.error || 'Test failed'
-    }));
-  if (failedTests.length > 0) {
-    console.log('\n=== FAILED TEST DETAILS ===');
-    console.table(failedTests);
+    })));
+    console.log(failedTests);
   } else {
     console.log('\n🎉 All tests passed!');
   }

@@ -83,42 +83,6 @@ const HTML_CONVERTERS = [
 // ============================================
 // Tests
 // ============================================
-export const chunkingTestCases = [
-  { name: "Sentence Abbreviations: Common abbreviations preserved", input: "Mr. Smith met Dr. Johnson at Inc. headquarters. They discussed e.g. profits.", granularity: "sentence", expected: ["Mr. Smith met Dr. Johnson at Inc. headquarters.", "They discussed e.g. profits."] },
-  { name: "Sentence Abbreviations: Academic abbreviations",  input: "Prof. Lee has a Ph.D from MIT. She studied i.e. machine learning.", granularity: "sentence", expected: ["Prof. Lee has a Ph.D from MIT.", "She studied i.e. machine learning."] },
-  { name: "Sentence Abbreviations: Country abbreviations", input: "U.S. markets opened strong. U.K. followed suit.", granularity: "sentence",  expected: ["U.S. markets opened strong.", "U.K. followed suit."] },
-  { name: "Paragraph Newlines: Single newlines create paragraphs", input: "First paragraph\nSecond paragraph\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "Paragraph Newlines: Multiple newlines treated same as single", input: "First paragraph\n\n\nSecond paragraph\n\n\n\n\nThird paragraph",  granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "Paragraph Newlines: Windows line endings", input: "First paragraph\r\n\r\nSecond paragraph\r\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "Markdown Formats: Horizontal rules create sections", input: "Section 1 content\n\n---\n\nSection 2 content\n\n___\n\nSection 3 content", granularity: "section", expected: ["Section 1 content", "Section 2 content", "Section 3 content"] },
-  { name: "Markdown Formats: Lists preserved in paragraphs", input: "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph", granularity: "paragraph",  expected: ["My todo list:\n- Item 1\n- Item 2\n- Item 3", "Next paragraph"] },
-  { name: "Markdown Formats: Block quotes preserved", input: "He said:\n> This is important\n> Really important\n\nI agreed.", granularity: "paragraph", expected: ["He said:\n> This is important\n> Really important", "I agreed."] },
-  { name: "Markdown Formats: Code blocks preserved",  input: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:\n```python\ndef hello():\n    print('world')\n```", "That's it."] },
-  { name: "HTML Content: HTML break tags", input: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
-  { name: "HTML Content: HTML paragraph tags",  input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
-];
-
-// const runSingleTest = async (test) => {
-//   try {
-//     const actualChunks = await chunkByStructure({ text: test.input, granularity: test.granularity });
-//     return { name: test.name, passed: JSON.stringify(actualChunks) === JSON.stringify(test.expected), expected: test.expected, actual: actualChunks };
-//   } catch (error) {
-//     return { name: test.name, passed: false, error: error.message };
-//   }
-// };
-
-// export const runChunkingTests = async () => {
-//   const results = [];
-//   for (const [category, tests] of Object.entries(chunkingTestCases)) {
-//     const categoryResults = await Promise.all(tests.map(runSingleTest));
-//     results.push(...categoryResults.map(r => ({ category, ...r })));
-//   }
-//   const passedTests = results.filter(r => r.passed).length;
-//   const totalTests = results.length;
-//   return { passed: passedTests, total: totalTests, results };
-// };
-
 export const test = async () => (await Promise.all([
   { name: "Sentence Abbreviations: Common abbreviations preserved", input: "Mr. Smith met Dr. Johnson at Inc. headquarters. They discussed e.g. profits.", granularity: "sentence", expected: ["Mr. Smith met Dr. Johnson at Inc. headquarters.", "They discussed e.g. profits."] },
   { name: "Sentence Abbreviations: Academic abbreviations",  input: "Prof. Lee has a Ph.D from MIT. She studied i.e. machine learning.", granularity: "sentence", expected: ["Prof. Lee has a Ph.D from MIT.", "She studied i.e. machine learning."] },
@@ -137,9 +101,9 @@ export const test = async () => (await Promise.all([
 const runChunkTest = async (testCase) => {
   const { name, input, granularity, expected } = testCase;
   try {
-    const result = await chunkByStructure({ text: input, granularity });
-    const passed = JSON.stringify(result) === JSON.stringify(expected);
-    return { name, passed, result };
+    const actual = await chunkByStructure({ text: input, granularity });
+    const passed = JSON.stringify(actual) === JSON.stringify(expected);
+    return { ...testCase, actual, passed };
   } catch (error) {
     return { name, passed: false, error };
   }
