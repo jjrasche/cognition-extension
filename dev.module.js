@@ -301,14 +301,14 @@ const showTestFailures = (results) => {
   const failedTests = results.filter(test => !test.passed)
   if (failedTests.length > 0) {
     console.log('\n=== FAILED TEST DETAILS ===');
-    console.table(failedTests.map(test => ({
-      Module: test.module,
-      'Test Name': test.name,
-      'Expected': JSON.stringify(test.expected)?.substring(0, 50) + '...' || 'N/A',
-      'Actual': JSON.stringify(test.actual)?.substring(0, 50) + '...' || 'N/A',
-      'Error': test.error?.message || test.error || 'Test failed'
-    })));
-    console.log(failedTests);
+    console.table(Object.fromEntries(
+      failedTests.map((test, i) => [`test.module ${i+1}`, {
+        'Test Name': test.name,
+        'Expected': JSON.stringify(test.expected)?.substring(0, 50) + '...' || 'N/A',
+        'Actual': JSON.stringify(test.actual)?.substring(0, 50) + '...' || 'N/A'
+      }])
+    ));
+    console.log(JSON.stringify(failedTests, null, 2));
   } else {
     console.log('\n🎉 All tests passed!');
   }
