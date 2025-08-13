@@ -6,7 +6,6 @@ export const manifest = {
   permissions: ["storage"],
   dependencies: ["indexed-db"],
   actions: ["write", "read", "append", "remove", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle",],
-  tests: ["testFileWrite", "testFileRead", "testFileAppend"],
   indexeddb: {
     name: 'FileHandlers',
     version: 1,
@@ -81,10 +80,10 @@ export const hasDir = async ({ name }) => !!(await getHandle(name));
 
 
 // tests
-// will be prompted for directory selection on first run and tests will fail
 import { wait } from './helpers.js';
 const dir = 'Documents';
-export const testFileWrite = async () => {
+export const test = async () => [testFileWrite, testFileRead, testFileAppend].flat().forEach(fn => fn());
+const testFileWrite = async () => {
   const params = { dir, filename: 'test-write.txt', data: 'Test Write' };
   const expect = async () => {
     const content = await read(params);
@@ -92,13 +91,13 @@ export const testFileWrite = async () => {
   }
   return [await runTest(write, { ...params, expect })];
 };
-export const testFileRead = async () => {
+const testFileRead = async () => {
   const params = { dir, filename: 'test-read.txt' };
   await write({ ...params, data: 'Test Read' });
   const expect = async (result) => result === 'Test Read';
   return [await runTest(read, { ...params, expect })];
 };
-export const testFileAppend = async () => {
+const testFileAppend = async () => {
   const params = { dir, filename: 'test-append.txt' };
   await write({ ...params, data: 'Initial' });
   await wait(100);

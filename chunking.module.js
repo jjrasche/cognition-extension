@@ -1,481 +1,146 @@
 export const manifest = {
   name: "chunking",
-  version: "1.0.0",
-  description: "Semantic chunking for documents and text with flexible size boundaries",
+  version: "2.0.0",
+  description: "Structure-based text chunking with format converters",
   context: "service-worker",
   permissions: ["storage"],
-  actions: ["chunkText", "chunkInferenceInteraction", "chunkDocument", "testWithClaudeData", "runAllChunkingTests", "analyzeConversationChunking","extractTestCases", "generateStaticTestCases", "validateRealWorldChunking", "runRealTests", "generateTestFile", "debugChunking", "testTokenEstimation", "runUpdatedTests", "visualizeChunking", "exploreChunk", "visualizeChunkingWithMap", "visualizeChunkSplits"],
-  // dependencies: ["embedding"],
-  state: {
-    reads: [],
-    writes: ["chunking.stats", "chunking.config"]
-  }
+  actions: ["chunkByStructure", "runChunkingTests"]
 };
 
 let runtime;
-export const initialize = async (rt) => { runtime = rt; };
+export const initialize = async (rt) => runtime = rt;
 
-
-const estimateTokenCount = (text) => {
-  if (!text) return 0;
+export const chunkByStructure = async ({ text, granularity = 'paragraph' }) => {
+  if (!text?.trim()) return [];
+  const processedText = preprocessText(text);
+  const rules = getRules(granularity);
   
-  // Empirical ratios from GPT tokenizer testing:
-  // - Average English text: ~1 token per 4 characters
-  // - With punctuation: ~1 token per 3.8 characters  
-  // - Code: ~1 token per 3.5 characters
-  // - Mixed content: ~1 token per 3.7 characters
+  let boundaries = findBoundaries(processedText, rules);  
+  if (boundaries.length === 0) { return [text]; }
   
-  // Count words and special characters
-  const words = text.split(/\s+/).filter(w => w.length > 0);
-  const punctuation = (text.match(/[.,!?;:()[\]{}"`'""—–\-]/g) || []).length;
-  const hasCode = text.includes('```') || text.includes('`');
-  
-  // Base calculation: words + some punctuation
-  let tokenCount = words.length;
-  
-  // Add tokens for punctuation (not all punctuation is a separate token)
-  tokenCount += punctuation * 0.3;
-  
-  // Adjust for word length (longer words = more tokens)
-  for (const word of words) {
-    if (word.length > 10) {
-      tokenCount += 0.5; // Long words often split
-    }
-    if (word.length > 15) {
-      tokenCount += 0.5; // Very long words split more
-    }
-  }
-  
-  // If there's code, use character-based estimation for those parts
-  if (hasCode) {
-    const codeBlocks = (text.match(/```[\s\S]*?```/g) || []).join('');
-    const inlineCode = (text.match(/`[^`\n]+`/g) || []).join('');
-    const codeChars = codeBlocks.length + inlineCode.length;
-    
-    if (codeChars > 0) {
-      // Remove word count for code sections and use char-based estimate
-      const codeWords = (codeBlocks + inlineCode).split(/\s+/).length;
-      tokenCount -= codeWords;
-      tokenCount += codeChars / 3.5;
-    }
-  }
-  
-  return Math.ceil(tokenCount);
+  return chunkAtBoundaries(processedText, boundaries, getPreservedBlocks(text, rules));
 };
 
-const removeCodeBlocks = (text) => {
-  return text
-    // Replace fenced code blocks with placeholder that preserves structure
-    .replace(/```[\s\S]*?```/g, (match) => {
-      const lines = match.split('\n').length;
-      return '\n[CODE_BLOCK]\n'.repeat(Math.min(lines, 3)); // Preserve some line breaks
-    })
-    // Replace inline code with shorter placeholder
-    .replace(/`[^`\n]+`/g, '[CODE]')
-    // Replace indented code but preserve paragraph breaks
-    .replace(/^[ \t]{4,}.+$/gm, '[INDENTED_CODE]')
-    // Normalize but don't collapse all structure
-    .replace(/\n\s*\n\s*\n/g, '\n\n') // Collapse excessive newlines but keep paragraphs
-    .trim();
+const findBoundaries = (text, rules) => 
+ Array.from(new Set(
+   rules.breakpoints.flatMap(({ pattern, calculatePosition }) => 
+     [...text.matchAll(pattern)]
+       .map(match => calculatePosition(match, text))
+       .filter(pos => pos !== null)
+   )
+ )).sort((a, b) => a - b);
+const chunkAtBoundaries = (text, boundaries, preservedBlocks = []) => {
+  boundaries = filterBoundariesWithinPreservedBlocks(boundaries, preservedBlocks);
+  if (!boundaries.length) return [text];
+  let start = 0;
+  return [...boundaries, text.length].map(boundary => {
+    const chunk = text.slice(start, boundary).trim();
+    start = boundary;
+    return chunk;
+  }).filter(Boolean);
 };
-
-const preprocessText = (text, options = {}) => removeCodeBlocks(text)
-  .replace(/\r\n/g, '\n') // Normalize line endings
-  .replace(/[ \t]+/g, ' ') // Normalize spaces
-  .replace(/\n[ \t]+/g, '\n') // Remove leading whitespace on lines
-  .trim();
-
-const boundaryStrengths = { header: 6, paragraph: 4, sentence: 2, comma: 1 };
-const detectSemanticBoundaries = (text, options = {}) => {
-  const boundaries = [];
-  
-  // Headers (highest priority)
-  [...text.matchAll(/^(#{1,6})\s+(.+)$/gm)].forEach(match => {
-    boundaries.push({ 
-      position: match.index, 
-      type: 'header', 
-      strength: 8 - match[1].length, // H1=7, H2=6, etc.
-      content: match[2] 
-    });
-  });
-  
-  // Strong paragraph breaks (double+ newlines)
-  [...text.matchAll(/\n\s*\n\s*\n/g)].forEach(match => {
-    boundaries.push({ 
-      position: match.index + match[0].length, 
-      type: 'strong_paragraph', 
-      strength: 5 
-    });
-  });
-  
-  // Regular paragraph breaks
-  [...text.matchAll(/\n\s*\n/g)].forEach(match => {
-    // Skip if already captured as strong paragraph
-    const pos = match.index + match[0].length;
-    if (!boundaries.some(b => Math.abs(b.position - pos) < 3)) {
-      boundaries.push({ 
-        position: pos, 
-        type: 'paragraph', 
-        strength: 4 
-      });
-    }
-  });
-  
-  // List boundaries (new for better structure preservation)
-  [...text.matchAll(/\n\s*(?:[-*+]|\d+\.)\s/g)].forEach(match => {
-    boundaries.push({ 
-      position: match.index + 1, 
-      type: 'list_item', 
-      strength: 3 
-    });
-  });
-  
-  // Code block boundaries
-  [...text.matchAll(/\n\s*\[CODE_BLOCK\]\n/g)].forEach(match => {
-    boundaries.push({ 
-      position: match.index + match[0].length, 
-      type: 'code_boundary', 
-      strength: 3 
-    });
-  });
-  
-  // Strong sentence boundaries (. ! ? followed by capital or newline)
-  [...text.matchAll(/[.!?](?:\s+[A-Z]|\s*\n)/g)].forEach(match => {
-    const pos = match.index + 1;
-    if (!isAbbreviation(text, match.index)) {
-      boundaries.push({ 
-        position: pos, 
-        type: 'sentence', 
-        strength: 2 
-      });
-    }
-  });
-  
-  // Colon boundaries (often indicate explanations or lists)
-  [...text.matchAll(/:\s*\n/g)].forEach(match => {
-    boundaries.push({ 
-      position: match.index + match[0].length, 
-      type: 'colon_break', 
-      strength: 2 
-    });
-  });
-  
-  // Comma boundaries (last resort, but more selective)
-  [...text.matchAll(/,\s+(?=[A-Z])/g)].forEach(match => {
-    boundaries.push({ 
-      position: match.index + 1, 
-      type: 'comma', 
-      strength: 1 
-    });
-  });
-  
-  return boundaries.sort((a, b) => a.position - b.position);
+const getRules = (granularity) => GRANULARITY_RULES[granularity] || (() => { throw new Error(`Unknown granularity: ${granularity}`); })();
+const getPreservedBlocks = (text, rules) => rules.preserves ? findPreservedBlocks(text, rules.preserves) : []
+const findPreservedBlocks = (text, preservePatterns) => preservePatterns.flatMap(pattern => [...text.matchAll(pattern)].map(match => ({ start: match.index, end: match.index + match[0].length })));
+const isWithinPreservedBlock = (position, preservedBlocks) => preservedBlocks.some(block => position > block.start && position < block.end);
+const filterBoundariesWithinPreservedBlocks = (boundaries, preservedBlocks) => boundaries.filter(pos => !isWithinPreservedBlock(pos, preservedBlocks));
+const applyConverters = (text, converters) => converters.reduce((result, conv) => result.replace(conv.pattern, conv.replacement), text);
+const preprocessText = (text) => applyConverters(text, HTML_CONVERTERS).trim();
+const isAbbreviation = (text, position) => {
+  const beforeDot = text.slice(Math.max(0, position - 10), position);
+  return ABBREVIATIONS.some(abbr => beforeDot.endsWith(abbr));
 };
+// Patterns
+const ABBREVIATIONS = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'Inc', 'Corp', 'Ltd', 'etc', 'vs', 'e.g', 'i.e', 'Ph.D', 'U.S', 'U.K', 'U.N'];
+const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g;
+const LIST_BLOCK_PATTERN = /^[-*+]\s.+(?:\n[-*+]\s.+)*/gm;
+const QUOTE_BLOCK_PATTERN = /^>\s.+(?:\n>\s.+)*/gm;
+const SENTENCE_POSITION_CALC = (match, text) => !isAbbreviation(text, match.index) ? match.index + 1 : null;
+const PARAGRAPH_POSITION_CALC = (match) => match.index + match[0].length;
+const HEADER_POSITION_CALC = (match) => match.index > 0 ? match.index : null;
+const HORIZONTAL_RULE_POSITION_CALC = (match, text) => {
+  const endPos = match.index + match[0].length;
+  return endPos < text.length ? endPos + 1 : null;
+};
+const SENTENCE_END = { pattern: /[.!?](?:\s+[A-Z]|\s*\n)/g, calculatePosition: SENTENCE_POSITION_CALC };
+const PARAGRAPH_END = { pattern: /\n+/g, calculatePosition: PARAGRAPH_POSITION_CALC };
+const MARKDOWN_HEADER = { pattern: /^#{1,6}\s+.+$/gm, calculatePosition: HEADER_POSITION_CALC };
+const SECTION_HEADER = { pattern: /^.+\n[=-]+$/gm, calculatePosition: HEADER_POSITION_CALC };
+const HORIZONTAL_RULE = { pattern: /^(-{3,}|_{3,}|\*{3,})$/gm, calculatePosition: HORIZONTAL_RULE_POSITION_CALC };
+const GRANULARITY_RULES = {
+  sentence: { breakpoints: [SENTENCE_END] },
+  paragraph: { breakpoints: [PARAGRAPH_END], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] },
+  section: { breakpoints: [MARKDOWN_HEADER, SECTION_HEADER, HORIZONTAL_RULE], preserves: [CODE_BLOCK_PATTERN, LIST_BLOCK_PATTERN, QUOTE_BLOCK_PATTERN] }
+};
+const HTML_CONVERTERS = [
+  { pattern: /<br\s*\/?>/gi, replacement: '\n' },
+  { pattern: /<\/p>\s*<p>/gi, replacement: '\n\n' },
+  { pattern: /<[^>]+>/g, replacement: '' },
+  { pattern: /\s+/g, replacement: ' ' },
+  { pattern: /\r\n/g, replacement: '\n' },
+  { pattern: /\r/g, replacement: '\n' }
+];
+// ============================================
+// Tests
+// ============================================
+export const chunkingTestCases = [
+  { name: "Sentence Abbreviations: Common abbreviations preserved", input: "Mr. Smith met Dr. Johnson at Inc. headquarters. They discussed e.g. profits.", granularity: "sentence", expected: ["Mr. Smith met Dr. Johnson at Inc. headquarters.", "They discussed e.g. profits."] },
+  { name: "Sentence Abbreviations: Academic abbreviations",  input: "Prof. Lee has a Ph.D from MIT. She studied i.e. machine learning.", granularity: "sentence", expected: ["Prof. Lee has a Ph.D from MIT.", "She studied i.e. machine learning."] },
+  { name: "Sentence Abbreviations: Country abbreviations", input: "U.S. markets opened strong. U.K. followed suit.", granularity: "sentence",  expected: ["U.S. markets opened strong.", "U.K. followed suit."] },
+  { name: "Paragraph Newlines: Single newlines create paragraphs", input: "First paragraph\nSecond paragraph\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Paragraph Newlines: Multiple newlines treated same as single", input: "First paragraph\n\n\nSecond paragraph\n\n\n\n\nThird paragraph",  granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Paragraph Newlines: Windows line endings", input: "First paragraph\r\n\r\nSecond paragraph\r\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Markdown Formats: Horizontal rules create sections", input: "Section 1 content\n\n---\n\nSection 2 content\n\n___\n\nSection 3 content", granularity: "section", expected: ["Section 1 content", "Section 2 content", "Section 3 content"] },
+  { name: "Markdown Formats: Lists preserved in paragraphs", input: "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph", granularity: "paragraph",  expected: ["My todo list:\n- Item 1\n- Item 2\n- Item 3", "Next paragraph"] },
+  { name: "Markdown Formats: Block quotes preserved", input: "He said:\n> This is important\n> Really important\n\nI agreed.", granularity: "paragraph", expected: ["He said:\n> This is important\n> Really important", "I agreed."] },
+  { name: "Markdown Formats: Code blocks preserved",  input: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:\n```python\ndef hello():\n    print('world')\n```", "That's it."] },
+  { name: "HTML Content: HTML break tags", input: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
+  { name: "HTML Content: HTML paragraph tags",  input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
+];
 
-const isAbbreviation = (text, dotIndex) => /\b(Mr|Mrs|Dr|Prof|etc|vs|ie|eg)$/.test(text.slice(Math.max(0, dotIndex - 10), dotIndex));
+// const runSingleTest = async (test) => {
+//   try {
+//     const actualChunks = await chunkByStructure({ text: test.input, granularity: test.granularity });
+//     return { name: test.name, passed: JSON.stringify(actualChunks) === JSON.stringify(test.expected), expected: test.expected, actual: actualChunks };
+//   } catch (error) {
+//     return { name: test.name, passed: false, error: error.message };
+//   }
+// };
 
-const createBoundaryBasedChunks = (text, boundaries, options = {}) => {
-  const { minTokens = 50, maxTokens = 1000, overlapTokens = 50 } = options;
-  
-  // Early return for empty text
-  if (!text || text.trim().length === 0) {
-    return [];
+// export const runChunkingTests = async () => {
+//   const results = [];
+//   for (const [category, tests] of Object.entries(chunkingTestCases)) {
+//     const categoryResults = await Promise.all(tests.map(runSingleTest));
+//     results.push(...categoryResults.map(r => ({ category, ...r })));
+//   }
+//   const passedTests = results.filter(r => r.passed).length;
+//   const totalTests = results.length;
+//   return { passed: passedTests, total: totalTests, results };
+// };
+
+export const test = async () => [
+  { name: "Sentence Abbreviations: Common abbreviations preserved", input: "Mr. Smith met Dr. Johnson at Inc. headquarters. They discussed e.g. profits.", granularity: "sentence", expected: ["Mr. Smith met Dr. Johnson at Inc. headquarters.", "They discussed e.g. profits."] },
+  { name: "Sentence Abbreviations: Academic abbreviations",  input: "Prof. Lee has a Ph.D from MIT. She studied i.e. machine learning.", granularity: "sentence", expected: ["Prof. Lee has a Ph.D from MIT.", "She studied i.e. machine learning."] },
+  { name: "Sentence Abbreviations: Country abbreviations", input: "U.S. markets opened strong. U.K. followed suit.", granularity: "sentence",  expected: ["U.S. markets opened strong.", "U.K. followed suit."] },
+  { name: "Paragraph Newlines: Single newlines create paragraphs", input: "First paragraph\nSecond paragraph\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Paragraph Newlines: Multiple newlines treated same as single", input: "First paragraph\n\n\nSecond paragraph\n\n\n\n\nThird paragraph",  granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Paragraph Newlines: Windows line endings", input: "First paragraph\r\n\r\nSecond paragraph\r\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Markdown Formats: Horizontal rules create sections", input: "Section 1 content\n\n---\n\nSection 2 content\n\n___\n\nSection 3 content", granularity: "section", expected: ["Section 1 content", "Section 2 content", "Section 3 content"] },
+  { name: "Markdown Formats: Lists preserved in paragraphs", input: "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph", granularity: "paragraph",  expected: ["My todo list:\n- Item 1\n- Item 2\n- Item 3", "Next paragraph"] },
+  { name: "Markdown Formats: Block quotes preserved", input: "He said:\n> This is important\n> Really important\n\nI agreed.", granularity: "paragraph", expected: ["He said:\n> This is important\n> Really important", "I agreed."] },
+  { name: "Markdown Formats: Code blocks preserved",  input: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:\n```python\ndef hello():\n    print('world')\n```", "That's it."] },
+  { name: "HTML Content: HTML break tags", input: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
+  { name: "HTML Content: HTML paragraph tags",  input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
+].map(runChunkTest).flat();
+const runChunkTest = async (testCase) => {
+  const { name, input, granularity, expected } = testCase;
+  try {
+    const result = await chunkByStructure({ text: input, granularity });
+    const passed = JSON.stringify(result) === JSON.stringify(expected);
+    return { name, passed, result };
+  } catch (error) {
+    return { name, passed: false, error };
   }
-  
-  // Check if entire text fits in one chunk
-  const totalTokens = estimateTokenCount(text);
-  if (totalTokens <= maxTokens) {
-    return [{
-      text: text.trim(),
-      tokenCount: totalTokens,
-      startPos: 0,
-      endPos: text.length,
-      chunkIndex: 0
-    }];
-  }
-  
-  const chunks = [];
-  let currentStart = 0;
-  
-  // AGGRESSIVE CHUNKING: Calculate expected number of chunks
-  // Use a target size that will produce the expected number of chunks
-  // For small (50-300): use ~250 tokens per chunk
-  // For medium (100-600): use ~450 tokens per chunk  
-  // For large (200-1000): use ~800 tokens per chunk
-  const optimalChunkSize = Math.min(maxTokens * 0.83, maxTokens - 50);
-  const expectedChunks = Math.ceil(totalTokens / optimalChunkSize);
-  const actualTargetTokens = Math.floor(totalTokens / expectedChunks);
-  
-  runtime.log(`[Chunking] Total tokens: ${totalTokens}, Target per chunk: ${actualTargetTokens}, Expected chunks: ${expectedChunks}`);
-  
-  while (currentStart < text.length) {
-    const remainingText = text.slice(currentStart);
-    const remainingTokens = estimateTokenCount(remainingText);
-    
-    // If remaining fits in max tokens, take it all
-    if (remainingTokens <= maxTokens) {
-      const chunkText = remainingText.trim();
-      if (chunkText.length > 0) {
-        chunks.push({
-          text: chunkText,
-          tokenCount: remainingTokens,
-          startPos: currentStart,
-          endPos: text.length,
-          chunkIndex: chunks.length
-        });
-      }
-      break;
-    }
-    
-    // FORCE CHUNKING: Calculate exact position for target tokens
-    // Use character/token ratio for THIS specific text
-    const charsPerToken = text.length / totalTokens;
-    const targetChunkChars = Math.floor(actualTargetTokens * charsPerToken);
-    
-    // Start by looking at the exact target position
-    let chunkEnd = currentStart + targetChunkChars;
-    
-    // Ensure we don't go past the end
-    chunkEnd = Math.min(chunkEnd, text.length);
-    
-    // Look for a boundary near our target (within 20% range)
-    const searchRange = Math.floor(targetChunkChars * 0.2);
-    const searchStart = Math.max(currentStart, chunkEnd - searchRange);
-    const searchEnd = Math.min(text.length, chunkEnd + searchRange);
-    
-    let bestBoundary = null;
-    let bestScore = -1;
-    
-    for (const boundary of boundaries) {
-      if (boundary.position <= searchStart) continue;
-      if (boundary.position >= searchEnd) break;
-      
-      // Score based on proximity to target and boundary strength
-      const distance = Math.abs(boundary.position - chunkEnd);
-      const normalizedDistance = 1 - (distance / searchRange);
-      const strengthBonus = (boundary.strength || 1) / 10;
-      const score = normalizedDistance + strengthBonus;
-      
-      if (score > bestScore) {
-        const segmentTokens = estimateTokenCount(text.slice(currentStart, boundary.position));
-        // Only use if it's within reasonable token range
-        if (segmentTokens >= minTokens && segmentTokens <= maxTokens) {
-          bestScore = score;
-          bestBoundary = boundary.position;
-        }
-      }
-    }
-    
-    // Use boundary if found, otherwise use calculated position
-    if (bestBoundary) {
-      chunkEnd = bestBoundary;
-    } else {
-      // No boundary found - try to at least break at a word
-      const nearestSpace = text.indexOf(' ', chunkEnd);
-      const previousSpace = text.lastIndexOf(' ', chunkEnd);
-      
-      if (nearestSpace !== -1 && nearestSpace - chunkEnd < 50) {
-        chunkEnd = nearestSpace;
-      } else if (previousSpace !== -1 && chunkEnd - previousSpace < 50) {
-        chunkEnd = previousSpace;
-      }
-    }
-    
-    // Absolute minimum progress to prevent infinite loops
-    if (chunkEnd <= currentStart) {
-      chunkEnd = Math.min(currentStart + 100, text.length);
-      console.warn(`[Chunking] Forced progress from ${currentStart} to ${chunkEnd}`);
-    }
-    
-    // Extract and save the chunk
-    const chunkText = text.slice(currentStart, chunkEnd).trim();
-    if (chunkText.length > 0) {
-      const tokenCount = estimateTokenCount(chunkText);
-      chunks.push({
-        text: chunkText,
-        tokenCount,
-        startPos: currentStart,
-        endPos: chunkEnd,
-        chunkIndex: chunks.length
-      });
-      runtime.log(`[Chunking] Chunk ${chunks.length}: ${tokenCount} tokens`);
-    }
-    
-    // Simple overlap handling - just move forward
-    if (overlapTokens > 0 && chunkEnd < text.length) {
-      // Very small overlap to not consume too many tokens
-      const overlapChars = Math.min(50, Math.floor(overlapTokens * 2));
-      currentStart = chunkEnd - overlapChars;
-    } else {
-      currentStart = chunkEnd;
-    }
-    
-    // Ensure forward progress
-    if (currentStart >= text.length) break;
-  }
-  
-  return chunks;
 };
-
-function predictChunkingBehavior(text, analysis) {
-  const tokens = estimateTokenCount(text);
-  
-  const strategies = {
-    small: { minTokens: 50, maxTokens: 300 },
-    medium: { minTokens: 100, maxTokens: 600 },
-    large: { minTokens: 200, maxTokens: 1000 }
-  };
-  
-  const predictions = {};
-  
-  Object.entries(strategies).forEach(([name, strategy]) => {
-    if (tokens <= strategy.minTokens) {
-      predictions[name] = { expectedChunks: 1, reason: 'Below minimum threshold' };
-    } else if (tokens <= strategy.maxTokens) {
-      predictions[name] = { expectedChunks: 1, reason: 'Within single chunk limit' };
-    } else {
-      // More accurate prediction based on content structure
-      let estimatedChunks = Math.ceil(tokens / (strategy.maxTokens * 0.8)); // Account for overlap
-      
-      // Adjust for semantic structure
-      if (analysis.headers >= 3) {
-        estimatedChunks = Math.max(estimatedChunks, Math.min(analysis.headers + 1, 8));
-      }
-      
-      // Code-heavy content tends to chunk more
-      if (analysis.codeBlocks >= 2) {
-        estimatedChunks = Math.max(estimatedChunks, analysis.codeBlocks + 1);
-      }
-      
-      // Very long content with minimal structure still needs to be split
-      if (tokens > 3000 && analysis.headers <= 1) {
-        estimatedChunks = Math.max(estimatedChunks, Math.ceil(tokens / strategy.maxTokens));
-      }
-      
-      predictions[name] = { 
-        expectedChunks: estimatedChunks, 
-        reason: `Multiple chunks needed (~${tokens} tokens, structure-aware)` 
-      };
-    }
-  });
-  
-  return predictions;
-}
-
-const findOptimalChunkEnd = (text, start, boundaries, minTokens, maxTokens) => {
-  const availableBoundaries = boundaries.filter(b => b.position > start);
-  
-  if (availableBoundaries.length === 0) {
-    return text.length;
-  }
-  
-  // FIX: Remove the 0.8 multiplier - use full maxTokens
-  const targetMax = maxTokens;  // Not: Math.floor(maxTokens * 0.8)
-  
-  let bestEnd = start;
-  let closestToTarget = null;
-  let closestDistance = Infinity;
-  
-  for (const boundary of availableBoundaries) {
-    const segmentText = text.slice(start, boundary.position);
-    const currentTokens = estimateTokenCount(segmentText);
-    
-    // FIX: Find boundary closest to target, not just first acceptable one
-    const distance = Math.abs(currentTokens - targetMax);
-    
-    // Stop if we've exceeded max tokens
-    if (currentTokens > targetMax) {
-      // Use the closest boundary we've found so far
-      if (closestToTarget) {
-        return closestToTarget;
-      }
-      // Or use this boundary if it's the first one past the limit
-      return boundary.position;
-    }
-    
-    // Track the boundary closest to our target
-    if (distance < closestDistance) {
-      closestDistance = distance;
-      closestToTarget = boundary.position;
-    }
-    
-    // Update bestEnd to the furthest boundary within limits
-    if (currentTokens <= targetMax) {
-      bestEnd = boundary.position;
-    }
-  }
-  
-  // FIX: If no boundary found at target, force split at approximate position
-  if (bestEnd === start && text.length > start) {
-    // Estimate position for target tokens
-    const avgCharsPerToken = 4;  // Approximate
-    const targetPosition = start + (targetMax * avgCharsPerToken);
-    return Math.min(targetPosition, text.length);
-  }
-  
-  return bestEnd > start ? bestEnd : text.length;
-};
-
-const enhanceChunks = async (rawChunks, options = {}) => rawChunks.map((chunk, index) => ({
-  ...chunk,
-  id: `chunk-${index}`,
-  metadata: {
-    type: options.documentType || 'unknown',
-    position: `${index + 1}/${rawChunks.length}`,
-    ...options.metadata
-  }
-}));
-
-const createChunks = async (text, options = {}) => {
-  const processed = preprocessText(text, options);
-  if (!processed.trim()) return [];
-  
-  const boundaries = detectSemanticBoundaries(processed, options);
-  const rawChunks = createBoundaryBasedChunks(processed, boundaries, options);
-  return enhanceChunks(rawChunks, options);
-};
-
-const getDocumentTypeConfig = (documentType) => ({
-  conversation: { minTokens: 30, maxTokens: 500, preserveStructure: false },
-  technical: { minTokens: 100, maxTokens: 1500, preserveStructure: true },
-  narrative: { minTokens: 200, maxTokens: 2000, preserveStructure: true },
-  unknown: { minTokens: 50, maxTokens: 1000, preserveStructure: true }
-}[documentType] || { minTokens: 50, maxTokens: 1000, preserveStructure: true });
-
-export const chunkText = async (params) => {
-  const { text, minTokens = 50, maxTokens = 1000, preserveStructure = true } = params;
-  return { success: true, chunks: await createChunks(text, { minTokens, maxTokens, preserveStructure }) };
-};
-
-export const chunkDocument = async (params) => {
-  const { content, documentType = 'unknown', metadata = {} } = params;
-  const config = getDocumentTypeConfig(documentType);
-  const chunks = await createChunks(content, { ...config, documentType, metadata });
-  return { success: true, chunks, documentType, config };
-};
-
-export const chunkInferenceInteraction = async (params) => {
-  const { userPrompt, aiResponse, metadata = {} } = params;
-  
-  // For now, create simple single chunks until we implement proper chunking
-  const promptChunks = [{
-    text: userPrompt,
-    tokenCount: estimateTokenCount(userPrompt),
-    chunkIndex: 0,
-    metadata: { type: 'user_prompt', ...metadata }
-  }];
-  
-  const responseChunks = [{
-    text: aiResponse,
-    tokenCount: estimateTokenCount(aiResponse),
-    chunkIndex: 0,
-    metadata: { type: 'assistant_response', ...metadata }
-  }];
-  
-  return { 
-    promptChunks, 
-    responseChunks, 
-    metadata 
-  };
-};
-

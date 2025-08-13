@@ -30,7 +30,7 @@ class Runtime {
     
     exportedActions = (module) => Object.getOwnPropertyNames(module)
         .filter(prop => typeof module[prop] === 'function')
-        .filter(name => !['initialize', 'cleanup', 'manifest', 'default'].includes(name));
+        .filter(name => !['initialize', 'cleanup', 'manifest', 'default', 'test'].includes(name));
 
     // Register actions from modules across all contexts to enable cross-context function calling
     registerActions = () => {

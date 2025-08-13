@@ -47,10 +47,10 @@ export const hasKey = async (params) => {
   const syncResult = await chromeSyncGet([keyID]);
   return !!(syncResult.success && syncResult.result[keyID]);
 };
-export const listKeys = async () => Object.keys((await chromeSyncGet(null))?.result ?? {});
+export const listKeys = async () => Object.keys((await chromeSyncGet(null)).result).filter(key => key.startsWith(KEY_PREFIX));
 export const clearKeys = async () => await chromeSyncRemove(await listKeys());
 
 const getKeyId = (service) => `${KEY_PREFIX}${service}`;
-const chromeSyncGet = async (keys) => await runtime.call('chrome-sync.get', { keys });
+const chromeSyncGet = async (keys) => await runtime.call('chrome-sync.getAll');
 const chromeSyncSet = async (items) => await runtime.call('chrome-sync.set', { items });
 const chromeSyncRemove = async (keys) => await runtime.call('chrome-sync.remove', { keys });

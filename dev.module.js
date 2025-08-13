@@ -263,10 +263,13 @@ const parseSuperintendentResponse = (responseText) => {
 
 
 
-export const runModuleTests = async ({ moduleName }) => {
-  const module = runtime.getModulesWithProperty("tests").find(m => m.manifest.name === moduleName);
-  const results = (await Promise.all(module.manifest.tests
-    .filter(testName => module[testName] || runtime.log(`⚠️  Test ${testName} not found in module ${moduleName}`))
-    .map(async testName => await module[testName]()))).flat();
+export const testModule = async ({ moduleName }) => {
+  const module = runtime.getModulesWithProperty("test").find(m => m.manifest.name === moduleName);
+  const results = await module.test();
   return { module: moduleName, totalTests: results.length, passed: results.filter(r => r.passed).length, results };
+};
+export const testAllModules = async () => {
+  const modules = runtime.getModulesWithProperty("test");
+  const results = await Promise.all(modules.map(module => testModule({ moduleName: module.manifest.name })));
+  return results;
 };
