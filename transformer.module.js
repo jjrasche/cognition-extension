@@ -1,6 +1,6 @@
 export const manifest = {
   name: 'transformer',
-  context: "offscreen",
+  context: ["offscreen"],
   version: "1.0.0",
   description: 'Hugging Face Transformers.js runtime with WebGPU/WebNN support',
   actions: ["getModel", "listModels", "getModelName"],

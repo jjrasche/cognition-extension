@@ -1,7 +1,7 @@
 export let manifest = {
   name: "claude-api",
   keywords: ["claude", "anthropic"],
-  context: "service-worker",
+  context: ["service-worker"],
   version: "1.0.0",
   permissions: ["storage"],
   dependencies: ["api-keys", "graph-db", "chunking", "embedding"],

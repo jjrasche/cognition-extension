@@ -10,7 +10,7 @@
 export const manifest = {
   name: "embedding", 
   keywords: ["embed"],
-  context: "offscreen",
+  context: ["offscreen"],
   dependencies: ["transformer", "api-keys"],
   version: "1.0.0",
   description: "use local embedding models to embed text",

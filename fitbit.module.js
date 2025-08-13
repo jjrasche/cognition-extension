@@ -3,7 +3,7 @@ import { today, yesterday } from './helpers.js';
 export const manifest = {
   name: "fitbit",
   keywords: ["health", "fitness", "wearable"],
-  context: "service-worker",
+  context: ["service-worker"],
   version: "1.0.0",
   permissions: ["storage"],
   actions: ["getData", "refreshData"],

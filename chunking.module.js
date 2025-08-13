@@ -2,7 +2,7 @@ export const manifest = {
   name: "chunking",
   version: "2.0.0",
   description: "Structure-based text chunking with format converters",
-  context: "service-worker",
+  context: ["service-worker"],
   permissions: ["storage"],
   actions: ["chunkByStructure", "runChunkingTests"]
 };
@@ -119,7 +119,7 @@ export const chunkingTestCases = [
 //   return { passed: passedTests, total: totalTests, results };
 // };
 
-export const test = async () => [
+export const test = async () => (await Promise.all([
   { name: "Sentence Abbreviations: Common abbreviations preserved", input: "Mr. Smith met Dr. Johnson at Inc. headquarters. They discussed e.g. profits.", granularity: "sentence", expected: ["Mr. Smith met Dr. Johnson at Inc. headquarters.", "They discussed e.g. profits."] },
   { name: "Sentence Abbreviations: Academic abbreviations",  input: "Prof. Lee has a Ph.D from MIT. She studied i.e. machine learning.", granularity: "sentence", expected: ["Prof. Lee has a Ph.D from MIT.", "She studied i.e. machine learning."] },
   { name: "Sentence Abbreviations: Country abbreviations", input: "U.S. markets opened strong. U.K. followed suit.", granularity: "sentence",  expected: ["U.S. markets opened strong.", "U.K. followed suit."] },
@@ -133,7 +133,7 @@ export const test = async () => [
   { name: "HTML Content: HTML break tags", input: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
   { name: "HTML Content: HTML paragraph tags",  input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
   { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
-].map(runChunkTest).flat();
+].map(runChunkTest))).flat();
 const runChunkTest = async (testCase) => {
   const { name, input, granularity, expected } = testCase;
   try {

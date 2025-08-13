@@ -1,6 +1,6 @@
 export const manifest = {
   name: "web-extractor",
-  context: "extension-page",
+  context: ["extension-page"],
   version: "1.0.0",
   description: "Extracts hierarchical DOM structure and converts to multiple formats",
   permissions: ["tabs", "scripting", "activeTab"],

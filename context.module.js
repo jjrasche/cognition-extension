@@ -1,6 +1,6 @@
 export const manifest = {
   name: "context",
-  context: "service-worker",
+  context: ["service-worker"],
   version: "1.0.0",
   description: "Packages current state and available actions for LLM consumption",
   permissions: ["storage"],

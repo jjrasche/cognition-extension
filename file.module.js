@@ -1,6 +1,6 @@
 export const manifest = {
   name: "file",
-  context: "extension-page",
+  context: ["extension-page"],
   version: "1.0.0",
   description: "User-controlled file operations with directory handles and persistent permissions",
   permissions: ["storage"],
@@ -82,7 +82,7 @@ export const hasDir = async ({ name }) => !!(await getHandle(name));
 // tests
 import { wait } from './helpers.js';
 const dir = 'Documents';
-export const test = async () => [testFileWrite, testFileRead, testFileAppend].flat().forEach(fn => fn());
+export const test = async () => (await Promise.all([ testFileWrite, testFileRead, testFileAppend ].map(fn => fn()))).flat();
 const testFileWrite = async () => {
   const params = { dir, filename: 'test-write.txt', data: 'Test Write' };
   const expect = async () => {

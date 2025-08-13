@@ -1,6 +1,6 @@
 export const manifest = {
  name: "web-standardizer",
- context: "??? content-script ???",
+ context: ["??? content-script ???"],
  version: "1.0.0",
  description: "Transform any website into a clean, standardized interface while preserving full functionality - creating a unified web experience across all sites",
  purpose: "universal website adapter that eliminates visual chaos and inconsistent interfaces, making every website feel like part of a cohesive, distraction-free browsing experience",

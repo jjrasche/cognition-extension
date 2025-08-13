@@ -1,7 +1,7 @@
 export const manifest = {
   name: "oauth",
   description: "Centralized OAuth management and calls for extension",
-  context: "service-worker",
+  context: ["service-worker"],
   version: "1.0.0", 
   permissions: ["storage"],
   actions: ["request", "clearTokens"],

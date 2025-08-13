@@ -1,6 +1,6 @@
 export const manifest = {
   name: "web-search",
-  context: "service-worker",
+  context: ["service-worker"],
   version: "1.0.0",
   description: "Web search via DuckDuckGo tab scraping",
   permissions: ["tabs", "scripting"],

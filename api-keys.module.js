@@ -1,6 +1,6 @@
 export const manifest = {
   name: "api-keys",
-  context: "service-worker",
+  context: ["service-worker"],
   version: "1.0.0",
   description: "Centralized API key management using Chrome's secure sync storage",
   permissions: [],

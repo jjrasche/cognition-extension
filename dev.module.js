@@ -6,7 +6,7 @@ export const manifest = {
   version: "1.0.0",
   description: "Development utilities and shortcuts for debugging",
   permissions: ["storage"],
-  actions: ["testEmbeddingSpeed", "updateSuperintendentData", "runModuleTests", "showFileTestButton", "runFileTests"],
+  actions: ["testEmbeddingSpeed", "updateSuperintendentData", "testModules"],
   dependencies: ["file"]//, "inference", "transformer", "embedding"]
 };
 
@@ -263,13 +263,45 @@ const parseSuperintendentResponse = (responseText) => {
 
 
 
-export const testModule = async ({ moduleName }) => {
-  const module = runtime.getModulesWithProperty("test").find(m => m.manifest.name === moduleName);
-  const results = await module.test();
-  return { module: moduleName, totalTests: results.length, passed: results.filter(r => r.passed).length, results };
-};
-export const testAllModules = async () => {
-  const modules = runtime.getModulesWithProperty("test");
-  const results = await Promise.all(modules.map(module => testModule({ moduleName: module.manifest.name })));
+export const testModules = async ({modulesToTest = []}) => {
+  let modules = runtime.getModulesWithProperty("test")
+    .filter(module => module.manifest.context.includes(runtime.runtimeName)) // run tests in their context
+    .filter(module => modulesToTest.length === 0 || modulesToTest.includes(module.manifest.name));
+  const results = await Promise.all(modules.map(module => module.test()));
+  showSummary(results);
+  showModuleSummary(results);
   return results;
 };
+
+const showSummary = (results) => {
+  const totalTests = results.reduce((sum, r) => sum + r.totalTests, 0);
+  const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);
+  console.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed/totalTests*100)}%)`);
+};
+const showModuleSummary = (results) => {
+  console.log('\n=== MODULES TESTED ===');
+  console.table(results.map(result => ({
+    Module: result.module,
+    'Total Tests': result.totalTests,
+    Passed: result.passed,
+    Failed: result.totalTests - result.passed,
+    'Pass Rate': result.totalTests > 0 ? `${Math.round(result.passed / result.totalTests * 100)}%` : '0%'
+  })));
+};
+const showTestFailures = (results) => {
+  const failedTests = results.flatMap(result => result.results
+    .filter(test => !test.passed)
+    .map(test => ({
+      Module: result.module,
+      'Test Name': test.name,
+      'Expected': JSON.stringify(test.expected)?.substring(0, 50) + '...' || 'N/A',
+      'Actual': JSON.stringify(test.result)?.substring(0, 50) + '...' || 'N/A',
+      'Error': test.error?.message || test.error || 'Test failed'
+    })));
+  if (failedTests.length > 0) {
+    console.log('\n=== FAILED TEST DETAILS ===');
+    console.table(failedTests);
+  } else {
+    console.log('\n🎉 All tests passed!');
+  }
+}

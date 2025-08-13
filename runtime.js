@@ -23,7 +23,7 @@ class Runtime {
     }
 
     loadModulesForContext = async () => {
-        this.modules = modules.filter(module => module.manifest.context && (module.manifest.context === this.runtimeName || module.manifest.context.includes(this.runtimeName)));
+        this.modules = modules.filter(module => module.manifest.context && module.manifest.context.includes(this.runtimeName));
     }
 
     getModuleActions = (module) => module.manifest.actions?.filter(action => this.exportedActions(module).includes(action)) || [];

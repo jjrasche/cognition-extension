@@ -1,6 +1,6 @@
 export const manifest = {
   name: "transcript",
-  context: "offscreen", // Run with transformer module
+  context: ["offscreen"], // Run with transformer module
   version: "1.0.0", 
   description: "Local speech transcription using Whisper Base",
   dependencies: ["transformer"],
