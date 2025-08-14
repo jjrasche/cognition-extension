@@ -308,7 +308,7 @@ const showTestFailures = (results) => {
         'Actual': JSON.stringify(test.actual)?.substring(0, 50) + '...' || 'N/A'
       }])
     ));
-    console.log(JSON.stringify(failedTests, null, 2));
+    console.log(JSON.stringify(failedTests, null, 2),failedTests);
   } else {
     console.log('\n🎉 All tests passed!');
   }

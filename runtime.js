@@ -232,6 +232,33 @@ class Runtime {
 
     log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
+    
+    // Test utilities
+    testUtils = {
+        strictEqual: (a, b) => a === b,
+        contains: (arr, item) => arr.includes(item),
+        deepEqual: (a, b) => {
+            if (a === b) return true;
+            if (!a || !b || typeof a !== typeof b) return false;
+            if (typeof a === 'object') {
+                const keysA = Object.keys(a), keysB = Object.keys(b);
+                return keysA.length === keysB.length && keysA.every(key => this.testUtils.deepEqual(a[key], b[key]));
+            }
+            return false;
+        },
+        // constrains single-assertion tests across all modules
+        runUnitTest: async (name, testFn) => {
+            try {
+                const { actual, expected, assert } = await testFn();
+                const passed = assert(actual, expected);
+                if (!passed)
+                return { name, actual, expected, passed };
+            } catch (error) {
+                return { name, passed: false, error: error.message };
+            }
+        }
+    };
+
 }
 
 export function initializeRuntime(runtimeName) {

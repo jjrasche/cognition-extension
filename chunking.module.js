@@ -88,17 +88,21 @@ const HTML_CONVERTERS = [
 // Tests - removed all sentence tests
 // ============================================
 export const test = async () => (await Promise.all([
-  { name: "Paragraph Newlines: Single newlines create paragraphs", input: "First paragraph\nSecond paragraph\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "Paragraph Newlines: Multiple newlines treated same as single", input: "First paragraph\n\n\nSecond paragraph\n\n\n\n\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "Paragraph Newlines: Windows line endings", input: "First paragraph\r\n\r\nSecond paragraph\r\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "Markdown Formats: Horizontal rules create sections", input: "Section 1 content\n\n---\n\nSection 2 content\n\n___\n\nSection 3 content", granularity: "section", expected: ["Section 1 content", "Section 2 content", "Section 3 content"] },
-  { name: "Markdown Formats: Lists preserved in paragraphs", input: "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph", granularity: "paragraph", expected: ["My todo list:", "- Item 1\n- Item 2\n- Item 3", "Next paragraph"] },
-  { name: "Markdown Formats: Block quotes preserved", input: "He said:\n> This is important\n> Really important\n\nI agreed.", granularity: "paragraph", expected: ["He said:", "> This is important\n> Really important", "I agreed."] },
-  { name: "Markdown Formats: Code blocks preserved", input: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:", "```python\ndef hello():\n    print('world')\n```", "That's it."] },
-  { name: "HTML Content: HTML break tags", input: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
-  { name: "HTML Content: HTML paragraph tags", input: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
-  { name: "HTML Content: Mixed HTML and text", input: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
-].map(runChunkTest))).flat();
+  { name: "Paragraph Newlines: Single newlines create paragraphs", text: "First paragraph\nSecond paragraph\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Paragraph Newlines: Multiple newlines treated same as single", text: "First paragraph\n\n\nSecond paragraph\n\n\n\n\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Paragraph Newlines: Windows line endings", text: "First paragraph\r\n\r\nSecond paragraph\r\nThird paragraph", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "Markdown Formats: Horizontal rules create sections", text: "Section 1 content\n\n---\n\nSection 2 content\n\n___\n\nSection 3 content", granularity: "section", expected: ["Section 1 content", "Section 2 content", "Section 3 content"] },
+  { name: "Markdown Formats: Lists preserved in paragraphs", text: "My todo list:\n- Item 1\n- Item 2\n- Item 3\n\nNext paragraph", granularity: "paragraph", expected: ["My todo list:", "- Item 1\n- Item 2\n- Item 3", "Next paragraph"] },
+  { name: "Markdown Formats: Block quotes preserved", text: "He said:\n> This is important\n> Really important\n\nI agreed.", granularity: "paragraph", expected: ["He said:", "> This is important\n> Really important", "I agreed."] },
+  { name: "Markdown Formats: Code blocks preserved", text: "Here's the code:\n```python\ndef hello():\n    print('world')\n```\nThat's it.", granularity: "paragraph", expected: ["Here's the code:", "```python\ndef hello():\n    print('world')\n```", "That's it."] },
+  { name: "HTML Content: HTML break tags", text: "First part<br>Second part<br/>Third part<br />Fourth part", granularity: "paragraph", expected: ["First part", "Second part", "Third part", "Fourth part"] },
+  { name: "HTML Content: HTML paragraph tags", text: "<p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p>", granularity: "paragraph", expected: ["First paragraph", "Second paragraph", "Third paragraph"] },
+  { name: "HTML Content: Mixed HTML and text", text: "Normal text<br><br>After break\n\nAfter newline<p>In paragraph</p>", granularity: "paragraph", expected: ["Normal text", "After break", "After newline", "In paragraph"] }
+].map(tc => {
+  const { runTest, deepEqual } = runtime.testUtils;
+  const actual = chunkByStructure(tc);
+  runTest({ ...tc, actual, assert: deepEqual });
+}))).flat();
 
 const runChunkTest = async (testCase) => {
   const { name, input, granularity, expected } = testCase;
