@@ -1,5 +1,5 @@
 import { modules } from './module-registry.js';
-import { retryAsync } from './helpers.js';
+import { retryAsync, wait } from './helpers.js';
 class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
@@ -246,23 +246,92 @@ class Runtime {
             }
             return false;
         },
+        // Returns true if A contains all key-value pairs from B
+        containsKeyValuePairs: (a, b) => {
+            if (a === b) return true;
+            if (!a || !b) return false;
+            if (typeof a !== 'object' || typeof b !== 'object') return a === b;
+            
+            // Check if all keys in B exist in A with equal values
+            return Object.keys(b).every(key => {
+                if (!(key in a)) return false;
+                if (typeof a[key] === 'object' && typeof b[key] === 'object') {
+                    return this.testUtils.containsKeyValuePairs(a[key], b[key]);
+                }
+                return a[key] === b[key];
+            });
+        },
         // constrains single-assertion tests across all modules
         runUnitTest: async (name, testFn) => {
             try {
                 const { actual, expected, assert } = await testFn();
                 const passed = assert(actual, expected);
-                if (!passed)
-                return { name, actual, expected, passed };
+                return { name, actual, assert, expected, passed };
             } catch (error) {
                 return { name, passed: false, error: error.message };
             }
         }
     };
 
+    testModules = async (modulesToTest = []) => {
+        let modules = this.getModulesWithProperty("test")
+            .filter(module => module.manifest.context.includes(this.runtimeName)) // run tests in their context
+            .filter(module => modulesToTest.length === 0 || modulesToTest.includes(module.manifest.name));
+        const results = (await Promise.all(modules.map(async module => {
+            const tests = await module['test']();
+            return tests.map(test => ({...test, module: module.manifest.name}));
+        }))).flat();
+        this.showSummary(results);
+        this.showModuleSummary(results);
+        this.showTestFailures(results);
+        return results;
+    };
+    showSummary = (results) => {
+        const totalTests = results.reduce((sum, r) => sum + r.totalTests, 0);
+        const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);
+        console.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed/totalTests*100)}%)`);
+    };
+    showModuleSummary = (results) => {
+        console.log('\n=== MODULES TESTED ===');
+        const moduleStats = results.reduce((acc, test) => {
+            if (!acc[test.module]) acc[test.module] = { total: 0, passed: 0 };
+            acc[test.module].total++;
+            if (test.passed) acc[test.module].passed++;
+            return acc;
+        }, {});  
+        console.table(Object.entries(moduleStats).map(([module, stats]) => ({
+            Module: module,
+            'Total Tests': stats.total,
+            Passed: stats.passed,
+            Failed: stats.total - stats.passed,
+            'Pass Rate': stats.total > 0 ? `${Math.round(stats.passed / stats.total * 100)}%` : '0%'
+        })));
+    };
+    showTestFailures = (results) => {
+        const failedTests = results.filter(test => !test.passed)
+        if (failedTests.length > 0) {
+            console.log('\n=== FAILED TEST DETAILS ===');
+            console.table(Object.fromEntries(failedTests.map((test, i) => [`test.module ${i+1}`, {
+                'Test Name': test.name,
+                'Expected': this.truncateOrNA(test.expected),
+                'Assert': test.assert.name,
+                'Actual': this.truncateOrNA(test.actual)
+            }])));
+            console.log(JSON.stringify(failedTests, null, 2),failedTests);
+        } else {
+            console.log('\n🎉 All tests passed!');
+        }
+    };
+    truncateOrNA = (value, maxLength = 50) => {
+        if (value == null) return 'N/A';
+        const str = JSON.stringify(value);
+        return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
+    }
 }
 
 export function initializeRuntime(runtimeName) {
     const initializer = new Runtime(runtimeName);
     initializer.initialize();
+    setTimeout(initializer.testModules, 1500);
     return initializer;
 }

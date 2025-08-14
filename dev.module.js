@@ -56,6 +56,7 @@ const addEasyAccessVariablesToConsole = () => {
   globalThis.printActions = prettyPrintActions;
   globalThis.printModules = prettyPrintModules;
   globalThis.printModuleState = prettyPrintModuleState;
+  globalThis.test = runtime.testModules
   // Add quick status check
   globalThis.printStatus = () => {
     runtime.log('=== Extension Status ===');
@@ -255,61 +256,5 @@ const parseSuperintendentResponse = (responseText) => {
       firstName: "", lastName: "", email: "", phone: "", 
       sourceUrl: "", lastUpdated: new Date().toISOString().split('T')[0]
     };
-  }
-};
-
-
-
-
-
-
-export const testModules = async ({modulesToTest = []}) => {
-  let modules = runtime.getModulesWithProperty("test")
-    .filter(module => module.manifest.context.includes(runtime.runtimeName)) // run tests in their context
-    .filter(module => modulesToTest.length === 0 || modulesToTest.includes(module.manifest.name));
-  const results = (await Promise.all(modules.map(async module => {
-    const tests = await module.test();
-    return tests.map(test => ({...test, module: module.manifest.name}));
-  }))).flat();
-  showSummary(results);
-  showModuleSummary(results);
-  showTestFailures(results);
-  return results;
-};
-const showSummary = (results) => {
-  const totalTests = results.reduce((sum, r) => sum + r.totalTests, 0);
-  const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);
-  console.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed/totalTests*100)}%)`);
-};
-const showModuleSummary = (results) => {
-  console.log('\n=== MODULES TESTED ===');
-  const moduleStats = results.reduce((acc, test) => {
-    if (!acc[test.module]) acc[test.module] = { total: 0, passed: 0 };
-    acc[test.module].total++;
-    if (test.passed) acc[test.module].passed++;
-    return acc;
-  }, {});  
-  console.table(Object.entries(moduleStats).map(([module, stats]) => ({
-    Module: module,
-    'Total Tests': stats.total,
-    Passed: stats.passed,
-    Failed: stats.total - stats.passed,
-    'Pass Rate': stats.total > 0 ? `${Math.round(stats.passed / stats.total * 100)}%` : '0%'
-  })));
-};
-const showTestFailures = (results) => {
-  const failedTests = results.filter(test => !test.passed)
-  if (failedTests.length > 0) {
-    console.log('\n=== FAILED TEST DETAILS ===');
-    console.table(Object.fromEntries(
-      failedTests.map((test, i) => [`test.module ${i+1}`, {
-        'Test Name': test.name,
-        'Expected': JSON.stringify(test.expected)?.substring(0, 50) + '...' || 'N/A',
-        'Actual': JSON.stringify(test.actual)?.substring(0, 50) + '...' || 'N/A'
-      }])
-    ));
-    console.log(JSON.stringify(failedTests, null, 2),failedTests);
-  } else {
-    console.log('\n🎉 All tests passed!');
   }
 };
