@@ -9,8 +9,8 @@ export const manifest = {
 let runtime;
 export const initialize = async (rt) => runtime = rt;
 export const set = async (params) => await chrome.storage.sync.set(params.items);
-export const get = async (params) => await chrome.storage.sync.get(params.key);
+export const get = async (params) => await chrome.storage.sync.get(params.keys);
 export const getAll = async () => await chrome.storage.sync.get();
-export const remove = async (params) => await chrome.storage.sync.remove(params.key);
+export const remove = async (params) => await chrome.storage.sync.remove(params.keys);
 export const clear = async () => await chrome.storage.sync.clear();
-export const getBytesInUse = async (params) => await chrome.storage.sync.getBytesInUse(params.key);
+export const getBytesInUse = async (params) => await chrome.storage.sync.getBytesInUse(params.keys);

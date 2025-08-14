@@ -34,23 +34,19 @@ export const setKey = async (params) => {
   return { success: true };
 };
 export const getKey = async (params) => {
-  const { service, keyOnly = true } = params;
-  const keyID = getKeyId(service);
-  const syncResult = await chromeSyncGet([keyID]);
-  if (syncResult.success && syncResult.result[keyID]) {
-    return keyOnly ? syncResult.result[keyID].key : syncResult.result[keyID];
-  }
-  return null;
+  const { service } = params;
+  const key = getKeyId(service);
+  return (await chromeSyncGet(key))[key].key || null;
 };
 export const hasKey = async (params) => {
-  const keyID = getKeyId(params.service);
-  const syncResult = await chromeSyncGet([keyID]);
-  return !!(syncResult.success && syncResult.result[keyID]);
+  const key = getKeyId(params.service);
+  const syncResult = await chromeSyncGet(key);
+  return !!(syncResult.success && syncResult.result[key]);
 };
 export const listKeys = async () => Object.keys((await chromeSyncGet(null)).result).filter(key => key.startsWith(KEY_PREFIX));
 export const clearKeys = async () => await chromeSyncRemove(await listKeys());
 
 const getKeyId = (service) => `${KEY_PREFIX}${service}`;
-const chromeSyncGet = async (keys) => await runtime.call('chrome-sync.getAll');
+const chromeSyncGet = async (key) => await runtime.call('chrome-sync.get', { keys: [key] });
 const chromeSyncSet = async (items) => await runtime.call('chrome-sync.set', { items });
-const chromeSyncRemove = async (keys) => await runtime.call('chrome-sync.remove', { keys });
+const chromeSyncRemove = async (key) => await runtime.call('chrome-sync.remove', { keys: [key] });

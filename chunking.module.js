@@ -4,7 +4,7 @@ export const manifest = {
   description: "Structure-based text chunking with format converters - paragraph and section granularity",
   context: ["service-worker"],
   permissions: ["storage"],
-  actions: ["chunkByStructure", "runChunkingTests", "chunkByStructureDebug"]
+  actions: ["chunkByStructure"]
 };
 
 let runtime;

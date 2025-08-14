@@ -6,7 +6,7 @@ export let manifest = {
   permissions: ["storage"],
   dependencies: ["api-keys", "graph-db", "chunking", "embedding"],
   apiKeys: ["claude"],
-  actions: ["setApiKey", "viewModels", "makeRequest", "searchExportedConversations", "processConversationsToGraph"], // Added new action
+  actions: ["makeRequest", "viewModels", "formatInteractions", "searchExportedConversations", "processConversationsToGraph"],
   inferenceModels: [
     { "id": "claude-opus-4-20250514", "name": "Claude Opus 4", "family": "claude-4", "releaseDate": "2025-05-22T00:00:00Z", "capabilities": ["text", "vision", "function-calling", "code", "reasoning", "web-search", "file-upload", "streaming"], "inputTypes": ["text", "image", "document"], "outputTypes": ["text", "code"], "bestFor": ["complex-reasoning", "code-generation", "document-analysis", "creative-writing", "science"], "contextWindow": 200000, "maxOutput": 32000, "pricing": { "input": 150, "output": 750 }, "rateLimits": { "requestsPerMinute": 50, "tokensPerMinute": 20000, "requestsPerDay": 72000 } },
     { "id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "family": "claude-4", "releaseDate": "2025-05-22T00:00:00Z", "capabilities": ["text", "vision", "function-calling", "code", "reasoning", "web-search", "file-upload", "streaming"], "inputTypes": ["text", "image", "document"], "outputTypes": ["text", "code"], "bestFor": ["conversation", "code-generation", "document-analysis", "complex-reasoning"], "contextWindow": 200000, "maxOutput": 64000, "pricing": { "input": 30, "output": 150 }, "rateLimits": { "requestsPerMinute": 50, "tokensPerMinute": 40000, "requestsPerDay": 72000 } },
@@ -20,10 +20,6 @@ export let manifest = {
   defaultModel: "claude-3-5-sonnet-20241022",
 };
 
-const buildHeaders = () => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
-const fetchModels = async () => (await (await fetch(`https://api.anthropic.com/v1/models`, { method: 'GET', headers: buildHeaders() })).json()).data;
-export const viewModels = async () => console.table(Object.fromEntries((await fetchModels()).map(({ display_name, id, created_at }) => [display_name, { id, created_at }])));
-
 let apiKey, runtime;
 export const initialize = async (rt) => (runtime = rt, apiKey = await runtime.call("api-keys.getKey", { service: "claude" }));
 
@@ -32,7 +28,7 @@ export const makeRequest = async (params) => {
   const systemMessage = messages.find(m => m.role === 'system');
   const chatMessages = messages.filter(m => m.role !== 'system');
   const body = {
-    model,
+    model: model.id,
     max_tokens: 4096,
     ...(systemMessage && { system: systemMessage.content }),
     messages: chatMessages,
@@ -45,14 +41,11 @@ export const makeRequest = async (params) => {
   return await processStream(resp, onChunk);
 };
 const addWebSearchTool = ({params}) => ({ "type": "web_search", "name": "web_search", "max_uses": params.max_uses || null, "allowed_domains": params.allowed_domains || null, ...(params.options ?? {})})
-
+const buildHeaders = () => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
 const processStream = async (resp, onChunk) => {
   let [reader, decoder, content, metadata] = [resp.body.getReader(), new TextDecoder(), '', { tokens: 0 }];
-  try {
-    for (let chunk; !(chunk = await reader.read()).done;)
-      decoder.decode(chunk.value).split('\n').filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]')
-        .forEach(l => { try { const p = JSON.parse(l.slice(6)), d = p.delta?.text || p.content?.[0]?.text; d && (content += d, onChunk(d)); p.usage && (metadata.tokens = p.usage); } catch { } });
-  } finally { reader.releaseLock(); }
+  try { for (let chunk; !(chunk = await reader.read()).done;) decoder.decode(chunk.value).split('\n').filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]').forEach(l => { try { const p = JSON.parse(l.slice(6)), d = p.delta?.text || p.content?.[0]?.text; d && (content += d, onChunk(d)); p.usage && (metadata.tokens = p.usage); } catch { } }); }
+  finally { reader.releaseLock(); }
   return { content, metadata };
 };
 

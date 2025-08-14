@@ -15,12 +15,9 @@ export const initialize = async (rt) => {
   model = await loadModel();
   if (!provider || !model) promptForProviderAndModel();
 }
-//
-// const getProviderName = async () => !(await runtime.call('chrome-sync.get', { key: "inference.provider" }));
-// const getModelName = async () => !(await runtime.call('chrome-sync.get', { key: "inference.model" }));
+// providers
 const loadProvider = async () => await providers.find(async p => p.manifest.name === (await runtime.call('chrome-sync.get', { key: "inference.provider" })));
 const loadModel = async () => await provider.manifest.inferenceModels?.find(async m => m.id === (await runtime.call('chrome-sync.get', { key: "inference.model" })));
-// providers
 const registerProviders = async (runtime) => {
   const mods = runtime.getModulesWithProperty('inferenceModels')
   mods.forEach(async provider => {
@@ -32,12 +29,10 @@ const registerProviders = async (runtime) => {
 const verifyImplementationFunctions = (provider) => ["formatInteractions", "makeRequest"].forEach(fn => {
   if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);  
 });
-// const verifyModels = (provider) => runtime.call("inference-model-validation.validateModels", { models: provider.manifest.inferenceModels || [] });
-// 
-export const changeModelAndProvider = async ({ providerName, modelName }) => {
-  await runtime.call('chrome-sync.set', { key: "inference.provider", value: providerName });
-  await runtime.call('chrome-sync.set', { key: "inference.model", value: modelName });
-}
+const verifyModels = (provider) => runtime.call("inference-model-validation.validateModels", { models: provider.manifest.inferenceModels || [] });
+export const changeModelAndProvider = async ({ providerName, modelName }) => (await saveProvider(providerName), await saveModel(modelName));
+const saveProvider = async (providerName) =>  await runtime.call('chrome-sync.set', { key: "inference.provider", value: providerName });
+const saveModel = async (modelName) => await runtime.call('chrome-sync.set', { key: "inference.model", value: modelName });
 const promptForProviderAndModel = async () => {
   const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.manifest.name }));
   
@@ -77,16 +72,3 @@ export const prompt = async (params) => {
   await runtime.call('graph-db.addInferenceNode', { query, messages, response, model, embedding });
   return response;
 };
-
-
-// // handle prompt
-// export async function prompt(params) {
-//   const assembledPrompt = await runtime.call("context.assemble", params);
-//   let content = "";
-//   const processChunk = async (chunk) => await updateStreamContent((content += chunk))
-//   const response = await provider.makeRequest(assembledPrompt, model, processChunk);
-//   storeInteractionInGraph({ assembledPrompt, response, ...params });
-//   return response
-// }
-// // tooo: first instance of updating the inference content section of ui
-// // const updateStreamContent = async (content) => await _state.write("inference.content", content);
