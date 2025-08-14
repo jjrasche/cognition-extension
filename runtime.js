@@ -15,6 +15,7 @@ class Runtime {
             await this.loadModulesForContext();
             this.registerActions();
             this.setupMessageListener();
+            this.testModules();
             await this.initializeModules();
             this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.modules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
@@ -158,18 +159,7 @@ class Runtime {
     // New simplified method for module-to-module calls
     call = async (actionName, params = {}) => {
         const [moduleName] = actionName.split('.');
-        
-        // Check module state
-        const state = this.moduleState.get(moduleName);
-        if (state === 'failed') {
-            throw new Error(`Module ${moduleName} failed to initialize`);
-        }
-        
-        // Wait for module if not ready yet
-        if (state !== 'ready') {
-            await this.waitForModule(moduleName, 10000);
-        }
-
+        this.waitForModule(moduleName);
         // Check if this action is in the same context
         if (this.modules.find(m => m.manifest.name === moduleName)) {
             // Direct call for same context
@@ -194,16 +184,19 @@ class Runtime {
         });
     }
 
+    getState = (moduleName) => this.moduleState.get(moduleName);
+    isReady = (moduleName) => this.getState(moduleName) === 'ready';
+    throwIfFailed = (moduleName) => this.getState(moduleName) === 'failed' && (() => { throw new Error(`Module ${moduleName} failed to initialize`); })();
+    throwIfTimeout = (moduleName, start, timeout) => Date.now() - start > timeout && (() => { throw new Error(`Module ${moduleName} not ready after ${timeout}ms`); })();
     waitForModule = async (moduleName, timeout = 10000) => {
-        const start = Date.now();
-        while (this.moduleState.get(moduleName) !== 'ready') {
-            if (this.moduleState.get(moduleName) === 'failed') {
-                throw new Error(`Module ${moduleName} failed to initialize`);
+        this.throwIfFailed(moduleName);
+        if (this.isReady(moduleName)) {
+            const start = Date.now();
+            while (this.getState(moduleName) !== 'ready') {
+                this.throwIfFailed(moduleName);
+                this.throwIfTimeout(moduleName, start, timeout);
+                await wait(100);
             }
-            if (Date.now() - start > timeout) {
-                throw new Error(`Module ${moduleName} not ready after ${timeout}ms`);
-            }
-            await new Promise(resolve => setTimeout(resolve, 100));
         }
     }
 
@@ -278,6 +271,7 @@ class Runtime {
             .filter(module => module.manifest.context.includes(this.runtimeName)) // run tests in their context
             .filter(module => modulesToTest.length === 0 || modulesToTest.includes(module.manifest.name));
         const results = (await Promise.all(modules.map(async module => {
+            await this.waitForModule(module.manifest.name);
             const tests = await module['test']();
             return tests.map(test => ({...test, module: module.manifest.name}));
         }))).flat();
@@ -332,6 +326,5 @@ class Runtime {
 export function initializeRuntime(runtimeName) {
     const initializer = new Runtime(runtimeName);
     initializer.initialize();
-    setTimeout(initializer.testModules, 1500);
     return initializer;
 }

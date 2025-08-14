@@ -69,7 +69,7 @@ export const append = async ({ dir, filename, data }) => {
 };
 export const remove = async ({ dir, filename }) => await (await getFileHandle({ dir, filename })).remove();
 // directory operations
-const selectDir = async () =>  await window.showDirectoryPicker();
+const selectDir = async () =>  await window["showDirectoryPicker"]();
 export const listDirs = async () => (await getAllHandles()).map(handle => handle.name);
 export const hasDir = async ({ name }) => !!(await getHandle(name));
 
