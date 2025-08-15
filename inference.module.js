@@ -26,15 +26,16 @@ const registerProviders = async (runtime) => {
     providers.push(provider);
   });
 };
-const verifyImplementationFunctions = (provider) => ["formatInteractions", "makeRequest"].forEach(fn => {
-  if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);  
+const requiredImplementationMethods = ["makeRequest", "formatInteractionFromResponse"];
+const verifyImplementationFunctions = (provider) => requiredImplementationMethods.forEach(fn => {
+  if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);
 });
 const verifyModels = (provider) => runtime.call("inference-model-validation.validateModels", { models: provider.manifest.inferenceModels || [] });
 export const changeModelAndProvider = async ({ providerName, modelName }) => (await saveProvider(providerName), await saveModel(modelName));
 const saveProvider = async (providerName) =>  await runtime.call('chrome-sync.set', { key: "inference.provider", value: providerName });
 const saveModel = async (modelName) => await runtime.call('chrome-sync.set', { key: "inference.model", value: modelName });
 const promptForProviderAndModel = async () => {
-  const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.manifest.name }));
+const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.manifest.name }));
   
   // todo: figure out how to do the dynamic form business logic within the module updating the form 
   // https://claude.ai/chat/ea732f00-4b45-42e6-a3df-410d6229173e
@@ -66,9 +67,20 @@ export const prompt = async (params) => {
   const { query, webSearch } = params;
   const messages = await runtime.call("context.assemble", params);
   let content = "";
-  const onChunk = async (chunk) => await (runtime.log(content += chunk));
-  const response = (await provider.makeRequest({ model, messages, onChunk, webSearch })).content;
+  const response = (await provider.makeRequest({ model, messages, webSearch })).content;
+  if (!response.ok) throw new Error(`Claude API error: ${response.status} - ${await response.text()}`);
   const embedding = await runtime.call('embedding.embedText', { text: `${messages}\n${response}` });
+  await processStream(response, onChunk);
   await runtime.call('graph-db.addInferenceNode', { query, messages, response, model, embedding });
   return response;
+};
+const onChunk = async (chunk) => {
+  let content;
+  await runtime.log(content += chunk);
+};
+const processStream = async (resp, onChunk) => {
+  let [reader, decoder, content, metadata] = [resp.body.getReader(), new TextDecoder(), '', { tokens: 0 }];
+  try { for (let chunk; !(chunk = await reader.read()).done;) decoder.decode(chunk.value).split('\n').filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]').forEach(l => { try { const p = JSON.parse(l.slice(6)), d = p.delta?.text || p.content?.[0]?.text; d && (content += d, onChunk(d)); p.usage && (metadata.tokens = p.usage); } catch { } }); }
+  finally { reader.releaseLock(); }
+  return { content, metadata };
 };
