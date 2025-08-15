@@ -6,4 +6,32 @@ Modules are self-contained capabilities that extend your assistant. Each module:
 - Exposes actions the AI can use
 - Contains its own tests
 
-Read more in the [Module Developer Guide](./Module%20Developer%20Guide.md)
+### UI Form Module Call Flow Example: API Key Setup
+**api-keys.module.js** (business module)
+```javascript
+const apiKeyFormTree = {
+  "api-form": {
+    tag: "form",
+    events: { 
+      change: "api-keys.updateForm",
+      submit: "api-keys.setKey" 
+    },
+    "key-input": { tag: "input", name: "key", type: "password" },
+    "submit-btn": { tag: "button", type: "submit", text: "Save" }
+  }
+};
+// Business module - specifies WHAT, WHERE, and HANDLERS
+await runtime.call('ui.renderForm', {
+  tree: apiKeyFormTree,
+  title: 'Enter Claude API Key',
+  placement: 'modal', // or 'main', 'sidebar'
+});
+```
+**ui.module.js**
+```javascript
+// UI module handles placement
+export const renderForm = async ({ tree, title, placement = 'modal' }) => {
+  const container = getContainer(placement, title);
+  await runtime.call('tree-transformer.transform', { tree, container });
+};
+```

@@ -7,7 +7,8 @@ class Runtime {
         this.modules = [];
         this.errors = [];
         this.moduleState = new Map();
-        this.testResults = []; // null;
+        // this.testResults = [];
+        this.testResults = null;
     }
 
     initialize = async () => {
@@ -20,7 +21,7 @@ class Runtime {
             if (!!this.testResults) this.showTestResults();
             this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.modules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
-            this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, { error: error.message });
+            this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, error);
         }
     }
 

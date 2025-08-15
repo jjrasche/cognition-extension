@@ -24,7 +24,7 @@ import * as apiKeysModule from './api-keys.module.js';
 import * as webSearchModule from './web-search.module.js';
 import * as webExtractorModule from './web-extractor.module.js';
 import * as chromeSyncModule from './chrome-sync.module.js';
-import * as webTreeRendererModule from './web-tree-renderer.module.js';
+import * as webTreeRendererModule from './web-tree-to-dom-transformer.module.js';
 
 export const modules = [
     // tabManagerModule,
