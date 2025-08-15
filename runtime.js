@@ -7,6 +7,7 @@ class Runtime {
         this.modules = [];
         this.errors = [];
         this.moduleState = new Map();
+        this.testResults = []; // null;
     }
 
     initialize = async () => {
@@ -15,8 +16,8 @@ class Runtime {
             await this.loadModulesForContext();
             this.registerActions();
             this.setupMessageListener();
-            this.testModules();
             await this.initializeModules();
+            if (!!this.testResults) this.showTestResults();
             this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.modules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
             this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, { error: error.message });
@@ -103,6 +104,7 @@ class Runtime {
                         await module.initialize(this);
                         this.log(`✅ ${module.manifest.name} initialized successfully`);
                         this.broadcastModuleReady(module.manifest.name);
+                        await this.testModule(module);
                         pending.splice(i, 1);
                     } catch (error) {
                         console.error(`[${this.runtimeName}] ❌ ${module.manifest.name} failed:`, error);
@@ -266,20 +268,17 @@ class Runtime {
         }
     };
 
-    testModules = async (modulesToTest = []) => {
-        let modules = this.getModulesWithProperty("test")
-            .filter(module => module.manifest.context.includes(this.runtimeName)) // run tests in their context
-            .filter(module => modulesToTest.length === 0 || modulesToTest.includes(module.manifest.name));
-        const results = (await Promise.all(modules.map(async module => {
-            await this.waitForModule(module.manifest.name);
-            const tests = await module['test']();
-            return tests.map(test => ({...test, module: module.manifest.name}));
-        }))).flat();
-        this.showSummary(results);
-        this.showModuleSummary(results);
-        this.showTestFailures(results);
+    testModule = async (module) => {
+        if (!this.testResults || !module['test']) return;
+        const results = (await module['test']()).map(test => ({...test, module: module.manifest.name})).flat();
+        this.testResults = this.testResults.concat(...results);
         return results;
     };
+    showTestResults = () => {
+        this.showSummary(this.testResults);
+        this.showModuleSummary(this.testResults);
+        this.showTestFailures(this.testResults);
+    }
     showSummary = (results) => {
         const totalTests = results.reduce((sum, r) => sum + r.totalTests, 0);
         const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);

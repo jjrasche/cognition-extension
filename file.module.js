@@ -82,38 +82,34 @@ export const hasDir = async ({ name }) => !!(await getHandle(name));
 // tests
 import { wait } from './helpers.js';
 const dir = 'Documents';
-export const test = async () => (await Promise.all([ testFileWrite, testFileRead, testFileAppend ].map(fn => fn()))).flat();
-const testFileWrite = async () => {
-  const params = { dir, filename: 'test-write.txt', data: 'Test Write' };
-  const expect = async () => {
-    const content = await read(params);
-    return content === params.data;
-  }
-  return [await runTest(write, { ...params, expect })];
-};
-const testFileRead = async () => {
-  const params = { dir, filename: 'test-read.txt' };
-  await write({ ...params, data: 'Test Read' });
-  const expect = async (result) => result === 'Test Read';
-  return [await runTest(read, { ...params, expect })];
-};
-const testFileAppend = async () => {
-  const params = { dir, filename: 'test-append.txt' };
-  await write({ ...params, data: 'Initial' });
-  await wait(100);
-  const expect = async () => {
-    await wait(100);
-    const actual = await read(params)
-    return actual === 'Initial Appended';
-  }
-  return [await runTest(append, { ...params, data: ' Appended', expect })];
-};
-const runTest = async (fn, params) => {
-  const name = `${fn.name} file`;
-  try {
-    const result = await fn(params);
-    return { name, passed: await params.expect(result), result };
-  } catch (error) { return { name, passed: false, error }; }
-  finally { await cleanupTestFile(params); }
+
+
+export const test = async () => {
+  const { runUnitTest, strictEqual, deepEqual, containsKeyValuePairs } = runtime.testUtils;
+  return (await Promise.all([
+    runUnitTest("test file write", async () => {
+      const params = { dir, filename: 'test-write.txt', data: 'Test Write' }; // arrange
+      await write(params); // act
+      const actual = await read(params);
+      cleanupTestFile(params);
+      return { actual , assert: strictEqual, expected: params.data }; // assert
+    }),
+    runUnitTest("test file read", async () => {
+      const params = { dir, filename: 'test-read.txt', data: 'Test Read' };
+      await write({ ...params }); // arrange
+      const actual = await read(params);  // act
+      cleanupTestFile(params);
+      return { actual , assert: strictEqual, expected: params.data }; // assert
+    }),
+    runUnitTest("test file append", async () => {
+      const params = { dir, filename: 'test-append.txt' };
+      await write({ ...params, data: 'Initial' });
+      await wait(100);  // arrange
+      await append({ ...params, data: ' Appended' }); // act
+      const actual = await read(params);
+      cleanupTestFile(params);
+      return { actual , assert: strictEqual, expected: 'Initial Appended' }; // assert
+    })
+  ])).flat();
 };
 const cleanupTestFile = async ({ dir, filename }) => await remove({ dir, filename });
