@@ -7,8 +7,8 @@ class Runtime {
         this.modules = [];
         this.errors = [];
         this.moduleState = new Map();
-        // this.testResults = [];
-        this.testResults = null;
+        this.testResults = [];
+        // this.testResults = null;
     }
 
     initialize = async () => {
@@ -105,7 +105,7 @@ class Runtime {
                         await module.initialize(this);
                         this.log(`✅ ${module.manifest.name} initialized successfully`);
                         this.broadcastModuleReady(module.manifest.name);
-                        await this.testModule(module);
+                        this.showTestFailures(await this.testModule(module));
                         pending.splice(i, 1);
                     } catch (error) {
                         console.error(`[${this.runtimeName}] ❌ ${module.manifest.name} failed:`, error);
@@ -278,7 +278,6 @@ class Runtime {
     showTestResults = () => {
         this.showSummary(this.testResults);
         this.showModuleSummary(this.testResults);
-        this.showTestFailures(this.testResults);
     }
     showSummary = (results) => {
         const totalTests = results.reduce((sum, r) => sum + r.totalTests, 0);
@@ -305,10 +304,10 @@ class Runtime {
         const failedTests = results.filter(test => !test.passed)
         if (failedTests.length > 0) {
             console.log('\n=== FAILED TEST DETAILS ===');
-            console.table(Object.fromEntries(failedTests.map((test, i) => [`test.module ${i+1}`, {
+            console.table(Object.fromEntries(failedTests.map((test, i) => [`${test.module} ${i+1}`, {
                 'Test Name': test.name,
                 'Expected': this.truncateOrNA(test.expected),
-                'Assert': test.assert.name,
+                'Assert': test?.assert?.name ?? 'N/A',
                 'Actual': this.truncateOrNA(test.actual)
             }])));
             console.log(JSON.stringify(failedTests, null, 2),failedTests);

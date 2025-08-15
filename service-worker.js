@@ -3,8 +3,8 @@ import { initializeRuntime } from "./runtime.js";
 let runtime;
 chrome.runtime.onInstalled.addListener(async () => { 
     try {
-        await initializeOffscreenDocument();
-        await initializeExtensionPage();
+        // await initializeOffscreenDocument();
+        // await initializeExtensionPage();
         runtime = await initializeRuntime('service-worker');
     } catch (error) {
         runtime.logError('Error initializing service worker:', error);
