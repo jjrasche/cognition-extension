@@ -8,12 +8,12 @@ export const manifest = {
 };
 let runtime;
 export const initialize = async (rt) => runtime = rt;
-export const set = async (params) => await chrome.storage.sync.set(params.items);
-export const get = async (params) => await chrome.storage.sync.get(params.keys);
+export const set = async (items) => await chrome.storage.sync.set(items);
+export const get = async (keys) => await chrome.storage.sync.get(keys);
 export const getAll = async () => await chrome.storage.sync.get();
-export const remove = async (params) => await chrome.storage.sync.remove(params.keys);
+export const remove = async (keys) => await chrome.storage.sync.remove(keys);
 export const clear = async () => await chrome.storage.sync.clear();
-export const getBytesInUse = async (params) => await chrome.storage.sync.getBytesInUse(params.keys);
+export const getBytesInUse = async (keys) => await chrome.storage.sync.getBytesInUse(keys);
 
 
 // Testing Note: clear() test omitted - chrome.storage.sync.clear() would wipe ALL extension data

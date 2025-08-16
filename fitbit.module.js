@@ -24,7 +24,6 @@ let _runtime;
 
 export const initialize = async (runtime) => {
   _runtime = runtime;
-  console.log('[Fitbit] Initializing with runtime support');
   
   // Don't refresh data during initialization to avoid circular dependency
   // Set up polling instead
@@ -37,20 +36,12 @@ export const initialize = async (runtime) => {
 const setupDataPolling = () => setInterval(() => refreshData(), 15 * 60 * 1000);
 
 // Use runtime.call() instead of chrome.runtime.sendMessage
-const request = async (endpoint) => {
-  try {
-    return await _runtime.call('oauth.request', { 
-      provider: 'fitbit', 
-      url: `https://api.fitbit.com${endpoint}` 
-    });
-  } catch (error) {
-    console.error('[Fitbit] Request failed:', error);
-    throw error;
-  }
-};
+const request = async (endpoint) => await _runtime.call('oauth.request', { 
+  provider: 'fitbit', 
+  url: `https://api.fitbit.com${endpoint}` 
+});
 
 export const refreshData = async () => {
-  console.log('[Fitbit] Refreshing data...');
   try {
     updateLastSync();
     await Promise.all([
@@ -58,7 +49,6 @@ export const refreshData = async () => {
       updateActivityData(),
       updateHeartRate()
     ]);
-    console.log('[Fitbit] Data refresh complete:', data);
     return { success: true, data };
   } catch (error) {
     console.error('[Fitbit] Refresh failed:', error);

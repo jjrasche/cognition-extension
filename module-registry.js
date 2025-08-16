@@ -6,7 +6,7 @@ import * as chromeSyncModule from './chrome-sync.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
 // import * as contextModule from './context.module.js';
 // import * as debugModule from './debug.module.js';
-// import * as developmentModule from './dev.module.js';
+import * as developmentModule from './dev.module.js';
 // import * as emailModule from './outlook-email.module.js';
 // import * as embeddingModule from './embedding.module.js';
 // import * as fileModule from './file.module.js';
@@ -34,7 +34,7 @@ export const modules = [
 	// contentScriptHandlerModule,
 	// contextModule,
 	// debugModule,
-	// developmentModule,
+	developmentModule,
 	// emailModule,
 	// embeddingModule,
 	// fileModule,

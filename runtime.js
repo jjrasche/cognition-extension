@@ -54,17 +54,20 @@ class Runtime {
             if (this.handleModuleStateMessage(message)) return;
             if (!message.action) return;
 
-            // Check if this context can handle the action
             const [moduleName] = message.action.split('.');
             const moduleInContext = this.modules.find(m => m.manifest.name === moduleName);
             if (!moduleInContext) return false;
-            this.executeAction(message.action, message.params || {})
+            
+            // Handle both old (single params) and new (args array) formats
+            const args = Array.isArray(message.params) ? message.params : [message.params || {}];
+            
+            this.executeAction(message.action, ...args)
                 .then(result => sendResponse(result))
                 .catch(error => {
                     this.logError(`Action ${message.action} failed`, { error: error.message, context: this.runtimeName });
                     sendResponse({ error: error.message });
                 });
-            return true; // Keep message channel open for async response
+            return true;
         });
     }
 
@@ -159,21 +162,18 @@ class Runtime {
     broadcastModuleReady = (moduleName) => this.broadcastModuleStatus(moduleName, 'ready');
     broadcastModuleFailed = (moduleName) => this.broadcastModuleStatus(moduleName, 'failed');
 
-    // New simplified method for module-to-module calls
-    call = async (actionName, params = {}) => {
+    call = async (actionName, ...args) => {
         const [moduleName] = actionName.split('.');
-        this.waitForModule(moduleName);
-        // Check if this action is in the same context
+        await this.waitForModule(moduleName);
+        
         if (this.modules.find(m => m.manifest.name === moduleName)) {
-            // Direct call for same context
-            this.log(`[Runtime] Calling action ${actionName} directly in ${this.runtimeName}`);
-            return this.executeAction(actionName, params);
+            return this.executeAction(actionName, ...args);
         }
-        this.log(`[Runtime] Calling action ${actionName} indirectly in ${this.runtimeName}`);
-        // Send the message
+        
+        // Cross-context: serialize args as array
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
-                { action: actionName, params },
+                { action: actionName, params: args },
                 response => {
                     if (chrome.runtime.lastError) {
                         reject(new Error(chrome.runtime.lastError.message));
@@ -203,14 +203,21 @@ class Runtime {
         }
     }
 
-    async executeAction(actionName, params) {
+    createFunctionParamsDebugObject = (func, args) => {
+        const match = func.toString().match(/\(([^)]*)\)/);
+        const paramNames = match ? match[1].split(',').map(p => p.trim().split('=')[0].trim()).filter(Boolean) : [];
+        return paramNames.reduce((debugObj, paramName, index) => { if (index < args.length) debugObj[paramName] = args[index]; return debugObj; }, {});
+    };
+
+    async executeAction(actionName, ...args) {
         const action = this.getAction(actionName);
+        const params = this.createFunctionParamsDebugObject(action, args);
         try {
-            const result = await action(params);
-            this.log(`[Runtime] Action executed: ${actionName}`, { params: Object.keys(params || {}), result });
+            const result = await action(...args);
+            this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
             return result;
         } catch (error) {
-            this.logError(`[Runtime] Action failed: ${actionName}`, { error: error.message, params: Object.keys(params || {}) });
+            this.logError(`[Runtime] Action failed: ${actionName}`, { ...params, error });
             throw error;
         }
     }

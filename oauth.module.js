@@ -14,77 +14,49 @@ const tokens = new Map();
 const refreshPromises = new Map();
 const pkceVerifiers = new Map();
 
-let _runtime;
-
-export const initialize = async (runtime) => {
-  _runtime = runtime;
-  console.log('[OAuth] Initializing...');
+let runtime;
+export const initialize = async (rt) => {
+  runtime = rt;
   await loadStoredTokens();
-  await autoDiscoverProviders();
+  await registerProviders();
   setupListeners();
-  console.log('[OAuth] Initialization complete');
 };
 
-// Auto-discovery of OAuth configs from modules
-const autoDiscoverProviders = async () => {
-  // Get all modules that have oauth property
-  const oauthModules = _runtime.getModulesWithProperty('oauth');
-  console.log('[OAuth] Found modules with oauth config:', oauthModules.map(m => m.manifest.name));
-  
-  oauthModules.forEach(module => {
-    if (module.manifest.oauth) {
-      registerProvider(module.manifest);
-    }
-  });
-  
-  console.log(`[OAuth] Registered ${providers.size} providers:`, [...providers.keys()]);
+const registerProviders = async () => runtime.getModulesWithProperty('oauth').forEach(p => registerProvider(p));
+const registerProvider = async (provider) => {
+  const config = provider.oauth, name = provider.manifest.name;
+  if (!config || !config.authUrl || !config.tokenUrl) throw new Error(`Provider ${name} is missing required OAuth configuration`);
+  config.clientId = await runtime.call("chromeSync.get", provider.manifest.name + ".clientId") || config.clientId;
+  if (config.clientId) await promptForClientId(config);
+  providers.set(name, { ...config, provider: name });
 };
 
-const registerProvider = (manifest) => {
-  const config = manifest.oauth;
-  if (!config.clientId || !config.authUrl || !config.tokenUrl) {
-    console.error(`[OAuth] Invalid OAuth config for ${manifest.name}`);
-    return;
-  }
-  providers.set(manifest.name, { ...config, provider: manifest.name });
-  console.log(`[OAuth] Registered provider: ${manifest.name}`);
-};
+const promptForClientId = async (config) => {/* todo: implement UI for prompting user to enter client ID if not set */};
 
-// Main action - authenticated API calls
 export const request = async (params) => {
   const { provider, url } = params;
+    if (!providers.has(provider)) throw new Error(`OAuth provider ${provider} not registered`);
   
-  if (!providers.has(provider)) {
-    throw new Error(`OAuth provider ${provider} not registered`);
-  }
-  
-  console.log(`[OAuth] Request for ${provider}: ${url}`);
-  
-  let token = await checkAndRefresh(provider);
+    let token = await checkAndRefresh(provider);
   if (!token) {
-    console.log(`[OAuth] No token for ${provider}, starting auth flow`);
     await startAuthFlow(provider);
     token = await waitForToken(provider);
     if (!token) {
       throw new Error(`Failed to authenticate with ${provider}`);
     }
   }
-  
-  const response = await fetch(url, {
+    const response = await fetch(url, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
 
   if (response.status === 401) {
-    console.log(`[OAuth] Token expired for ${provider}, clearing and retrying`);
     await clearTokens({ provider });
     return request(params); // Retry after clearing stale token
   }
-  
-  if (!response.ok) {
+    if (!response.ok) {
     throw new Error(`API error: ${response.status} - ${await response.text()}`);
   }
-  
-  return response.json();
+    return response.json();
 };
 
 // Internal auth flow helpers
@@ -92,7 +64,6 @@ const startAuthFlow = async (provider) => {
   const csrf = await generateCSRF(provider);
   const pkce = await generatePKCE(provider);
   const authUrl = buildAuthUrl(provider, csrf, pkce || {});
-  console.log(`[OAuth] Opening auth window for ${provider}`);
   await chrome.windows.create({ 
     url: authUrl, 
     type: 'popup', 
@@ -107,7 +78,6 @@ const waitForToken = (provider, timeout = 30000) => new Promise((resolve) => {
   const check = () => {
     const token = tokens.get(provider)?.accessToken;
     if (token) {
-      console.log(`[OAuth] Token received for ${provider}`);
       resolve(token);
     } else if (Date.now() - start > timeout) {
       console.error(`[OAuth] Timeout waiting for token for ${provider}`);
@@ -123,7 +93,6 @@ export const clearTokens = async (params) => {
   const { provider } = params;
   tokens.delete(provider);
   await chrome.storage.sync.remove([providerKey(provider)]);
-  console.log(`[OAuth] Cleared tokens for ${provider}`);
   return { success: true };
 };
 
@@ -131,24 +100,19 @@ export const clearTokens = async (params) => {
 const checkAndRefresh = async (provider) => {
   const token = tokens.get(provider);
   if (!token) return null;
-  
-  if (token.expiresAt && Date.now() > token.expiresAt) {
-    console.log(`[OAuth] Token expired for ${provider}, refreshing...`);
+    if (token.expiresAt && Date.now() > token.expiresAt) {
     return await refreshToken(provider);
   }
-  
-  return token.accessToken;
+    return token.accessToken;
 };
 
 const refreshToken = async (provider) => {
   if (refreshPromises.has(provider)) {
     return refreshPromises.get(provider);
   }
-  
-  const promise = doRefresh(provider);
+    const promise = doRefresh(provider);
   refreshPromises.set(provider, promise);
-  
-  try {
+    try {
     return await promise;
   } finally {
     refreshPromises.delete(provider);
@@ -158,17 +122,14 @@ const refreshToken = async (provider) => {
 const doRefresh = async (provider) => {
   const config = providers.get(provider);
   const token = tokens.get(provider);
-  
-  if (!token?.refreshToken) {
+    if (!token?.refreshToken) {
     console.error(`[OAuth] No refresh token for ${provider}`);
     return null;
   }
-  
-  try {
+    try {
     const response = await requestRefresh(config, token.refreshToken);
     const newTokens = await response.json();
     await storeTokens(provider, newTokens);
-    console.log(`[OAuth] Refreshed token for ${provider}`);
     return newTokens.access_token;
   } catch (error) {
     console.error(`[OAuth] Refresh failed for ${provider}:`, error);
@@ -192,32 +153,26 @@ const buildAuthParams = (config, csrf, pkceParams = {}) => {
     scope: config.scopes.join(' '),
     state: csrf
   });
-  
-  if (pkceParams.codeChallenge) {
+    if (pkceParams.codeChallenge) {
     params.set('code_challenge', pkceParams.codeChallenge);
     params.set('code_challenge_method', 'S256');
   }
-  
-  if (config.authParams) {
+    if (config.authParams) {
     Object.entries(config.authParams).forEach(([k, v]) => params.set(k, v));
   }
-  
-  return params;
+    return params;
 };
 
 const generatePKCE = async (provider) => {
   const config = providers.get(provider);
   if (config.clientSecret) return null;
-  
-  const verifier = generateRandomString();
+    const verifier = generateRandomString();
   pkceVerifiers.set(provider, verifier);
-  
-  const data = new TextEncoder().encode(verifier);
+    const data = new TextEncoder().encode(verifier);
   const digest = await crypto.subtle.digest('SHA-256', data);
   const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  
-  return { codeChallenge: challenge, codeVerifier: verifier };
+    return { codeChallenge: challenge, codeVerifier: verifier };
 };
 
 const generateRandomString = () => {
@@ -252,7 +207,6 @@ const loadStoredTokens = async () => {
     .forEach(([key, tokenData]) => {
       const provider = key.replace('oauth_', '');
       tokens.set(provider, tokenData);
-      console.log(`[OAuth] Loaded stored token for ${provider}`);
     });
 };
 
@@ -264,10 +218,8 @@ const storeTokens = async (provider, newTokens) => {
     expiresAt: newTokens.expires_in ? Date.now() + (newTokens.expires_in * 1000) : null,
     tokenType: newTokens.token_type || 'Bearer'
   };
-  
-  tokens.set(provider, tokenData);
-  await chrome.storage.sync.set({ [providerKey(provider)]: tokenData });
-  console.log(`[OAuth] Stored tokens for ${provider}`);
+    tokens.set(provider, tokenData);
+  await runtime.call({ [providerKey(provider)]: tokenData });
 };
 
 // Network requests
@@ -278,13 +230,11 @@ const requestRefresh = async (config, refreshToken) => {
     client_id: config.clientId,
     ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
   });
-  
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.clientSecret) {
     headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
   }
-  
-  const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
+    const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
   if (!response.ok) {
     throw new Error(`Refresh failed: ${response.status}`);
   }
@@ -298,20 +248,16 @@ const handleCallback = async (callbackUrl) => {
     console.error(`[OAuth] Callback error: ${params.error}`);
     return { success: false, error: params.error };
   }
-  
-  if (!params.code || !params.state) {
+    if (!params.code || !params.state) {
     console.error('[OAuth] Missing code or state in callback');
     return { success: false, error: 'Missing code or state' };
   }
-  
-  const provider = await findProviderByState(params.state);
+    const provider = await findProviderByState(params.state);
   if (!provider) {
     console.error('[OAuth] Invalid state - possible CSRF');
     return { success: false, error: 'Invalid state - possible CSRF' };
   }
-  
-  console.log(`[OAuth] Processing callback for ${provider}`);
-  await clearCSRF(provider);
+    await clearCSRF(provider);
   return await exchangeCodeForTokens(provider, params.code);
 };
 
@@ -338,7 +284,6 @@ const exchangeCodeForTokens = async (provider, code) => {
     const response = await requestTokens(config, code);
     const tokens = await response.json();
     await storeTokens(provider, tokens);
-    console.log(`[OAuth] Successfully exchanged code for tokens for ${provider}`);
     return { success: true, provider };
   } catch (error) {
     console.error(`[OAuth] Token exchange failed for ${provider}:`, error);
@@ -354,21 +299,18 @@ const requestTokens = async (config, code) => {
     client_id: config.clientId,
     ...(config.clientSecret ? { client_secret: config.clientSecret } : {})
   });
-  
-  if (!config.clientSecret) {
+    if (!config.clientSecret) {
     const verifier = pkceVerifiers.get(config.provider);
     if (verifier) {
       body.set('code_verifier', verifier);
       pkceVerifiers.delete(config.provider);
     }
   }
-  
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.clientSecret) {
     headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
   }
-  
-  const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
+    const response = await fetch(config.tokenUrl, { method: 'POST', headers, body });
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Token exchange failed: ${response.status} - ${error}`);
@@ -386,12 +328,10 @@ const setupListeners = () => {
 
 const handleNavigationEvent = async (details) => {
   if (!isOAuthCallback(details.url)) return;
-  
-  const result = await handleCallback(details.url);
+    const result = await handleCallback(details.url);
   if (result.success) {
     setTimeout(() => chrome.tabs.remove(details.tabId).catch(() => {}), 100);
   }
 };
 
-const isOAuthCallback = (callbackUrl) => 
-  callbackUrl.includes('code=') || callbackUrl.includes('error=');
+const isOAuthCallback = (callbackUrl) => callbackUrl.includes('code=') || callbackUrl.includes('error=');

@@ -18,14 +18,11 @@ export const initialize = async (rt) => {
 // providers
 const loadProvider = async () => await providers.find(async p => p.manifest.name === (await runtime.call('chrome-sync.get', { key: "inference.provider" })));
 const loadModel = async () => await provider.manifest.inferenceModels?.find(async m => m.id === (await runtime.call('chrome-sync.get', { key: "inference.model" })));
-const registerProviders = async (runtime) => {
-  const mods = runtime.getModulesWithProperty('inferenceModels')
-  mods.forEach(async provider => {
-    verifyImplementationFunctions(provider);
-    // await verifyModels(provider);
-    providers.push(provider);
-  });
-};
+const registerProviders = async (runtime) => runtime.getModulesWithProperty('inferenceModels').forEach(async provider => {
+  verifyImplementationFunctions(provider);
+  // await verifyModels(provider);
+  providers.push(provider);
+});
 const requiredImplementationMethods = ["makeRequest", "formatInteractionFromResponse"];
 const verifyImplementationFunctions = (provider) => requiredImplementationMethods.forEach(fn => {
   if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);

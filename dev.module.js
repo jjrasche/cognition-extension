@@ -36,13 +36,12 @@ const addModuleManifestsToConsole = () => runtime.getModules().forEach(module =>
 });
 
 const addModuleActionsToConsole = () => {
-  // Create shortcuts for all registered actions
   for (let [name] of runtime.getActions().entries()) {
     const [moduleName, actionName] = name.split('.');
     const camelModuleName = kebabToCamel(moduleName);
     globalThis[camelModuleName] ??= {};
-    globalThis[camelModuleName][actionName] = (params = {}) => {
-      return runtime.call(name, params)
+    globalThis[camelModuleName][actionName] = (...args) => {
+      return runtime.call(name, ...args)
         .then(res => (runtime.log(`[Dev] ${camelModuleName}.${actionName} →`, res), res))
         .catch(err => (runtime.logError(`[Dev] ${camelModuleName}.${actionName} ✗`, err), Promise.reject(err)));
     };
