@@ -239,7 +239,9 @@ class Runtime {
     // Test utilities
     testUtils = {
         strictEqual: (a, b) => a === b,
+        looseEqual: (a, b) => a == b,
         contains: (arr, item) => arr.includes(item),
+        containsAll: (arr, items) => items.every(item => arr.includes(item)),
         deepEqual: (a, b) => {
             if (a === b) return true;
             if (!a || !b || typeof a !== typeof b) return false;

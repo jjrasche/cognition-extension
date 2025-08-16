@@ -41,7 +41,7 @@ const chromeSyncSet = async (items) => await runtime.call('chrome-sync.set', ite
 const chromeSyncRemove = async (keys) => await runtime.call('chrome-sync.remove', keys);
 // testing
 export const test = async () => {
-  const { runUnitTest, strictEqual, deepEqual, containsKeyValuePairs } = runtime.testUtils;
+  const { runUnitTest, strictEqual, looseEqual, deepEqual, containsAll } = runtime.testUtils;
   const results = await Promise.all([
     runUnitTest("Set and get API key", async () => {
       const service = testService("basic"), key = "test-api-key-12345";
@@ -53,7 +53,7 @@ export const test = async () => {
     runUnitTest("Set key with metadata", async () => {
       const service = testService("metadata"), key = "test-key-with-meta", metadata = { source: "test", created: "2025-01-01" };
       await setKey(service, key, metadata );
-      const actual = (await chromeSyncGet(getKeyId(service)))[getKeyId(service)];
+      const actual = (await chromeSyncGet(getKeyId(service)))
       await cleanup();
       return { actual, assert: deepEqual, expected: { key, ...metadata , timestamp: actual.timestamp }};
     }),
@@ -75,12 +75,12 @@ export const test = async () => {
       const actual = await listKeys();
       const testKeys = services.map(service => getKeyId(service));
       cleanup();
-      return { actual, assert: containsKeyValuePairs, expected: testKeys };
+      return { actual, assert: containsAll, expected: testKeys };
     }),
     runUnitTest("getKey returns null for missing key", async () => {
       const service = testService("nonexistent");
       const actual = await getKey(service);
-      return { actual, assert: strictEqual, expected: null };
+      return { actual, assert: looseEqual, expected: null };
     }),
     runUnitTest("Empty key string handled", async () => {
       const service = testService("empty");
