@@ -307,7 +307,7 @@ class Runtime {
             'Pass Rate': stats.total > 0 ? `${Math.round(stats.passed / stats.total * 100)}%` : '0%'
         })));
     };
-    showTestFailures = (results) => {
+    showTestFailures = (results = []) => {
         const failedTests = results.filter(test => !test.passed)
         if (failedTests.length > 0) {
             console.log('\n=== FAILED TEST DETAILS ===');
