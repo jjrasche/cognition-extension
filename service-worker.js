@@ -3,8 +3,8 @@ import { initializeRuntime } from "./runtime.js";
 let runtime;
 chrome.runtime.onInstalled.addListener(async () => { 
     try {
-        // await initializeOffscreenDocument();
-        // await initializeExtensionPage();
+        await initializeOffscreenDocument();
+        await initializeExtensionPage();
         runtime = await initializeRuntime('service-worker');
     } catch (error) {
         runtime.logError('Error initializing service worker:', error);
@@ -33,70 +33,3 @@ const createExtensionPage = async () => {
 const getExtensionPageTabId = async () => (await chrome.storage.local.get(['extensionPageTabId'])).extensionPageTabId;
 const removeExtensionPageTabId = async () => await chrome.storage.local.remove(['extensionPageTabId']);
 const setExtensionPageTabId = async (tabId) => await chrome.storage.local.set({ extensionPageTabId: tabId });
-
-
-
-
-
-
-
-
-
-
-
-
-// todo: add the self registering portions below to their own modules
-// // background.js - Service Worker Entry Point : This file bootstraps the module system and initializes the extension
-// import { ExtensionStore } from './extension-state.js';
-// import { modules } from './module-registry.js';
-// const { getId } = globalThis.cognition;
-
-// const _state = new ExtensionStore();
-// const loaded = [];
-// const errors = [];
-// chrome.runtime.onInstalled.addListener(async () => await initialize());
-
-// async function initialize() {
-//   try {
-//     await beginInitialization()
-//     // await initializeOffscreenDocument();
-//     await registerModules();
-//     await registerActions();
-//     // await registerOauth();
-//     // await registerInference();
-//     // await registerContentScripts();
-//     // await loadModels();
-//     await completeInitialization();
-//   } catch (error) { await handleInitializationExceptions(error); }
-// };
-// const logAndWrite = async (msg, update, err) => (console.log(`[Background] ${msg}`, err ?? ""), await _state.writeMany(update));
-// const beginInitialization = async () => await logAndWrite('Starting extension initialization...', {'system.status': 'initializing', 'system.modules': [], 'system.errors': []});
-// const completeInitialization = async () => (await logAndWrite('Extension initialization complete', {'system.status': 'ready', 'system.modules': loaded, 'system.errors': errors}), printErrors());
-// const printErrors = async () => errors.length > 0 && console.log('[Background] Errors:', errors);
-// const handleInitializationExceptions = async (err) => await logAndWrite('Error during initialization', {'system.status': 'error', 'system.errors': errors, 'system.modules': loaded}, err);
-// const getModuleConfig = async (module) => await _state.read(`modules.${module.manifest.name}.config`) || {};
-
-// const registerModules = async () => await forAllModules("module", async (module) => {
-//   await module.initialize(_state, await getModuleConfig(module));
-//   loaded.push(module.manifest);
-// }, (m) => !m.manifest.offscreen);
-// const registerOauth = async () => await forAllModules('oauth', async (module) => await _state.oauthManager.register(module), (m) => 'oauth' in m );
-// const registerContentScripts = async () => await forAllModules("contentScript", async (module) => await _state.actions.execute("content-script-handler.register", module), (m) => 'contentScript' in m);
-// const registerInference = async () => await forAllModules("inference", async (module) => module.manifest.defaultModel && await _state.actions.execute("inference.register", module));
-// const registerActions = async() => await forAllModules("actions", (module) => Object.getOwnPropertyNames(module)
-//   .filter((prop) => typeof module[prop] === 'function')
-//   .filter((actionName) => !['initialize', 'manifest', 'tests', 'default'].includes(actionName))
-//   .forEach(actionName => _state.actions.register(module.manifest.name, actionName, module[actionName]))
-// );
-// const loadModels = async () => await forAllModules("localModels", async (module) => module.manifest.localModels && module.manifest.localModels.forEach(async (m) => await _state.actions.execute('transformer.loadModel', {modelId: m})));
-
-// const forAllModules = async (action, operation, filter = () => true) => {
-//   for (const module of modules.filter(filter)) {
-//     try { await operation(module) }
-//     catch (err) { 
-//       console.error(`[Background] Failed to register ${action} for ${module.manifest.name}:`, err);
-//       errors.push({ module: module.manifest.name, error: `${action}: ${err.message}` });
-//     }
-//   }
-// }
-
