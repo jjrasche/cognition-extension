@@ -4,7 +4,7 @@ class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
         this.actions = new Map();
-        this.modules = [];
+        this.contextModules = [];
         this.errors = [];
         this.moduleState = new Map();
         this.testResults = [];
@@ -19,14 +19,14 @@ class Runtime {
             this.setupMessageListener();
             await this.initializeModules();
             setTimeout(async () => await this.runTests(), 10);
-            this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.modules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
+            this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
             this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, error);
         }
     }
 
     loadModulesForContext = async () => {
-        this.modules = modules.filter(module => module.manifest.context && module.manifest.context.includes(this.runtimeName));
+        this.contextModules = modules.filter(module => module.manifest.context && module.manifest.context.includes(this.runtimeName));
     }
 
     getModuleActions = (module) => module.manifest.actions?.filter(action => this.exportedActions(module).includes(action)) || [];
@@ -49,15 +49,16 @@ class Runtime {
         });
     }
 
+    moduleInContext = (moduleName) => this.contextModules.find(m => m.manifest.name === moduleName);
+
     setupMessageListener = () => {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (this.handleModuleStateMessage(message)) return;
             if (!message.action) return;
 
             const [moduleName] = message.action.split('.');
-            const moduleInContext = this.modules.find(m => m.manifest.name === moduleName);
-            if (!moduleInContext) return false;
-            
+            if (!this.moduleInContext(moduleName)) return false;
+
             // Handle both old (single params) and new (args array) formats
             const args = Array.isArray(message.params) ? message.params : [message.params || {}];
             
@@ -89,7 +90,7 @@ class Runtime {
 
     initializeModules = async () => {
         this.log(`Starting module initialization...`);
-        const pending = [...this.modules];
+        const pending = [...this.contextModules];
         const maxAttempts = 20;
         
         for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
@@ -164,10 +165,7 @@ class Runtime {
     call = async (actionName, ...args) => {
         const [moduleName] = actionName.split('.');
         await this.waitForModule(moduleName);
-        
-        if (this.modules.find(m => m.manifest.name === moduleName)) {
-            return this.executeAction(actionName, ...args);
-        }
+        if (this.moduleInContext(moduleName)) return this.executeAction(actionName, ...args);
         
         // Cross-context: serialize args as array
         return new Promise((resolve, reject) => {
@@ -228,7 +226,7 @@ class Runtime {
     }
 
     // Utility methods for modules
-    getModules = () => [...this.modules];
+    getContextModules = () => [...this.contextModules];
     getActions = () => new Map(this.actions);
     getModulesWithProperty = (prop) => modules.filter(module => prop in module || prop in module.manifest);
 
@@ -278,7 +276,7 @@ class Runtime {
     };
     runTests = async () => {
         if (!this.testResults) return;
-        const mods = this.getModulesWithProperty('test');
+        const mods = this.getModulesWithProperty('test').filter(m => !this.getContextModules().includes(m));
         const t = await Promise.all(mods.map(async mod => {
             const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
@@ -321,7 +319,7 @@ class Runtime {
                 'Assert': test?.assert?.name ?? 'N/A',
                 'Actual': this.truncateOrNA(test.actual)
             }])));
-            console.log(JSON.stringify(failedTests, null, 2),failedTests);
+            // console.log(JSON.stringify(failedTests, null, 2),failedTests);
         } else {
             console.log('\n🎉 All tests passed!');
         }
