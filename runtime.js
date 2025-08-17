@@ -18,7 +18,7 @@ class Runtime {
             this.registerActions();
             this.setupMessageListener();
             await this.initializeModules();
-            setTimeout(async () => await this.runTests(), 5000);
+            setTimeout(async () => await this.runTests(), 10);
             this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.modules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
             this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, error);
@@ -279,16 +279,17 @@ class Runtime {
     runTests = async () => {
         if (!this.testResults) return;
         const mods = this.getModulesWithProperty('test');
-        const t = await Promise.all(mods.map(mod => {
-            const newTests = this.runModuleTests(mod);
-            debugger;
+        const t = await Promise.all(mods.map(async mod => {
+            const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
         }));
-        debugger;
         this.showModuleSummary();
         this.showTestFailures();
     };
-    runModuleTests = async (module) =>  (await module['test']()).map(test => ({...test, module: module.manifest.name})).flat();
+    runModuleTests = async (module) =>  (await module['test']()).map(test => {
+        const ret =  {...test, module: module.manifest.name};
+        return ret;
+    });
     showModuleSummary = () => {
         const moduleStats = this.testResults.reduce((acc, test) => {
             if (!acc[test.module]) acc[test.module] = { total: 0, passed: 0 };

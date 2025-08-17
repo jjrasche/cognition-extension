@@ -81,6 +81,7 @@ const serializeForm = (form) => {
 
 // testing
 export const test = async () => {
+  console.log('Running web-tree-to-dom tests...');
   const { runUnitTest } = runtime.testUtils;
   return (await Promise.all([
     runUnitTest("Simple element creation", async () => {
