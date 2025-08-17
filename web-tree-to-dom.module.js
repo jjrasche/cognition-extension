@@ -37,15 +37,13 @@ const specialProps = new Set(['tag', 'text', 'class', 'id', 'events', 'data', 'n
 const setOtherProps = (el, node) => Object.entries(node).forEach(([key, value]) => !specialProps.has(key) && !(typeof value === 'object' && value.tag) && el.setAttribute(key, value));
 const populateOptions = (select, options) => {
     select.innerHTML = '';
-    options.forEach(opt => {
-        const option = document.createElement('option');
-        const data = typeof opt === 'string' ? { value: opt, text: opt } : { value: opt.value || opt.id, text: opt.text || opt.label || opt.value };
-        option.value = data.value;
-        option.textContent = data.text;
-        if (data.selected) option.selected = true;
-        select.appendChild(option);
-    });
+    options.forEach(opt => select.appendChild(createOption(opt)));
 };
+const createOption = (opt) => {
+    const data = normalizeOptionData(opt);
+    return Object.assign(document.createElement('option'), { value: data.value, textContent: data.text, selected: data.selected || false });
+};
+const normalizeOptionData = (opt) => typeof opt === 'string'  ? { value: opt, text: opt }  : { value: opt.value || opt.id, text: opt.text || opt.label || opt.value, selected: opt.selected };
 const bindNodeEvents = (id, node, elements) => {
     const el = elements[id];
     if (!el || !node.events) return;
