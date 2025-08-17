@@ -19,7 +19,7 @@ class Runtime {
             this.setupMessageListener();
             await this.initializeModules();
             // gives time to open devtools render engine to load for things like console.table
-            setTimeout(async () => await this.runTests(), this.runtimeName === 'service-worker' ? 0 : 2000);
+            setTimeout(async () => await this.runTests(), this.runtimeName === 'service-worker' ? 0 : 4000);
             this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
             this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, error);
@@ -324,6 +324,7 @@ class Runtime {
                 'Assert': test?.assert?.name ?? 'N/A',
                 'Actual': this.truncateOrNA(test.actual)
             })));
+            console.log(failedTests);
         }
     }
     truncateOrNA = (value, maxLength = 50) => {
