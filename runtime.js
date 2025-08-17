@@ -285,24 +285,23 @@ class Runtime {
             this.testResults = this.testResults.concat(newTests);
         }));
         debugger;
-        this.showSummary();
         this.showModuleSummary();
         this.showTestFailures();
     };
     runModuleTests = async (module) =>  (await module['test']()).map(test => ({...test, module: module.manifest.name})).flat();
-    showSummary = () => {
-        const totalTests = this.testResults.reduce((sum, r) => sum + r.totalTests, 0);
-        const totalPassed = this.testResults.reduce((sum, r) => sum + r.passed, 0);
-        console.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed/totalTests*100)}%)`);
-    };
     showModuleSummary = () => {
-        console.log('\n=== MODULES TESTED ===');
         const moduleStats = this.testResults.reduce((acc, test) => {
             if (!acc[test.module]) acc[test.module] = { total: 0, passed: 0 };
             acc[test.module].total++;
             if (test.passed) acc[test.module].passed++;
             return acc;
-        }, {});  
+        }, {});
+        
+        const totalTests = Object.values(moduleStats).reduce((sum, stats) => sum + stats.total, 0);
+        const totalPassed = Object.values(moduleStats).reduce((sum, stats) => sum + stats.passed, 0);
+        
+        console.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed/totalTests*100)}%)`);
+        console.log('\n=== MODULE TEST RESULTS ===');
         console.table(Object.entries(moduleStats).map(([module, stats]) => ({
             Module: module,
             'Total Tests': stats.total,
@@ -311,8 +310,8 @@ class Runtime {
             'Pass Rate': stats.total > 0 ? `${Math.round(stats.passed / stats.total * 100)}%` : '0%'
         })));
     };
-    showTestFailures = (results = []) => {
-        const failedTests = results.filter(test => !test.passed)
+    showTestFailures = () => {
+        const failedTests = this.testResults.filter(test => !test.passed)
         if (failedTests.length > 0) {
             console.log('\n=== FAILED TEST DETAILS ===');
             console.table(Object.fromEntries(failedTests.map((test, i) => [`${test.module} ${i+1}`, {
