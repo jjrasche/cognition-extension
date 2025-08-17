@@ -1,27 +1,13 @@
-/*
-const exampleTree = {
-  "form": { 
-    tag: "form",
-    "provider-label": { tag: "label", text: "Provider:", class: "form-label" },
-    "provider-select": { tag: "select", name: "providerName", options: providerOptions },
-    "model-label": { tag: "label", text: "Model:", class: "form-label" },
-    "model-select": { tag: "select", name: "modelName", dependsOn: "provider-select" },
-    "submit-btn": { tag: "button", type: "submit", text: "Select Model" }
-  }
-};
-*/
 export const manifest = {
     name: "web-tree-to-dom",
     context: ["extension-page"],
     version: "1.0.0",
     description: "Transforms web tree structures to DOM with event handling",
-    permissions: [],
     actions: ["transform"],
 };
 
 let runtime;
 export const initialize = async (rt) => runtime = rt;
-
 export const transform = async ({ tree, container }) => {
     if (!tree || typeof tree !== 'object') throw new Error('Tree must be valid object');
     const target = container || document.body;
@@ -36,8 +22,7 @@ const createElement = (id, node, elements, parent) => {
     const el = document.createElement(node.tag);
     setProps(el, node);
     if (node.tag === 'select' && node.options) populateOptions(el, node.options);
-    Object.entries(node).forEach(([childId, child]) =>
-        typeof child === 'object' && child.tag && createElement(childId, child, elements, el));
+    Object.entries(node).forEach(([childId, child]) => typeof child === 'object' && child.tag && createElement(childId, child, elements, el));
     elements[id] = el;
     parent.appendChild(el);
 };
@@ -84,9 +69,9 @@ const serializeForm = (form) => {
     const data = {};
     form.querySelectorAll('input, select, textarea').forEach(el => {
         if (!el.name) return;
-        if (el.type === 'checkbox') data[el.name] = el.checked;
-        else if (el.type === 'radio') { if (el.checked) data[el.name] = el.value; }
-        else data[el.name] = el.value;
+        if (el.type === 'checkbox') data[el.name] = el['checked'];
+        else if (el.type === 'radio') { if (el['checked']) data[el.name] = el['value']; }
+        else data[el.name] = el['value'];
     });
     return data;
 };
@@ -241,6 +226,32 @@ export const test = async () => {
         runtime.call = defaultRuntimeCall;
         return { actual, assert: runtime.testUtils.deepEqual, expected };
     }));
+    results.push(await runUnitTest("Form serialization handles all input types", async () => {
+        const formObj = { tag: "form", id: "mixed-form", events: { submit: "test.handleSubmit" } };
+        const textInputObj = { tag: "input", name: "username", value: "testuser", type: "text" };
+        const emailInputObj = { tag: "input", name: "email", value: "test@example.com", type: "email" };
+        const checkboxObj = { tag: "input", name: "newsletter", type: "checkbox" };
+        const radioObj1 = { tag: "input", name: "plan", value: "basic", type: "radio" };
+        const radioObj2 = { tag: "input", name: "plan", value: "premium", type: "radio" };
+        const selectObj = { tag: "select", name: "country", options: [ { value: "us", text: "United States" }, { value: "ca", text: "Canada" }] };
+        const textareaObj = { tag: "textarea", name: "comments", value: "Test comments" };
+        const tree = { [formObj.id]: { ...formObj, "text-input": textInputObj, "email-input": emailInputObj, "checkbox-input": checkboxObj, "radio-basic": radioObj1, "radio-premium": radioObj2, "select-input": selectObj, "textarea-input": textareaObj } };
+        runtimeCalls = [];
+        const container = await createTestDOM(tree);
+        const form = container.querySelector(`#${formObj.id}`)
+        if (!form) throw new Error();
+        const newsletterCheckbox = form.querySelector('[name="newsletter"]');
+        if (newsletterCheckbox) newsletterCheckbox['checked'] = true;
+        const premiumRadio = form.querySelector('[name="plan"][value="premium"]');
+        if (premiumRadio) premiumRadio['checked'] = true;
+        const countrySelect = form.querySelector('[name="country"]');
+        if (countrySelect) countrySelect['value'] = "ca";
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        cleanupTestContainer(container);
+        const actual = runtimeCalls[0]?.data?.formData;
+        const expected = { username: "testuser", email: "test@example.com", newsletter: true, plan: "premium", country: "ca", comments: "Test comments" };
+        return { actual, assert: runtime.testUtils.deepEqual, expected };
+    }));
     runtime.call = origRuntimeCall;
     return results;
 };
@@ -253,9 +264,8 @@ const initiateEventOnTestDom = async (tree, events) => {
             element.dispatchEvent(event);
         }
     });
-    // await new Promise(resolve => setTimeout(resolve, 100)); // small delay for async handlers
     cleanupTestContainer(container);
-};  
+};
 const createTestDOM = async (tree) => {
     const container = createTestContainer();
     await transform({ tree, container });
