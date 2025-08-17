@@ -1,6 +1,6 @@
 import './helpers.js';
 // import * as apiKeysModule from './api-keys.module.js';
-// import * as chromeSyncModule from './chrome-sync.module.js';
+import * as chromeSyncModule from './chrome-sync.module.js';
 // import * as chunkingModule from './chunking.module.js';
 // import * as claudeApiModule from './claude-api.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
@@ -28,7 +28,7 @@ import * as webTreeToDomModule from './web-tree-to-dom.module.js';
 
 export const modules = [
 	// apiKeysModule,
-	// chromeSyncModule,
+	chromeSyncModule,
 	// chunkingModule,
 	// claudeApiModule,
 	// contentScriptHandlerModule,

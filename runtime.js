@@ -18,7 +18,8 @@ class Runtime {
             this.registerActions();
             this.setupMessageListener();
             await this.initializeModules();
-            setTimeout(async () => await this.runTests(), 10);
+            // gives time to open devtools render engine to load for things like console.table
+            setTimeout(async () => await this.runTests(), this.runtimeName === 'service-worker' ? 0 : 2000);
             this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState)});
         } catch (error) {
             this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, error);
@@ -228,7 +229,8 @@ class Runtime {
     // Utility methods for modules
     getContextModules = () => [...this.contextModules];
     getActions = () => new Map(this.actions);
-    getModulesWithProperty = (prop) => modules.filter(module => prop in module || prop in module.manifest);
+    getModulesWithProperty = (prop) => modules.filter(module => this.moduleHasProperty(module, prop));
+    moduleHasProperty = (module, prop) => prop in module || prop in module.manifest;
 
     log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
@@ -276,7 +278,7 @@ class Runtime {
     };
     runTests = async () => {
         if (!this.testResults) return;
-        const mods = this.getModulesWithProperty('test').filter(m => !this.getContextModules().includes(m));
+        const mods = this.contextModules.filter(module => this.moduleHasProperty(module, "test"));
         const t = await Promise.all(mods.map(async mod => {
             const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
@@ -310,20 +312,20 @@ class Runtime {
         })));
     };
     showTestFailures = () => {
-        const failedTests = this.testResults.filter(test => !test.passed)
+        const failedTests = this.testResults.filter(test => !test.passed);
         if (failedTests.length > 0) {
             console.log('\n=== FAILED TEST DETAILS ===');
-            console.table(Object.fromEntries(failedTests.map((test, i) => [`${test.module} ${i+1}`, {
+            // Change from Object.fromEntries to just map to array
+            console.table(failedTests.map((test, i) => ({
+                'Module': test.module,
+                'Test #': i + 1,
                 'Test Name': test.name,
                 'Expected': this.truncateOrNA(test.expected),
                 'Assert': test?.assert?.name ?? 'N/A',
                 'Actual': this.truncateOrNA(test.actual)
-            }])));
-            // console.log(JSON.stringify(failedTests, null, 2),failedTests);
-        } else {
-            console.log('\n🎉 All tests passed!');
+            })));
         }
-    };
+    }
     truncateOrNA = (value, maxLength = 50) => {
         if (value == null) return 'N/A';
         const str = JSON.stringify(value);
