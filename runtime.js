@@ -324,7 +324,7 @@ class Runtime {
                 'Assert': test?.assert?.name ?? 'N/A',
                 'Actual': this.truncateOrNA(test.actual)
             })));
-            console.log(failedTests);
+            console.log(JSON.stringify(failedTests, null, 2), failedTests);
         }
     }
     truncateOrNA = (value, maxLength = 50) => {
