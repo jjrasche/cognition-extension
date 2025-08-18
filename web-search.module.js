@@ -18,18 +18,17 @@ export const getSearchResults = async (query, maxResults = 5) => {
         if (!tab || !tab.id) throw new Error('Failed to create tab');
         await waitForTabComplete(tab.id);
         //    await new Promise(resolve => setTimeout(resolve, 3000));
-        const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scrapeResultsInTab, args: [maxResults] });
-        //[0].result;
+        const results = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scrapeResultsInTab, args: [maxResults] }))[0].result;
         await chrome.tabs.remove(tab.id);
         return results;
     } catch (error) { if (tab && tab.id) chrome.tabs.remove(tab.id).catch(() => { }); }
 };
 export const displaySearchResults = async (query, maxResults = 5) => {
-    const searchResults = await getSearchResults(query, maxResults);
+    const results = await getSearchResults(query, maxResults);
     await runtime.call('ui.renderTree', {
         "search-container": { tag: "div", class: "search-results",
             "results-header": { tag: "h2", text: `Results for "${query}"` },
-            ...createResultNodes(searchResults.results)
+            ...createResultNodes(results)
         },
     });
 };
@@ -65,7 +64,6 @@ function scrapeResultsInTab(maxResults) {
         }).filter(result => result.title && result.url)
     );
 }
-
 // const scrapeResultsInTab = async (maxResults) => {
 //     const resultElements = await runtime.waitForCondition(() => document.querySelectorAll('[data-layout="organic"]').length > 0, { maxAttempts: 30, interval: 100 });
 //     return [...resultElements].slice(0, maxResults).map(el => ({ title: getTitle(el), url: getUrl(el), snippet: getSnippet(el) }))
