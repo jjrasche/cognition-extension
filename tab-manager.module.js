@@ -76,3 +76,29 @@ const onTabActivated = async (activeInfo) => {
   await _state.write('tabs.current', simplified);
   await _state.write('tabs.events', { type: 'activated', tab: simplified, timestamp: Date.now() });
 };
+
+
+const waitForPageStable = (tabId, { maxWait = 15000, minWait = 500, delay = 200, contentIdleChecks = 2, networkIdleChecks = 2 }) => {
+  return chrome.scripting.executeScript({
+    target: { tabId },
+    func: (maxWait, minWait, delay, contentIdleChecks, networkIdleChecks) => new Promise(resolve => {
+      const check = (state) => () => {
+        const current = state.getter();
+        if (current === state.last) state.stable = ++state.count >= state.checks;
+        else state.count = 0; state.stable = false; state.last = current;
+      };
+      const startTime = performance.now();
+      const network = { stable: false, count: 0, last: null, checks: networkIdleChecks, getter: () => performance.getEntriesByType('resource').length };
+      const content = { stable: false, count: 0, last: null, checks: contentIdleChecks, getter: () => document.body?.children.length + '_' + (document.body?.innerText?.length || 0) };
+      const poll = () => {
+        const elapsed = performance.now() - startTime;
+        (check(network), check(content));
+        if (elapsed > minWait && network.stable && content.stable) { resolve(elapsed); return; }
+        if (elapsed > maxWait) { resolve(false); return; }
+        setTimeout(poll, delay);
+      };
+      document.readyState === 'complete' ? poll() : document.addEventListener('DOMContentLoaded', poll);
+    }),
+    args: [maxWait, minWait, delay, contentIdleChecks, networkIdleChecks]
+  });
+};
