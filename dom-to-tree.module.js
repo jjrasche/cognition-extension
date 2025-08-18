@@ -37,14 +37,17 @@ const walkDOM = (element, tree, usedIds, stats, depth = 0, parentId) => {
 const createNode = (element, parentId) => {
 	const tag = element.tagName.toLowerCase();
 	const node = { tag, ...(parentId && { parent: parentId }) };
-	node.text = extractText(element) ?? node.text;
-	return { ...node, ...extractAttributes(element, tag) };
+	setText(element, node);
+	return { ...node, ...getAttributes(element, tag) };
 };
-const extractText = (el) => LEAF_TAGS.has(el.tagName.toLowerCase()) ? stripFormatting(el.textContent || '').trim() : el.textContent?.trim() || '';
-const extractAttributes = (el, tag) => [setImgAttributes, setAnchorAttributes, setInputAttributes].reduce((attrs, fn) => fn(el, tag, attrs), {});
-const setImgAttributes = (el, tag, attrs) => tag === 'img' ? ((el.src && (attrs.src = el.src)), (el.alt && (attrs.alt = el.alt)), attrs) : attrs;
-const setAnchorAttributes = (el, tag, attrs) => tag === 'a' ? ((el.href && (attrs.href = el.href)), attrs) : attrs;
-const setInputAttributes = (el, tag, attrs) => (tag === 'input' || tag === 'textarea') ? ((el.value && (attrs.value = el.value)), (el.placeholder && (attrs.placeholder = el.placeholder)), attrs) : attrs;
+const setText = (el, node) => {
+	const text = LEAF_TAGS.has(el.tagName.toLowerCase()) ? stripFormatting(el.textContent || '').trim() : el.textContent?.trim() || '';
+	if (text) node.text = text;
+};
+const getAttributes = (el, tag) => [getImgAttributes, getAnchorAttributes, getInputAttributes].reduce((attrs, fn) => fn(el, tag, attrs), {});
+const getImgAttributes = (el, tag, attrs) => tag === 'img' ? ((el.src && (attrs.src = el.src)), (el.alt && (attrs.alt = el.alt)), attrs) : attrs;
+const getAnchorAttributes = (el, tag, attrs) => tag === 'a' ? ((el.href && (attrs.href = el.href)), attrs) : attrs;
+const getInputAttributes = (el, tag, attrs) => (tag === 'input' || tag === 'textarea') ? ((el.value && (attrs.value = el.value)), (el.placeholder && (attrs.placeholder = el.placeholder)), attrs) : attrs;
 const generateUniqueId = (tag, index, usedIds) => {
 	let id = `${tag}-${index}`, counter = 0;
 	while (usedIds.has(id)) id = `${tag}-${index}-${counter++}`;
@@ -80,6 +83,34 @@ export const test = async () => {
 			const actual = (await createTree(doc)).tree;
 			const expected = { "p-1": { tag: "p", text: "Hello world" } };
 			return { actual, assert: deepEqual, expected };
-		})
+		}),
+		await runUnitTest("Skips hidden elements", async () => {
+			const doc = createTestDoc('<div style="display:none">Hidden</div><p>Visible</p>');
+			const actual = Object.keys((await createTree(doc)).tree);
+			return { actual, assert: deepEqual, expected: ["p-1"] };
+		}),
+		await runUnitTest("Filters ad elements", async () => {
+			const doc = createTestDoc('<div class="advertisement">Ad</div><p>Content</p>');
+			const actual = Object.keys((await createTree(doc)).tree);
+			return { actual, assert: deepEqual, expected: ["p-1"] };
+		}),
+		await runUnitTest("Extracts link attributes", async () => {
+			const doc = createTestDoc('<a href="https://example.com">Link</a>');
+			const actual = (await createTree(doc)).tree["a-1"];
+			return { actual, assert: deepEqual, expected: { tag: "a", text: "Link", href: "https://example.com/" } };
+		}),
+		await runUnitTest("Extracts image attributes", async () => {
+			const doc = createTestDoc('<img src="test.jpg" alt="Test image">');
+			const actual = (await createTree(doc)).tree["img-1"];
+			return { actual, assert: deepEqual, expected: { tag: "img", src: "test.jpg", alt: "Test image" } };
+		}),
+		// Hierarchy Tests
+		await runUnitTest("Maintains parent-child relationships", async () => {
+			const doc = createTestDoc('<div><p>Child text</p></div>');
+			const tree = (await createTree(doc)).tree;
+			const actual = { hasDiv: !!tree["div-1"], hasP: !!tree["p-2"], parentRef: tree["p-2"]?.parent };
+			return { actual, assert: deepEqual, expected: { hasDiv: true, hasP: true, parentRef: "div-1" } };
+		}),
+
 	];
 };
