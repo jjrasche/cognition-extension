@@ -16,7 +16,7 @@ export const extractPage = async (url, options = {}) => {
   try {
     await waitForTabComplete(tab.id);
     await new Promise(r => setTimeout(r, 3000));
-    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractPageInTab, args: [options] });
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extract, args: [options] });
     await chrome.tabs.remove(tab.id);
     return { success: true, url, ...result.result };
   } catch (error) { chrome.tabs.remove(tab.id).catch(() => {}); }
@@ -26,7 +26,7 @@ export const extractCurrentTab = async (options = {}) => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.id) throw new Error('No active tab');
-    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractPageInTab, args: [options] });
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extract, args: [options] });
     return { success: true, url: tab.url, ...result.result };
   } catch (error) {
     return { success: false, error: error.message };
@@ -37,7 +37,7 @@ const LEAF_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'td', 
 const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'svg', 'path']);
 const AD_PATTERNS = /ad|ads|sponsor|promo|banner|advertisement/i;
 
-const isHidden = (el, windowObj) => { try { const style = windowObj?.getComputedStyle?.(el); return style?.display === 'none' || style?.visibility === 'hidden'; } catch { return false; }};
+const isHidden = (el) => el.style?.display === 'none' || el.style?.visibility === 'hidden' || el.hasAttribute('hidden');
 const hasContent = (el) => isSelfClosingTag(el.tagName.toLowerCase()) || hasTextContent(el) || hasValidChildren(el);
 const stripFormatting = (text) => text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ');
 const shouldSkipTag = (tag) => SKIP_TAGS.has(tag);
@@ -45,11 +45,11 @@ const shouldSkipAds = (el) => AD_PATTERNS.test((el.className || '') + ' ' + (el.
 const hasTextContent = (el) => el.textContent?.trim()?.length > 0;
 const isSelfClosingTag = (tag) => ['img', 'input', 'textarea'].includes(tag);
 const hasValidChildren = (el) => el.children && [...el.children].some(child => !shouldSkipElement(child));
-const shouldSkipElement = (el, options = {}, windowObj) => {
+const shouldSkipElement = (el, options = {}) => {
   if (!el?.tagName) return true;
   const tag = el.tagName.toLowerCase();
   if (shouldSkipTag(tag)) return true;
-  if (options.skipHidden && isHidden(el, windowObj)) return true;
+  if (options.skipHidden && isHidden(el)) return true;
   if (options.skipAds && shouldSkipAds(el)) return true;
   return false;
 };
@@ -72,29 +72,23 @@ const createNode = (element, parentId) => {
   return { ...node, ...extractAttributes(element, tag) };
 };
 
-
-const walkDOM = (element, tree, usedIds, stats, options, windowObj, depth = 0, parentId = null) => {
-  if (shouldSkipElement(element, options, windowObj) || !hasContent(element)) return null;
+const walkDOM = (element, tree, stats, options, depth = 0, parentId) => {
+  const usedIds = new Set();
+  if (shouldSkipElement(element, options) || !hasContent(element)) return null;
   const tag = element.tagName.toLowerCase();
   const id = generateUniqueId(tag, ++stats.elements, usedIds);
   stats.depth = Math.max(stats.depth, depth);
   tree[id] = createNode(element, parentId);
   if (!LEAF_TAGS.has(tag) && element.children) {
-    [...element.children].forEach(child => walkDOM(child, tree, usedIds, stats, options, windowObj, depth + 1, id));
+    [...element.children].forEach(child => walkDOM(child, tree, stats, options, depth + 1, id));
   }
-  return id;
 };
 
-const extract = (rootElement, options = {}, windowObj = null) => {
+const extract = (rootElement, options = {}) => {
   const tree = {};
-  const usedIds = new Set();
   const stats = { elements: 0, depth: 0, skipped: 0 };
-  const startElement = rootElement.body || rootElement;
-      walkDOM(startElement, tree, usedIds, stats, { skipAds: true, skipHidden: true, ...options }, windowObj || window);
-  return {
-    tree, stats,
-    metadata: { url: windowObj?.['location']?.['href'] || 'test', title: windowObj?.['document']?.['title'] || 'Test', timestamp: new Date().toISOString() }
-  };
+  [...rootElement.body.children].forEach(child => walkDOM(child, tree, stats, { skipAds: true, skipHidden: true, ...options }));
+  return { tree, stats, metadata: { url: window.location.href, title: document.title, timestamp: new Date().toISOString() } };
 };
 
 const waitForTabComplete = (tabId) => new Promise((resolve, reject) => {
@@ -105,17 +99,14 @@ const waitForTabComplete = (tabId) => new Promise((resolve, reject) => {
   chrome.tabs.get(tabId).then(tab => tab.status === 'complete' && complete());
 });
 
-const extractPageInTab = (options) => ({ tree: {}, stats: { elements: 0, depth: 0, skipped: 0 }, metadata: { url: window.location.href, title: document.title, timestamp: new Date().toISOString() } });
-
 // testing
 export const test = async () => {
   const { runUnitTest, deepEqual } = runtime.testUtils;
   const createTestDoc = (html) => new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  const mockWindow = { getComputedStyle: () => ({ display: 'block', visibility: 'visible' }), location: { href: 'test' }, document: { title: 'Test' } };
   return [
     await runUnitTest("Simple paragraph extraction", async () => {
       const doc = createTestDoc("<p>Hello world</p>");
-      const actual = extract(doc.body, {}, mockWindow).tree;
+      const actual = extract(doc, {}).tree;
       const expected = { "p-1": { tag: "p", text: "Hello world" } };
       return { actual, assert: deepEqual, expected };
     })
