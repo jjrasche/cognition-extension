@@ -8,7 +8,7 @@ export const manifest = {
 
 let runtime;
 export const initialize = async (rt) => runtime = rt;
-export const transform = async ({ tree, container }) => {
+export const transform = async (tree, container) => {
     if (!tree || typeof tree !== 'object') throw new Error('Tree must be valid object');
     const target = container || document.body;
     target.innerHTML = '';
@@ -266,7 +266,7 @@ const initiateEventOnTestDom = async (tree, events) => {
 };
 const createTestDOM = async (tree) => {
     const container = createTestContainer();
-    await transform({ tree, container });
+    await transform(tree, container);
     return container;
 };
 const testDOMStructure = async (tree, elements) => {

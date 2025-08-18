@@ -1,5 +1,4 @@
 import { modules } from './module-registry.js';
-import { retryAsync, wait } from './helpers.js';
 class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
@@ -231,7 +230,15 @@ class Runtime {
     getActions = () => new Map(this.actions);
     getModulesWithProperty = (prop) => modules.filter(module => this.moduleHasProperty(module, prop));
     moduleHasProperty = (module, prop) => prop in module || prop in module.manifest;
-
+    wait = async (ms = 100) => await new Promise(resolve => setTimeout(resolve, ms));
+    waitForCondition = (conditionFn, { maxAttempts = 30, interval = 100 } = {}) => new Promise((resolve) => {
+        let attempts = 0;
+        const check = () => {
+            const result = conditionFn();
+            (result || attempts >= maxAttempts) ? resolve(result) : (attempts++, setTimeout(check, interval));
+        };
+        check();
+    });
     log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
     
