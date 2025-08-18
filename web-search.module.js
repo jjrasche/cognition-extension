@@ -18,12 +18,12 @@ export const getSearchResults = async (query, maxResults = 5) => {
         if (!tab || !tab.id) throw new Error('Failed to create tab');
         await waitForTabComplete(tab.id);
         //    await new Promise(resolve => setTimeout(resolve, 3000));
-        const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scrapeResultsInTab, args: [maxResults] })[0].result;
+        const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scrapeResultsInTab, args: [maxResults] });
+        //[0].result;
         await chrome.tabs.remove(tab.id);
         return results;
     } catch (error) { if (tab && tab.id) chrome.tabs.remove(tab.id).catch(() => { }); }
 };
-
 export const displaySearchResults = async (query, maxResults = 5) => {
     const searchResults = await getSearchResults(query, maxResults);
     await runtime.call('ui.renderTree', {
@@ -66,6 +66,17 @@ function scrapeResultsInTab(maxResults) {
     );
 }
 
+// const scrapeResultsInTab = async (maxResults) => {
+//     const resultElements = await runtime.waitForCondition(() => document.querySelectorAll('[data-layout="organic"]').length > 0, { maxAttempts: 30, interval: 100 });
+//     return [...resultElements].slice(0, maxResults).map(el => ({ title: getTitle(el), url: getUrl(el), snippet: getSnippet(el) }))
+//         .filter(result => result.title && result.url);
+// };
+const getUrl = (el) => {
+    let url = el.querySelector('a')?.href || '';
+    return url.startsWith('?') ? 'https://duckduckgo.com/' + url : url;
+};
+const getTitle = (el) => el.querySelector('h2 a span')?.innerText?.trim() || el.querySelector('h2')?.innerText?.trim() || '';
+const getSnippet = (el) => el.querySelector('[data-result="snippet"]')?.innerText?.trim() || '';
 const waitForTabComplete = (tabId) => {
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => { reject(new Error('Tab load timeout')) }, 15000);

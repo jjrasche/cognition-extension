@@ -22,9 +22,9 @@ import * as chromeSyncModule from './chrome-sync.module.js';
 // import * as transcriptModule from './transcript.module.js';
 // import * as transformerModule from './transformer.module.js';
 import * as webTreeToDomModule from './web-tree-to-dom.module.js';
-// import * as uiModule from './ui.module.js';
+import * as uiModule from './ui.module.js';
 // import * as webExtractorModule from './web-extractor.module.js';
-// import * as webSearchModule from './web-search.module.js';
+import * as webSearchModule from './web-search.module.js';
 
 export const modules = [
 	// apiKeysModule,
@@ -50,9 +50,9 @@ export const modules = [
 	// transcriptModule,
 	// transformerModule,
 	webTreeToDomModule,
-	// uiModule,
+	uiModule,
 	// webExtractorModule,
-	// webSearchModule,
+	webSearchModule,
 ];
 
 export const coreFiles = [

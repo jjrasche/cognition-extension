@@ -1,4 +1,5 @@
 import { modules } from './module-registry.js';
+import { retryAsync } from './helpers.js';
 class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
@@ -195,7 +196,7 @@ class Runtime {
             while (this.getState(moduleName) !== 'ready') {
                 this.throwIfFailed(moduleName);
                 this.throwIfTimeout(moduleName, start, timeout);
-                await wait(100);
+                await this.wait(100);
             }
         }
     }

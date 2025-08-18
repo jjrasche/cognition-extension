@@ -290,7 +290,7 @@ export const initializeLayout = async () => {
         if (query) {
           showState('Searching...', 'loading');
           try { 
-            await runtime.call('web-search.searchWeb', { query }); 
+            await runtime.call('web-search.displaySearchResults', query); 
           } catch (error) { 
             showState(`Search failed: ${error.message}`, 'error'); 
           }
@@ -337,7 +337,7 @@ const handleTreeEvent = async (event, handlerName, nodeId, node) => {
   try {
     if (handlerName === 'handleResultClick' && node.data?.url) {
       showState('Extracting page content...', 'loading');
-      const result = await runtime.call('web-extractor.extractToMarkdown', { url: node.data.url });
+      const result = await runtime.call('web-extractor.extractToMarkdown', node.data.url);
       result.success ? renderMarkdown(result.markdown, result.title, node.data.url) : showState(`Failed to extract: ${result.error}`, 'error');
     }
   } catch (error) { 
