@@ -16,7 +16,7 @@ import './helpers.js';
 // import * as inferenceModelValidationModule from './inference-model-validation.module.js';
 // import * as inferenceModule from './inference.module.js';
 // import * as oauthModule from './oauth.module.js';
-// import * as tabManagerModule from './tab-manager.module.js';
+import * as tabModule from './tab.module.js';
 // import * as textInputModule from './text-input.module.js';
 // import * as transcriptModule from './transcript.module.js';
 // import * as transformerModule from './transformer.module.js';
@@ -45,7 +45,7 @@ export const modules = [
 	// inferenceModelValidationModule,
 	// inferenceModule,
 	// oauthModule,
-	// tabManagerModule,
+	tabModule,
 	// textInputModule,
 	// transcriptModule,
 	// transformerModule,
