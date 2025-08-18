@@ -10,27 +10,28 @@ export const manifest = {
 let runtime;
 export const initialize = async (rt) => runtime = rt;
 
-export const extractPage = async (url, options = {}) => {
-	const domString = await extractRawDOM(url);
-	const dom = new DOMParser().parseFromString(domString, 'text/html');
-	createTree(dom);
+export const extractPage = async (url) => {
+	const { html, url: actualUrl, title } = await extractRawDOM(url);
+	const dom = new DOMParser().parseFromString(html, 'text/html');
+	const result = createTree(dom);
+	return { ...result, metadata: { url: actualUrl, title, timestamp: new Date().toISOString() } };
 };
 const extractRawDOM = async (url) => runtime.call("tab.executeInTempTab", url, () => ({ html: document.documentElement.outerHTML, url: window.location.href, title: document.title }), []);
-const createTree = (rootElement, options = {}) => {
+const createTree = (rootElement) => {
 	const tree = {};
+	const usedIds = new Set();
 	const stats = { elements: 0, depth: 0, skipped: 0 };
-	[...rootElement.body.children].forEach(child => walkDOM(child, tree, stats, { skipAds: true, skipHidden: true, ...options }));
+	[...rootElement.body.children].forEach(child => walkDOM(child, tree, usedIds, stats));
 	return { tree, stats, metadata: { url: window.location.href, title: document.title, timestamp: new Date().toISOString() } };
 };
-const walkDOM = (element, tree, stats, options, depth = 0, parentId) => {
-	const usedIds = new Set();
-	if (shouldSkipElement(element, options) || !hasContent(element)) return null;
+const walkDOM = (element, tree, usedIds, stats, depth = 0, parentId) => {
+	if (shouldSkipElement(element) || !hasContent(element)) return null;
 	const tag = element.tagName.toLowerCase();
 	const id = generateUniqueId(tag, ++stats.elements, usedIds);
 	stats.depth = Math.max(stats.depth, depth);
 	tree[id] = createNode(element, parentId);
 	if (!LEAF_TAGS.has(tag) && element.children) {
-		[...element.children].forEach(child => walkDOM(child, tree, stats, options, depth + 1, id));
+		[...element.children].forEach(child => walkDOM(child, tree, usedIds, stats, depth + 1, id));
 	}
 };
 const createNode = (element, parentId) => {
@@ -58,12 +59,12 @@ const shouldSkipAds = (el) => AD_PATTERNS.test((el.className || '') + ' ' + (el.
 const hasTextContent = (el) => el.textContent?.trim()?.length > 0;
 const isSelfClosingTag = (tag) => ['img', 'input', 'textarea'].includes(tag);
 const hasValidChildren = (el) => el.children && [...el.children].some(child => !shouldSkipElement(child));
-const shouldSkipElement = (el, options = {}) => {
+const shouldSkipElement = (el) => {
 	if (!el?.tagName) return true;
 	const tag = el.tagName.toLowerCase();
 	if (shouldSkipTag(tag)) return true;
-	if (options.skipHidden && isHidden(el)) return true;
-	if (options.skipAds && shouldSkipAds(el)) return true;
+	if (isHidden(el)) return true;
+	if (shouldSkipAds(el)) return true;
 	return false;
 };
 const LEAF_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'td', 'th', 'a', 'img', 'input', 'textarea', 'code']);
@@ -76,7 +77,7 @@ export const test = async () => {
 	return [
 		await runUnitTest("Simple paragraph extraction", async () => {
 			const doc = createTestDoc("<p>Hello world</p>");
-			const actual = extract(doc, {}).tree;
+			const actual = (await createTree(doc)).tree;
 			const expected = { "p-1": { tag: "p", text: "Hello world" } };
 			return { actual, assert: deepEqual, expected };
 		})
