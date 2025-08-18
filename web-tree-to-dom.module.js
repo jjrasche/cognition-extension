@@ -10,10 +10,9 @@ let runtime;
 export const initialize = async (rt) => runtime = rt;
 export const transform = async (tree, container) => {
     if (!tree || typeof tree !== 'object') throw new Error('Tree must be valid object');
-    const target = container || document.body;
-    target.innerHTML = '';
+    container.innerHTML = '';
     const elements = {};
-    Object.entries(tree).forEach(([id, node]) => createElement(id, node, elements, target));
+    Object.entries(tree).forEach(([id, node]) => createElement(id, node, elements, container));
     Object.entries(tree).forEach(([id, node]) => bindNodeEvents(id, node, elements));
     return elements;
 };

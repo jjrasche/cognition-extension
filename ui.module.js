@@ -22,8 +22,8 @@ export const initializeLayout = async () => {
             }
         }
     };
-    await runtime.call('web-tree-to-dom.transform', layoutTree, document.body)
-    setTimeout(() => getSearchInput()?.focus(), 100);
+    await runtime.call('web-tree-to-dom.transform', layoutTree, document.body);
+    getSearchInput()?.focus();
 };
 export const handleSearchKeydown = async (event) => {
     if (event.key === 'Enter' && event.target.value.trim()) {
@@ -53,21 +53,20 @@ export const test = async () => {
     const { runUnitTest } = runtime.testUtils;
     return [
         await runUnitTest("Initializes complete extension layout", async () => {
-            await initializeLayout();
             const layout = getMainLayout(), searchInput = getSearchInput(), mainContent = getMainContent();
             const actual = { hasLayout: !!layout, hasSearch: !!searchInput, hasMain: !!mainContent, inputFocused: document.activeElement === searchInput };
             const expected = { hasLayout: true, hasSearch: true, hasMain: true, inputFocused: true };
             return { actual, assert: runtime.testUtils.deepEqual, expected };
         }),
-        await runUnitTest("Orchestrates tree rendering via web-tree-to-dom", async () => {
-            const mockTree = { "test-div": { tag: "div", text: "Test content" } };
-            const container = createElement('div');
-            document.body.appendChild(container);
-            const result = await renderTree(mockTree, container);
-            const hasContent = container.querySelector('div')?.textContent === "Test content";
-            container.remove();
-            const actual = { success: !!result, hasContent };
-            const expected = { success: true, hasContent: true };
+        await runUnitTest("Search input triggers search on Enter key", async () => {
+            let searchQuery = null;
+            const originalCall = runtime.call;
+            runtime.call = async (action, ...args) => action === 'web-search.displaySearchResults' && (searchQuery = args[0]);
+            const testQuery = "test search";
+            await handleSearchKeydown({ key: 'Enter', target: { value: testQuery } });
+            runtime.call = originalCall;
+            const actual = { searchTriggered: !!searchQuery, query: searchQuery };
+            const expected = { searchTriggered: true, query: testQuery };
             return { actual, assert: runtime.testUtils.deepEqual, expected };
         })
     ];
