@@ -3,7 +3,7 @@ export const manifest = {
     version: '1.0.0',
     context: 'extension-page',
     description: 'Extension page layout and tree orchestration',
-    dependencies: ['web-tree-to-dom'],
+    dependencies: ['tree-to-dom'],
     actions: ['initializeLayout', 'renderTree'],
 };
 
@@ -22,7 +22,7 @@ export const initializeLayout = async () => {
             }
         }
     };
-    await runtime.call('web-tree-to-dom.transform', layoutTree, document.body);
+    await runtime.call('tree-to-dom.transform', layoutTree, document.body);
     getSearchInput()?.focus();
 };
 export const handleSearchKeydown = async (event) => {
@@ -35,7 +35,7 @@ export const handleSearchKeydown = async (event) => {
 export const renderTree = async (tree, container) => {
     const target = container || getMainContent();
     if (!target) throw new Error('Container not found');
-    return await runtime.call('web-tree-to-dom.transform', tree, target);
+    return await runtime.call('tree-to-dom.transform', tree, target);
 };
 const showState = (message, type) => getMainContent()["innerHTML"] = type === 'error' ? errorHTML(message) : loadingHTML(message);
 const createElement = (tag, attrs = {}) => Object.assign(document.createElement(tag), attrs);

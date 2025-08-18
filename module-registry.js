@@ -1,6 +1,5 @@
 import './helpers.js';
 // import * as apiKeysModule from './api-keys.module.js';
-import * as chromeSyncModule from './chrome-sync.module.js';
 // import * as chunkingModule from './chunking.module.js';
 // import * as claudeApiModule from './claude-api.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
@@ -21,9 +20,10 @@ import * as chromeSyncModule from './chrome-sync.module.js';
 // import * as textInputModule from './text-input.module.js';
 // import * as transcriptModule from './transcript.module.js';
 // import * as transformerModule from './transformer.module.js';
-import * as webTreeToDomModule from './web-tree-to-dom.module.js';
+import * as chromeSyncModule from './chrome-sync.module.js';
+import * as domToTreeModule from './dom-to-tree.module.js';
+import * as treeToDomModule from './tree-to-dom.module.js';
 import * as uiModule from './ui.module.js';
-// import * as webExtractorModule from './web-extractor.module.js';
 import * as webSearchModule from './web-search.module.js';
 
 export const modules = [
@@ -49,9 +49,9 @@ export const modules = [
 	// textInputModule,
 	// transcriptModule,
 	// transformerModule,
-	webTreeToDomModule,
+	treeToDomModule,
 	uiModule,
-	// webExtractorModule,
+	domToTreeModule,
 	webSearchModule,
 ];
 

@@ -23,3 +23,20 @@ Cognition is an AI assistant that runs continuously in your browser, built from 
 #### State is maintained in:
 - Module state: Private variables only -> enforces single writer pattern
 - graphDB: one off interactions, long running data collection, configs, transient metadata 
+
+## Web Tree Structure
+
+The Web Tree is Cognition's fundamental data format - a hierarchical object structure that represents any UI, content, or document in a consistent way.
+
+### Core Concept
+Instead of nested arrays or complex DOM structures, everything becomes a flat object where each node can contain other nodes as properties:
+
+```javascript
+{
+  "container-1": {
+    tag: "div",
+    "title-1": { tag: "h1", text: "Page Title" },
+    "content-1": { tag: "p", text: "Paragraph content" },
+    "button-1": { tag: "button", text: "Click me", events: { click: "action.name" } }
+  }
+}

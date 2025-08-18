@@ -60,3 +60,19 @@ declare module "*.module.js" {
     const module: CognitionModule;
     export = module;
 }
+
+interface WebTreeNode {
+  tag: string;
+  text?: string;
+  parent?: string;
+  href?: string;
+  src?: string;
+  alt?: string;
+  value?: string;
+  placeholder?: string;
+  [childId: string]: WebTreeNode | any;
+}
+
+interface WebTree {
+  [nodeId: string]: WebTreeNode;
+}

@@ -1,5 +1,5 @@
 export const manifest = {
-    name: "web-tree-to-dom",
+    name: "tree-to-dom",
     context: ["extension-page"],
     version: "1.0.0",
     description: "Transforms web tree structures to DOM with event handling",
