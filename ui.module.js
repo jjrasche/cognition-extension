@@ -4,7 +4,7 @@ export const manifest = {
     context: 'extension-page',
     description: 'Extension page layout and tree orchestration',
     dependencies: ['tree-to-dom'],
-    actions: ['initializeLayout', 'renderTree'],
+    actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown'],
 };
 
 let runtime;

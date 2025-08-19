@@ -11,8 +11,8 @@ let runtime;
 export const initialize = async (rt) => runtime = rt;
 
 export const getSearchResults = async (query, maxResults = 5) => {
-    const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
-    return runtime.call("tab.executeInTempTab", url, scrapeResultsInTab(maxResults), []);
+    const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+    return runtime.call("tab.executeInTempTab", url, scrapeResultsInTab, [maxResults]);
 };
 export const getSearchTree = async (query, maxResults = 5) => {
     const results = await getSearchResults(query, maxResults);
@@ -35,15 +35,36 @@ const createResultNodes = (results) => Object.fromEntries(
     })
 );
 
-const scrapeResultsInTab = (maxResults) => () => {
-    const results = [...document.querySelectorAll('[data-layout="organic"]')].slice(0, maxResults).map(el => {
-        debugger;
-        const title = el.querySelector('h2 a span')?.["innerText"]?.trim() || el.querySelector('h2')?.["innerText"]?.trim() || '';
-        const snippet = el.querySelector('[data-result="snippet"]')?.["innerText"]?.trim() || '';
-        let url = el.querySelector('a')?.["href"] || '';
-        url = url.startsWith('?') ? 'https://duckduckgo.com/' + url : url;
+const scrapeResultsInTab = (maxResults) => {
+    const resultSelectors = [
+        '[data-layout="organic"]',
+        'article[data-nrn]', 
+        'div[data-nrn]',
+        '.result',
+        '.web-result'
+    ];
+    let resultElements = [];
+    for (const selector of resultSelectors) {
+        resultElements = [...document.querySelectorAll(selector)];
+        if (resultElements.length > 0) break;
+    }
+    
+    const results = resultElements.slice(0, maxResults).map(el => {
+        const title = el.querySelector('h2 a span')?.innerText?.trim() ||
+                     el.querySelector('h2 a')?.innerText?.trim() ||
+                     el.querySelector('h3 a')?.innerText?.trim() || '';
+        
+        const snippet = el.querySelector('[data-result="snippet"]')?.innerText?.trim() ||
+                       el.querySelector('.result__snippet')?.innerText?.trim() || '';
+        
+        let url = el.querySelector('a')?.href || '';
+        if (url.includes('duckduckgo.com/l/?')) {
+            const match = url.match(/uddg=([^&]+)/);
+            url = match ? decodeURIComponent(match[1]) : url;
+        }
+        
         return { title, url, snippet };
     }).filter(result => result.title && result.url);
-    debugger;
+    
     return results;
-}
+};

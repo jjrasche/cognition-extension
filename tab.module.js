@@ -34,7 +34,7 @@ export const executeInTempTab = async (url, func, args = []) => {
 		throw error;
 	}
 	finally {
-		// await removeTab(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
+		await removeTab(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
 	}
 };
 // helpers

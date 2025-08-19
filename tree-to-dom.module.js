@@ -59,7 +59,14 @@ const createEventData = (event, element) => {
     const form = element.tagName === 'FORM' ? element : element.closest('form');
     return {
         type: event.type,
-        target: { tagName: element.tagName.toLowerCase(), id: element.id, name: element.name, value: element.value }, ...(form && { formData: serializeForm(form) })
+        key: event.key,  // Add this for keyboard events
+        target: { 
+            tagName: element.tagName.toLowerCase(), 
+            id: element.id, 
+            name: element.name, 
+            value: element.value 
+        }, 
+        ...(form && { formData: serializeForm(form) })
     };
 };
 const serializeForm = (form) => {
