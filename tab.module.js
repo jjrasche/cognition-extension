@@ -9,10 +9,11 @@ export const manifest = {
 
 let runtime;
 export const initialize = async (rt) => runtime = rt;
-// tabs
+
 export const createTab = async (options) => {
 	const tab = await chrome.tabs.create(options);
-	await waitForStability(tab)
+	await waitForTabComplete(tab);
+	await waitForTabStable(tab);
 	return tab;
 };
 export const removeTab = async (tabId) => await chrome.tabs.remove(tabId);
@@ -26,15 +27,15 @@ export const executeScript = async (tab, func, args = []) => {
 	return result[0].result;
 }
 export const executeInTempTab = async (url, func, args = []) => {
-	const tab = await createTab({ url, active: false });
+	const tab = await createTab({ url, active: true });
 	try { return await executeScript(tab, func, args) }
 	finally {
 		await removeTab(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
 	}
 };
 // helpers
-const waitForStability = async (tab, options = {}) => {
-	const { maxWait = 15000, minWait = 500, delay = 200, contentIdleChecks = 2, networkIdleChecks = 2 } = options;
+const waitForTabStable = async (tab, options = {}) => {
+	const { maxWait = 15000, minWait = 100, delay = 50, contentIdleChecks = 3, networkIdleChecks = 3 } = options;
 	return await executeScript(tab,
 		(maxWait, minWait, delay, contentIdleChecks, networkIdleChecks) => new Promise(resolve => {
 			const check = (state) => () => {
@@ -48,8 +49,7 @@ const waitForStability = async (tab, options = {}) => {
 			const poll = () => {
 				const elapsed = performance.now() - startTime;
 				(check(network)(), check(content)());
-				console.log(`Elapsed: ${elapsed}ms`, JSON.stringify({ network, content }, null, 2));
-				console.log(`Stability: ${network.stable && content.stable}`);
+				chrome.runtime.sendMessage({ type: 'TAB_STABILITY', data: {  elapsed: Math.round(elapsed),  networkStable: network.stable,  contentStable: content.stable, url: window.location.hostname } }).catch(() => {}); // Ignore errors if extension context is gone
 				if (elapsed > minWait && network.stable && content.stable) { resolve({ success: true, elapsed }); return; }
 				if (elapsed > maxWait) { resolve({ success: false, elapsed, networkStable: network.stable, contentStable: content.stable }); return; }
 				setTimeout(poll, delay);
@@ -60,6 +60,19 @@ const waitForStability = async (tab, options = {}) => {
 	);
 };
 
+const waitForTabComplete = (tab) => {
+	return new Promise((resolve) => {
+		const listener = (updatedTabId, changeInfo) => (updatedTabId === tab.id) && handleComplete(changeInfo.status);
+		chrome.tabs.onUpdated.addListener(listener);
+		chrome.tabs.get(tab.id).then(tab => handleComplete(tab.status));
+		const handleComplete = (status) => {
+			if (status === 'complete') {
+				chrome.tabs.onUpdated.removeListener(listener);
+				resolve(true);
+			}
+		};
+	});
+};
 // Testing: having hard time getting to
 // export const test = async () => {
 // 	const { runUnitTest, strictEqual } = runtime.testUtils;

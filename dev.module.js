@@ -29,7 +29,7 @@ const createActionShortcuts = () => {
   addModuleActionsToConsole();
   addEasyAccessVariablesToConsole();
 };
-const addModuleManifestsToConsole = () => runtime.getContextModules).forEach(module => {
+const addModuleManifestsToConsole = () => runtime.getContextModules().forEach(module => {
   const camelModuleName = kebabToCamel(module.manifest.name);
   globalThis[camelModuleName] = {};
   globalThis[camelModuleName].manifest = module.manifest;
@@ -60,7 +60,7 @@ const addEasyAccessVariablesToConsole = () => {
   globalThis.printStatus = () => {
     runtime.log('=== Extension Status ===');
     runtime.log('Context:', runtime.runtimeName);
-    runtime.log('Loaded Modules:', runtime.getContextModules).map(m => m.manifest.name));
+    runtime.log('Loaded Modules:', runtime.getContextModules().map(m => m.manifest.name));
     runtime.log('Module States:', Object.fromEntries(runtime.moduleState));
     runtime.log('Registered Actions:', Array.from(runtime.getActions().keys()).length);
     runtime.log('Errors:', runtime.errors);
@@ -78,7 +78,7 @@ const prettyPrintActions = () => {
 };
 
 const prettyPrintModules = () => {
-  const moduleInfo = runtime.getContextModules).map(module => ({
+  const moduleInfo = runtime.getContextModules().map(module => ({
     name: module.manifest.name,
     version: module.manifest.version,
     context: module.manifest.context || 'any',

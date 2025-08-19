@@ -55,6 +55,7 @@ class Runtime {
     setupMessageListener = () => {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (this.handleModuleStateMessage(message)) return;
+            if (this.handletTabStabilityMessage(message)) return;
             if (!message.action) return;
 
             const [moduleName] = message.action.split('.');
@@ -72,7 +73,13 @@ class Runtime {
             return true;
         });
     }
-
+    handletTabStabilityMessage = (message) => {
+        if (message.type === 'TAB_STABILITY') {
+            const { elapsed, networkStable, contentStable, url } = message.data;
+            this.log(`[Tab] ${url}: ${elapsed}ms | Network: ${networkStable} | Content: ${contentStable}`);
+            return true;
+        }
+    }
     handleModuleStateMessage = (message) => (this.handleModuleFailedMessage(message) || this.handleModuleReadyMessage(message));
     handleModuleFailedMessage = (message) => {
         if (message.type === 'MODULE_FAILED') {
@@ -291,8 +298,8 @@ class Runtime {
             const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
         }));
-        this.showModuleSummary();
-        this.showTestFailures();
+        // this.showModuleSummary();
+        // this.showTestFailures();
     };
     runModuleTests = async (module) =>  (await module['test']()).map(test => {
         const ret =  {...test, module: module.manifest.name};

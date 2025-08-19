@@ -8,7 +8,10 @@ export const manifest = {
 };
 
 let runtime;
-export const initialize = async (rt) => (runtime = rt, await initializeLayout());
+export const initialize = async (rt) => {
+    runtime = rt;
+    await initializeLayout();
+};
 
 export const initializeLayout = async () => {
     getMainLayout()?.remove();

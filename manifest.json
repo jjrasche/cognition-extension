@@ -7,10 +7,12 @@
     "tabs", 
     "scripting",
     "identity",
+    "notifications",
     "windows",
     "webNavigation",
     "activeTab",
-    "offscreen"
+    "offscreen",
+    "debugger"
   ],
   "host_permissions": [
     "https://api.fitbit.com/*",
@@ -25,7 +27,7 @@
     "default_title": "Toggle Cognition UI"
   },
   "web_accessible_resources": [{
-    "resources": ["*.js", "*.html", "models/*", "onnx-runtime/*"],
+    "resources": ["*.js", "*.html", "models/*", "onnx-runtime/*", "libs/*"],
     "matches": ["<all_urls>"]
   }],
   "content_security_policy": { 
