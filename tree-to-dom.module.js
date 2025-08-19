@@ -230,6 +230,16 @@ export const test = async () => {
         runtime.call = defaultRuntimeCall;
         return { actual, assert: runtime.testUtils.deepEqual, expected };
     }));
+    results.push(await runUnitTest("Event Binding: Keydown event with key data", async () => {
+        const inputObj = { tag: "input", id: "keydown-input", name: "testField", events: { keydown: "test.handleKeydown" } };
+        const tree = { [inputObj.id]: inputObj };
+        runtimeCalls = [];
+        await initiateEventOnTestDom(tree, [[`#${inputObj.id}`, new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })]]);
+        const actual = { action: runtimeCalls[0]?.action, eventType: runtimeCalls[0]?.data?.type, key: runtimeCalls[0]?.data?.key };
+        const expected = { action: inputObj.events.keydown, eventType: 'keydown', key: 'Enter' };
+        runtime.call = defaultRuntimeCall;
+        return { actual, assert: runtime.testUtils.deepEqual, expected };
+    }));
     results.push(await runUnitTest("Form serialization handles all input types", async () => {
         const formObj = { tag: "form", id: "mixed-form", events: { submit: "test.handleSubmit" } };
         const textInputObj = { tag: "input", name: "username", value: "testuser", type: "text" };

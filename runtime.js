@@ -298,8 +298,8 @@ class Runtime {
             const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
         }));
-        // this.showModuleSummary();
-        // this.showTestFailures();
+        this.showModuleSummary();
+        this.showTestFailures();
     };
     runModuleTests = async (module) =>  (await module['test']()).map(test => {
         const ret =  {...test, module: module.manifest.name};
