@@ -36,7 +36,9 @@ Instead of nested arrays or complex DOM structures, everything becomes a flat ob
   "container-1": {
     tag: "div",
     "title-1": { tag: "h1", text: "Page Title" },
-    "content-1": { tag: "p", text: "Paragraph content" },
-    "button-1": { tag: "button", text: "Click me", events: { click: "action.name" } }
+    "content-1": { tag: "p", text: "Paragraph content",
+      "bold-1": {tag: "b" text: "important"}
+    },
+    "button-1": { tag: "button", text: "Click me", events: { click: "action.name"} }
   }
 }
