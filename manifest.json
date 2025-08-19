@@ -15,8 +15,7 @@
   "host_permissions": [
     "https://api.fitbit.com/*",
     "https://*/*",
-    "http://*/*",
-    "data:*"
+    "http://*/*"
   ],
   "background": {
     "service_worker": "service-worker.js",
