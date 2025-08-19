@@ -29,8 +29,12 @@ export const executeScript = async (tab, func, args = []) => {
 export const executeInTempTab = async (url, func, args = []) => {
 	const tab = await createTab({ url, active: true });
 	try { return await executeScript(tab, func, args) }
+	catch (error) {
+		runtime.logError(`[Tab] Error executing script in temp tab ${tab.id}:`, error);
+		throw error;
+	}
 	finally {
-		await removeTab(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
+		// await removeTab(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
 	}
 };
 // helpers

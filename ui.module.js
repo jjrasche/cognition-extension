@@ -31,7 +31,10 @@ export const initializeLayout = async () => {
 export const handleSearchKeydown = async (event) => {
     if (event.key === 'Enter' && event.target.value.trim()) {
         showState('Searching...', 'loading');
-        try { await runtime.call('web-search.displaySearchResults', event.target.value.trim()); }
+        try { 
+            const tree = await runtime.call('web-search.displaySearchResults', event.target.value.trim());
+            await renderTree(tree);
+        }
         catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
     }
 };
