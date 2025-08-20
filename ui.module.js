@@ -67,7 +67,7 @@ export const test = async () => {
         await runUnitTest("Search input triggers search on Enter key", async () => {
             let searchQuery = null;
             const originalCall = runtime.call;
-            runtime.call = async (action, ...args) => action === 'web-search.displaySearchResults' && (searchQuery = args[0]);
+            runtime.call = async (action, ...args) => action === 'web-search.getSearchTree' && (searchQuery = args[0]);
             const testQuery = "test search";
             await handleSearchKeydown({ key: 'Enter', target: { value: testQuery } });
             runtime.call = originalCall;
