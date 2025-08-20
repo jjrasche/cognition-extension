@@ -384,8 +384,8 @@ class Runtime {
     }
 }
 
-export async function initializeRuntime(runtimeName) {
+export function initializeRuntime(runtimeName) {
     const initializer = new Runtime(runtimeName);
-    await initializer.initialize();
+    initializer.initialize();
     return initializer;
 }

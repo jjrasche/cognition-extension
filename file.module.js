@@ -4,7 +4,7 @@ export const manifest = {
   version: "1.0.0",
   description: "User-controlled file operations with directory handles and persistent permissions",
   permissions: ["storage"],
-  dependencies: ["indexed-db"],
+  dependencies: ["indexed-db", "tab"],
   actions: ["write", "read", "append", "remove", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle",],
   indexeddb: {
     name: 'FileHandlers',
@@ -16,7 +16,17 @@ export const manifest = {
   }
 };
 let runtime, db;
-export const initialize = async (rt) => (runtime = rt, db = await getDB());
+export const initialize = async (rt) => {
+  runtime = rt;
+  db = await getDB();
+  registerModuleDirectories();
+};
+
+const getModuleRequiredDirectories = () => [...new Set(runtime.getModulesWithProperty('requiredDirectories').flatMap(module => module.manifest.requiredDirectories || []))]
+const registerModuleDirectories = async () => getModuleRequiredDirectories()
+    .filter(async dirName => !(await hasDir({name: dirName})))
+    .forEach(async dirName => await getHandle(dirName));
+
 // handle db
 const getDB = async () => await runtime.call('indexed-db.openDb', manifest.indexeddb);
 const storeHandle = async (name, handle) => updateHandle({ id: `handle-${name}`, name, handle, timestamp: new Date().toISOString(), directoryName: handle.name });
@@ -69,7 +79,10 @@ export const append = async ({ dir, filename, data }) => {
 };
 export const remove = async ({ dir, filename }) => await (await getFileHandle({ dir, filename })).remove();
 // directory operations
-const selectDir = async () =>  await window["showDirectoryPicker"]();
+const selectDir = async () => {
+  await window["showDirectoryPicker"]();
+  await runtime.call('tab.focusExtensionPage');
+};
 export const listDirs = async () => (await getAllHandles()).map(handle => handle.name);
 export const hasDir = async ({ name }) => !!(await getHandle(name));
 

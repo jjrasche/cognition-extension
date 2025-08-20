@@ -34,7 +34,7 @@ export const extractPage = async (url) => {
 		};
 	}
 };
-const extractRawDOM = async (url) => runtime.call("tab.executeInTempTab", url, () => ({
+const extractRawDOM = async (url) => runtime.call("tab.executeTemp", url, () => ({
 	html: document.documentElement.outerHTML,
 	url: window.location.href,
 	title: document.title

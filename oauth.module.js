@@ -184,17 +184,17 @@ const generateRandomString = () => {
 // CSRF management
 const generateCSRF = async (provider) => {
   const csrf = crypto.randomUUID();
-  await chrome.storage.local.set({ [csrfKey(provider)]: csrf });
+  await runtime.call("chrome-local.set", { [csrfKey(provider)]: csrf });
   return csrf;
 };
 
 const getStoredCSRF = async (provider) => {
-  const stored = await chrome.storage.local.get([csrfKey(provider)]);
+  const stored = await runtime.call("chrome-local.get", csrfKey(provider));
   return stored[csrfKey(provider)];
 };
 
 const clearCSRF = async (provider) => 
-  await chrome.storage.local.remove([csrfKey(provider)]);
+  await runtime.call("chrome-local.remove", csrfKey(provider));
 
 // Storage helpers
 const providerKey = (provider) => `oauth_${provider}`;

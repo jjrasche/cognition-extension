@@ -4,6 +4,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Scrapes superintendent data for school districts using AI inference",
 	dependencies: ["file", "inference"],
+	requiredDirectories: ["Documents/cognition/data"],
 	actions: ["processSingleDistrict", "processBatch", "getStats"]
 };
 

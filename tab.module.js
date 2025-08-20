@@ -4,37 +4,46 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Centralized Chrome tabs API operations with automatic stability waiting",
 	permissions: ["tabs", "scripting"],
-	actions: ["createTab", "removeTab", "updateTab", "getTab", "queryTabs", "executeScript", "executeInTempTab"]
+	actions: ["create", "remove", "update", "get", "query", "executeScript", "executeTemp", "focusExtensionPage"]
 };
 
 let runtime;
 export const initialize = async (rt) => runtime = rt;
 
-export const createTab = async (options) => {
+export const create = async (options) => {
 	const tab = await chrome.tabs.create(options);
 	await waitForTabComplete(tab);
 	await waitForTabStable(tab);
 	return tab;
 };
-export const removeTab = async (tabId) => await chrome.tabs.remove(tabId);
-export const getTab = async (tabId) => await chrome.tabs.get(tabId);
-export const queryTabs = async (query = {}) => await chrome.tabs.query(query);
-export const updateTab = async (tabId, updateProperties) => await chrome.tabs.update(tabId, updateProperties);
+export const remove = async (tabId) => await chrome.tabs.remove(tabId);
+export const get = async (tabId) => await chrome.tabs.get(tabId);
+export const query = async (query = {}) => await chrome.tabs.query(query);
+export const update = async (tabId, updateProperties) => await chrome.tabs.update(tabId, updateProperties);
 // Script execution
 export const executeScript = async (tab, func, args = []) => {
 	const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
 	runtime.log(`[Tab] Script executed in tab ${tab.id}`, JSON.stringify(result, null, 2));
 	return result[0].result;
 }
-export const executeInTempTab = async (url, func, args = []) => {
-	const tab = await createTab({ url, active: true });
+export const executeTemp = async (url, func, args = []) => {
+	const tab = await create({ url, active: true });
 	try { return await executeScript(tab, func, args) }
 	catch (error) {
 		runtime.logError(`[Tab] Error executing script in temp tab ${tab.id}:`, error);
 		throw error;
 	}
 	finally {
-		await removeTab(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
+		await remove(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
+	}
+};
+export const focusExtensionPage = async () => {
+	try {
+		const tabId = await runtime.call('chrome-sync.get', 'extensionPageTabId');
+		if (tabId) await update(tabId, { active: true });
+		else runtime.log('[Tab] Extension page tab ID not found');
+	} catch (error) {
+		runtime.logError('[Tab] Could not focus extension page:', error);
 	}
 };
 // helpers
@@ -53,7 +62,7 @@ const waitForTabStable = async (tab, options = {}) => {
 			const poll = () => {
 				const elapsed = performance.now() - startTime;
 				(check(network)(), check(content)());
-				chrome.runtime.sendMessage({ type: 'TAB_STABILITY', data: {  elapsed: Math.round(elapsed),  networkStable: network.stable,  contentStable: content.stable, url: window.location.hostname } }).catch(() => {}); // Ignore errors if extension context is gone
+				chrome.runtime.sendMessage({ type: 'TAB_STABILITY', data: { elapsed: Math.round(elapsed), networkStable: network.stable, contentStable: content.stable, url: window.location.hostname } }).catch(() => { }); // Ignore errors if extension context is gone
 				if (elapsed > minWait && network.stable && content.stable) { resolve({ success: true, elapsed }); return; }
 				if (elapsed > maxWait) { resolve({ success: false, elapsed, networkStable: network.stable, contentStable: content.stable }); return; }
 				setTimeout(poll, delay);

@@ -12,7 +12,7 @@ export const initialize = async (rt) => runtime = rt;
 
 export const getSearchResults = async (query, maxResults = 5) => {
     const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-    return runtime.call("tab.executeInTempTab", url, scrapeResultsInTab, [maxResults]);
+    return runtime.call("tab.executeTemp", url, scrapeResultsInTab, [maxResults]);
 };
 export const getSearchTree = async (query, maxResults = 5) => {
     const results = await getSearchResults(query, maxResults);
