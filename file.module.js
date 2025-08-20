@@ -19,6 +19,8 @@ let runtime, db;
 export const initialize = async (rt) => {
   runtime = rt;
   db = await getDB();
+  await runtime.wait(2000);
+  debugger;
   registerModuleDirectories();
 };
 

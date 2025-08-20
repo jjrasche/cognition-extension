@@ -197,20 +197,27 @@ class Runtime {
         await this.waitForModule(moduleName);
         if (this.moduleInContext(moduleName)) return this.executeAction(actionName, ...args);
         
-        // Cross-context: serialize args as array
-        return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage(
-                { action: actionName, params: args },
-                response => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                    } else if (response?.error) {
-                        reject(new Error(response.error));
-                    } else {
-                        resolve(response);
+        return await retryAsync(async () => {
+            return new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                    { action: actionName, params: args },
+                    response => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else if (response?.error) {
+                            reject(new Error(response.error));
+                        } else {
+                            resolve(response);
+                        }
                     }
-                }
-            );
+                );
+            });
+        }, {
+            maxAttempts: 10,
+            delay: 500,
+            backoff: true,
+            onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for cross-context call ${actionName}: ${error.message}`),
+            shouldRetry: (error) => error.message.includes('port closed') || error.message.includes('Receiving end does not exist')
         });
     }
 

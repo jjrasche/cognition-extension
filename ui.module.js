@@ -1,7 +1,7 @@
 export const manifest = {
     name: 'ui',
     version: '1.0.0',
-    context: 'extension-page',
+    context: ['extension-page'],
     description: 'Extension page layout and tree orchestration',
     dependencies: ['tree-to-dom'],
     actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown'],
