@@ -10,9 +10,9 @@ let runtime;
 export const initialize = async (rt) => (runtime = rt, verifyModuleKeys());
 
 export const verifyModuleKeys = async () => {
-  runtime.getModulesWithProperty('apiKeys').forEach(module => {
-    module.manifest.apiKeys.forEach(async service => !(await hasKey(service)) && await promptForKey(service));
-  });
+  // runtime.getModulesWithProperty('apiKeys').forEach(module => {
+  //   module.manifest.apiKeys.forEach(async service => !(await hasKey(service)) && await promptForKey(service));
+  // });
 };
 const promptForKey = async (service) => await runtime.call('ui.renderForm', { 
   title: `${service.toUpperCase()} API Key`,

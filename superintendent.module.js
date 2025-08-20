@@ -8,8 +8,8 @@ export const manifest = {
 	actions: ["processSingleDistrict", "processBatch", "getStats"]
 };
 
-let runtime, stats, districts;
-const filename = 'school-district-data.json';
+let runtime, stats, districts, maxProcessed = 2;
+const dir = 'Documents/cognition/data', filename = 'school-district-data.json';
 export const initialize = async (rt) => {
 	runtime = rt;
 	resetStats();
@@ -17,24 +17,25 @@ export const initialize = async (rt) => {
 };
 
 export const processSingleDistrict = async (idx) => {
-	stats.processed++;
 	const district = districts[idx];
 	if (hasExistingData(district)) return;
+	if (maxProcessed <= stats.processed) return;
+	stats.processed++;
 	try {
 		const superintendentData = await extractSuperintendentData(district);
-		updateDistrictData(district, superintendentData);
+		updateDistrictData(idx, superintendentData);
 		if (superintendentData.firstName && superintendentData.lastName) stats.updated++;
-		else { updateDistrictData(district, createEmptyData("no superintendent found")); stats.notFound++; }
+		else { updateDistrictData(idx, createEmptyData("no superintendent found")); stats.notFound++; }
 	} catch (error) {
 		runtime.logError(`❌ Error processing ${district.district}:`, error.message);
 		stats.errors++;
-		updateDistrictData(district, createEmptyData(error.message));
+		updateDistrictData(idx, createEmptyData(error.message));
 	}
 };
-export const processBatch = async (maxProcessed = 1, maxParallel = 3, startIndex = 0) => {
+export const processBatch = async (maxParallel = 1, startIndex = 0) => {
 	resetStats();
 	try {
-		await runtime.processWithWorkerPool(districts.slice(startIndex, maxProcessed), idx => processSingleDistrict(idx), maxParallel, startIndex);
+		await runtime.processWithWorkerPool(districts, processSingleDistrict, maxParallel, startIndex);
 		logSummary();
 	} catch (error) {
 		runtime.logError('❌ Fatal error:', error);
@@ -60,20 +61,20 @@ export const resetStats = () => stats = { processed: 0, updated: 0, skipped: 0, 
 
 // Helper functions
 const loadDistricts = async () => {
-	const content = await runtime.call('file.read', { dir: 'data', filename });
+	const content = await runtime.call('file.read', { dir, filename });
 	if (!content) throw new Error(`Could not read ${filename}`);
 	districts = JSON.parse(content);
 };
 const extractSuperintendentData = async (district) => {
 	const prompt = buildSuperintendentPrompt(district);
-	const systemPrompt = "You are an AI assistant specialized in finding superintendent information for school districts. Use the provided website to find the most accurate and up-to-date information.";
+	const systemPrompt = "You are an AI assistant specialized in finding superintendent information for school districts. Use the provided website to find the most accurate and up-to-date information. list every url you searched in ";
 	const response = await runtime.call('inference.prompt', prompt, systemPrompt, webSearch(district));
 	return parseSuperintendentResponse(response.content);
 };
-const webSearch = (district) => ({ max_uses: 2, allowedDomains: [district.website] });
-const saveDistricts = async (districts) => await runtime.call('file.write', { dir: 'data', filename, data: JSON.stringify(districts, null, 2) });
+const webSearch = (district) => ({ max_uses: 5, allowedDomains: [district.website] });
+const saveDistricts = async (districts) => await runtime.call('file.write', { dir, filename, data: JSON.stringify(districts, null, 2) });
 const hasExistingData = (district) => {
-	if (district.superIntendent?.sonnet35?.firstName) {
+	if (district.superIntendent?.sonnet35?.lastUpdated) {
 		stats.skipped++;
 		return true;
 	}
@@ -90,7 +91,7 @@ const hasGroundTruthMismatch = (district) => {
 };
 const updateDistrictData = async (idx, data) => {
 	if (!districts[idx].superIntendent) districts[idx].superIntendent = {};
-	districts[idx].superIntendent.sonnet35 = { ...data, lastUpdated: new Date().toISOString().split('T')[0] };
+	districts[idx].superIntendent.sonnet35 = { ...data, lastUpdated: new Date().toISOString() };
 	await saveDistricts(districts);
 };
 const createEmptyData = (errorMessage = '') => ({ firstName: "", lastName: "", email: "", phone: "", sourceUrl: "", error: errorMessage });
@@ -100,7 +101,14 @@ const parseSuperintendentResponse = (responseText) => {
 		const jsonMatch = responseText.match(/\{[\s\S]*\}/);
 		if (jsonMatch) {
 			const parsed = JSON.parse(jsonMatch[0]);
-			if (parsed && typeof parsed === 'object') return { firstName: parsed.firstName || "", lastName: parsed.lastName || "", email: parsed.email || "", phone: parsed.phone || "", sourceUrl: parsed.sourceUrl || "" };
+			if (parsed && typeof parsed === 'object') return {
+				firstName: parsed.firstName || "",
+				lastName: parsed.lastName || "",
+				email: parsed.email || "",
+				phone: parsed.phone || "",
+				sourceUrl: parsed.sourceUrl || "",
+				urlsSearched: parsed.urlsSearched || []
+			};
 		}
 		return createEmptyData('No valid JSON response');
 	} catch (error) {
@@ -126,7 +134,10 @@ Return your response in this exact JSON format:
   "lastName": "Smith", 
   "email": "jsmith@district.edu",
   "phone": "555-123-4567",
-  "sourceUrl": "https://district.edu/administration/superintendent"
+  "sourceUrl": "https://district.edu/administration/superintendent",
+  "urlsSearched": [
+    "https://district.edu/administration/superintendent", ...
+  ]
 }
 
 If you cannot find the information with high confidence, return the word null

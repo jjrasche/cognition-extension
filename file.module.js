@@ -4,8 +4,8 @@ export const manifest = {
   version: "1.0.0",
   description: "User-controlled file operations with directory handles and persistent permissions",
   permissions: ["storage"],
-  dependencies: ["indexed-db", "tab"],
-  actions: ["write", "read", "append", "remove", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle",],
+  dependencies: ["indexed-db", "tab", "ui"],
+  actions: ["write", "read", "append", "remove", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle", "requestRequiredDirectoryAccess", "getDB"],
   indexeddb: {
     name: 'FileHandlers',
     version: 1,
@@ -15,30 +15,43 @@ export const manifest = {
     ]
   }
 };
-let runtime, db;
+let runtime, db, neededDirectories = [];
 export const initialize = async (rt) => {
   runtime = rt;
   db = await getDB();
   await runtime.wait(2000);
   debugger;
-  registerModuleDirectories();
+  neededDirectories = getModuleRequiredDirectories().filter(async dirName => !(await hasDir({name: dirName})));
+  if (neededDirectories.length > 0) await promptUserToInitiateFileAccess();
 };
 
+// export const getDB = () => db;
 const getModuleRequiredDirectories = () => [...new Set(runtime.getModulesWithProperty('requiredDirectories').flatMap(module => module.manifest.requiredDirectories || []))]
-const registerModuleDirectories = async () => getModuleRequiredDirectories()
-    .filter(async dirName => !(await hasDir({name: dirName})))
-    .forEach(async dirName => await getHandle(dirName));
+export const requestRequiredDirectoryAccess = async () => {
+  await Promise.all(neededDirectories.map(async dirName => await getHandle(dirName)));
+  await runtime.call('ui.closeModal');
+}
+const promptUserToInitiateFileAccess = async () => {
+  await runtime.call('ui.showModal', {
+    title: "File Access Required",
+    content: `modules need directory access: ${neededDirectories.join(", ")}`,
+    actions: {
+      "grant-btn": { tag: "button", text: "Grant Access", class: "cognition-button-primary", events: { click: "file.requestRequiredDirectoryAccess" } }
+    }
+  });
+}
 
 // handle db
-const getDB = async () => await runtime.call('indexed-db.openDb', manifest.indexeddb);
+export const getDB = async () => db ?? await runtime.call('indexed-db.openDb', manifest.indexeddb);
 const storeHandle = async (name, handle) => updateHandle({ id: `handle-${name}`, name, handle, timestamp: new Date().toISOString(), directoryName: handle.name });
 export const getAllHandles = async () => await runtime.call('indexed-db.getAllRecords', { db, storeName: 'handles' });
 const updateHandle = async (handleData) => await runtime.call('indexed-db.updateRecord', { db, storeName: 'handles', data: handleData });
 // operations db
 const saveFileOperation = async (data) => await runtime.call('indexed-db.addRecord', { db, storeName: 'operations', data });
 // permissions
+const getStoredHandle = async (name) => await runtime.call('indexed-db.getRecord', { db, storeName: 'handles', key: `handle-${name}` });
 const getHandle = async (name) => {
-  const storedHandle = (await runtime.call('indexed-db.getRecord', { db, storeName: 'handles', key: `handle-${name}` }))
+  const storedHandle = await getStoredHandle(name);
   let handle = storedHandle?.handle ?? await selectDir();
   await verifyPermission(name, handle);
   await storeHandle(name, handle);
@@ -81,12 +94,9 @@ export const append = async ({ dir, filename, data }) => {
 };
 export const remove = async ({ dir, filename }) => await (await getFileHandle({ dir, filename })).remove();
 // directory operations
-const selectDir = async () => {
-  await window["showDirectoryPicker"]();
-  await runtime.call('tab.focusExtensionPage');
-};
+const selectDir = async () => await window["showDirectoryPicker"]();
 export const listDirs = async () => (await getAllHandles()).map(handle => handle.name);
-export const hasDir = async ({ name }) => !!(await getHandle(name));
+export const hasDir = async (name) => !!(await getStoredHandle(name));
 
 
 
@@ -99,7 +109,7 @@ import { wait } from './helpers.js';
 const dir = 'Documents';
 
 
-export const test = async () => {
+export const testx = async () => {
   const { runUnitTest, strictEqual, deepEqual, containsKeyValuePairs } = runtime.testUtils;
   return (await Promise.all([
     runUnitTest("test file write", async () => {

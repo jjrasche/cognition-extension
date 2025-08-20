@@ -25,8 +25,7 @@ export const initialize = async (rt) => {
   apiKey = await runtime.call("api-keys.getKey",  manifest.apiKeys[0]);
 };
 
-export const makeRequest = async (params) => {
-  const { model, messages } = params;
+export const makeRequest = async (model, messages, webSearch) => {
   const systemMessage = messages.find(m => m.role === 'system');
   const chatMessages = messages.filter(m => m.role !== 'system');
   const body = {
@@ -34,13 +33,14 @@ export const makeRequest = async (params) => {
     max_tokens: 4096,
     ...(systemMessage && { system: systemMessage.content }),
     messages: chatMessages,
-    stream: true,
+    // stream: true,
   };
-  if (params.webSearch) body.tools = (body.tools ?? []).concat(addWebSearchTool(params.webSearch));
+  if (webSearch) body.tools = (body.tools ?? []).concat(addWebSearchTool(webSearch));
   const request = { method: 'POST', headers: buildHeaders(), body: JSON.stringify(body) }
   return await fetch('https://api.anthropic.com/v1/messages', request);
 };
-const addWebSearchTool = ({params}) => ({ "type": "web_search", "name": "web_search", "max_uses": params.max_uses || null, "allowed_domains": params.allowed_domains || null, ...(params.options ?? {})})
+export const getContent = async (response) => JSON.parse(await response.text()).content[0].text;
+const addWebSearchTool = (webSearch) => ({ "type": "web_search_20250305", "name": "web_search", "max_uses": webSearch.max_uses || null, "allowed_domains": webSearch.allowed_domains || null, ...(webSearch.options ?? {})})
 const buildHeaders = () => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
 
 export const formatInteractionFromResponse = async (response) => {

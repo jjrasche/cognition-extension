@@ -4,7 +4,7 @@ export const manifest = {
     context: ['extension-page'],
     description: 'Extension page layout and tree orchestration',
     dependencies: ['tree-to-dom'],
-    actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown'],
+    actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal'],
 };
 
 let runtime;
@@ -43,6 +43,21 @@ export const renderTree = async (tree, container) => {
     if (!target) throw new Error('Container not found');
     return await runtime.call('tree-to-dom.transform', tree, target);
 };
+export const showModal = async ({ title, content, actions }) => {
+  const modalTree = {
+    "modal-overlay": {
+      tag: "div", class: "cognition-overlay",
+      "modal": {
+        tag: "div", class: "cognition-modal",
+        "header": { tag: "h3", text: title, class: "cognition-modal-header" },
+        "content": { tag: "div", text: content, class: "cognition-modal-content" },
+        "actions": { tag: "div", class: "cognition-modal-actions", ...actions }
+      }
+    }
+  };
+  await renderTree(modalTree, document.body);
+};
+export const closeModal = async () => document.querySelector('.cognition-overlay')?.remove();
 const showState = (message, type) => getMainContent()["innerHTML"] = type === 'error' ? errorHTML(message) : loadingHTML(message);
 const createElement = (tag, attrs = {}) => Object.assign(document.createElement(tag), attrs);
 const loadingHTML = (message) => `<div class="cognition-loading"><div class="cognition-spinner"></div><div class="cognition-loading-message">${message}</div></div>`;
