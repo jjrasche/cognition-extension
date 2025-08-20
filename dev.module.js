@@ -55,7 +55,6 @@ const addEasyAccessVariablesToConsole = () => {
   globalThis.printActions = prettyPrintActions;
   globalThis.printModules = prettyPrintModules;
   globalThis.printModuleState = prettyPrintModuleState;
-  globalThis.test = runtime.testModules
   // Add quick status check
   globalThis.printStatus = () => {
     runtime.log('=== Extension Status ===');

@@ -1,6 +1,6 @@
 import './helpers.js';
 // import * as apiKeysModule from './api-keys.module.js';
-// import * as chunkingModule from './chunking.module.js';
+import * as chunkingModule from './chunking.module.js';
 // import * as claudeApiModule from './claude-api.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
 // import * as contextModule from './context.module.js';
@@ -29,7 +29,7 @@ import * as webSearchModule from './web-search.module.js';
 export const modules = [
 	// apiKeysModule,
 	chromeSyncModule,
-	// chunkingModule,
+	chunkingModule,
 	// claudeApiModule,
 	// contentScriptHandlerModule,
 	// contextModule,

@@ -9,6 +9,7 @@ class Runtime {
         this.moduleState = new Map();
         this.testResults = [];
         // this.testResults = null;
+        this.allContextTestResults = new Map();
     }
 
     initialize = async () => {
@@ -56,6 +57,7 @@ class Runtime {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (this.handleModuleStateMessage(message)) return;
             if (this.handletTabStabilityMessage(message)) return;
+            if (this.handleTestResultsMessage(message)) return;
             if (!message.action) return;
 
             const [moduleName] = message.action.split('.');
@@ -95,6 +97,21 @@ class Runtime {
             return true;
         }
     }
+    handleTestResultsMessage = (message) => {
+        if (message.type === 'TEST_RESULTS') {
+            this.log(`Received test results for context ${message.context}`, message.results);
+            this.allContextTestResults.set(message.context, message.results);
+            if (this.areAllTestsComplete()) this.showTests();
+            return true;
+        }
+    };
+    areAllTestsComplete = () => {
+        const modulesWithTests = this.getModulesWithProperty("test").map(m => m.manifest.name);
+        const modulesWithResults = new Set(Array.from(this.allContextTestResults.values()).flat().map(result => result.module));
+        const ret = [...modulesWithTests].every(moduleName => modulesWithResults.has(moduleName));
+        this.log(`expected ${modulesWithTests} to be complete, got ${[...modulesWithResults]}`);
+        return ret;
+    };
 
     initializeModules = async () => {
         this.log(`Starting module initialization...`);
@@ -169,6 +186,11 @@ class Runtime {
     };
     broadcastModuleReady = (moduleName) => this.broadcastModuleStatus(moduleName, 'ready');
     broadcastModuleFailed = (moduleName) => this.broadcastModuleStatus(moduleName, 'failed');
+    broadcastTestResults = async () => {
+        await retryAsync(async () => chrome.runtime.sendMessage({ type: 'TEST_RESULTS', context: this.runtimeName, results: this.testResults }))
+            .then(() => this.log(`[Runtime] Sent TEST_RESULTS message in ${this.runtimeName}`))
+            .catch(() => this.logError(`[Runtime] Failed to send TEST_RESULTS message in ${this.runtimeName}`));
+    };
 
     call = async (actionName, ...args) => {
         const [moduleName] = actionName.split('.');
@@ -298,15 +320,21 @@ class Runtime {
             const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
         }));
-        this.showModuleSummary();
-        this.showTestFailures();
+        this.log(`[Runtime] All tests complete. Total: ${this.testResults.length}`);
+        this.allContextTestResults = this.allContextTestResults.set(this.runtimeName, this.testResults);
+        this.broadcastTestResults();
     };
     runModuleTests = async (module) =>  (await module['test']()).map(test => {
-        const ret =  {...test, module: module.manifest.name};
+        const ret =   {...test, module: module.manifest.name};
         return ret;
     });
-    showModuleSummary = () => {
-        const moduleStats = this.testResults.reduce((acc, test) => {
+    showTests = () => {
+        const results = Array.from(this.allContextTestResults.values()).flat();
+        this.showModuleSummary(results);
+        this.showTestFailures(results);
+    };
+    showModuleSummary = (results) => {
+        const moduleStats = results.reduce((acc, test) => {
             if (!acc[test.module]) acc[test.module] = { total: 0, passed: 0 };
             acc[test.module].total++;
             if (test.passed) acc[test.module].passed++;
@@ -326,8 +354,8 @@ class Runtime {
             'Pass Rate': stats.total > 0 ? `${Math.round(stats.passed / stats.total * 100)}%` : '0%'
         })));
     };
-    showTestFailures = () => {
-        const failedTests = this.testResults.filter(test => !test.passed);
+    showTestFailures = (results) => {
+        const failedTests = results.filter(test => !test.passed);
         if (failedTests.length > 0) {
             console.log('\n=== FAILED TEST DETAILS ===');
             // Change from Object.fromEntries to just map to array

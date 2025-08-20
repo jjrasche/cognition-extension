@@ -1,6 +1,6 @@
 export const manifest = {
   name: "chrome-sync",
-  context: ["service-worker", "extension-page", "offscreen"],
+  context: ["service-worker"],
   version: "1.0.0",
   description: "Centralized Chrome sync storage operations",
   permissions: ["storage"],

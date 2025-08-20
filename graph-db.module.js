@@ -110,7 +110,6 @@ export const findInteractionByIds = async (params) => {
     node.context?.messageIds?.assistant === assistantMessageId
   );
 };
-
 export const updateNode = async (params) => {
   const { nodeId, updateData } = params;
   const existingNode = await getNode({ nodeId });
@@ -119,54 +118,4 @@ export const updateNode = async (params) => {
   const updatedNode = { ...existingNode, ...updateData };
   await indexedDB('updateRecord', { storeName: 'nodes', data: updatedNode });
   return updatedNode;
-};
-
-
-
-
-// Check the current graph database structure
-export const checkGraphStructure = async () => {
-  console.log("=== GRAPH DATABASE STRUCTURE CHECK ===");
-  
-  // Get all nodes
-  const allNodes = await runtime.call('indexed-db.getAllRecords', { 
-    db: await runtime.call('indexed-db.openDb', {
-      name: 'CognitionGraph',
-      version: 1,
-      storeConfigs: [
-        { name: 'nodes', options: { autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
-        { name: 'edges', options: { keyPath: ['from', 'to', 'type'] }, indexes: [{ name: 'by-from', keyPath: 'from' }, { name: 'by-to', keyPath: 'to' }] }
-      ]
-    }),
-    storeName: 'nodes' 
-  });
-  
-  console.log(`Total nodes: ${allNodes.length}`);
-  
-  // Sample a few nodes to see structure
-  const sampleNodes = allNodes.slice(0, 3);
-  sampleNodes.forEach((node, i) => {
-    console.log(`\n--- Node ${i + 1} (ID: ${node.id}) ---`);
-    console.log('Keys:', Object.keys(node));
-    
-    if (node.prompt_chunks) {
-      console.log(`prompt_chunks: ${Array.isArray(node.prompt_chunks) ? 'Array' : 'Not Array'} - Length: ${node.prompt_chunks?.length || 'N/A'}`);
-      if (node.prompt_chunks?.[0]) {
-        console.log('First prompt chunk keys:', Object.keys(node.prompt_chunks[0]));
-      }
-    }
-    
-    if (node.response_chunks) {
-      console.log(`response_chunks: ${Array.isArray(node.response_chunks) ? 'Array' : 'Not Array'} - Length: ${node.response_chunks?.length || 'N/A'}`);
-      if (node.response_chunks?.[0]) {
-        console.log('First response chunk keys:', Object.keys(node.response_chunks[0]));
-      }
-    }
-    
-    if (node.userPrompt) console.log('Has userPrompt:', !!node.userPrompt);
-    if (node.response) console.log('Has response:', !!node.response);
-    if (node.embedding) console.log('Has embedding:', !!node.embedding);
-  });
-  
-  return allNodes;
 };
