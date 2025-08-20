@@ -3,7 +3,7 @@ export const manifest = {
   context: ["service-worker"],
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
-  dependencies: ["chrome-sync", "graph-db", "embedding", "ui"],
+  dependencies: ["chrome-sync", "graph-db", "embedding"],
   permissions: ["storage"],
   actions: ["prompt", "changeModelAndProvider"],
 };
@@ -60,19 +60,17 @@ const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.ma
   
 }
 
-export const prompt = async (params) => {
-  const { query, webSearch } = params;
-  const messages = await runtime.call("context.assemble", params);
-  let content = "";
+export const prompt = async (query, systemPrompt, webSearch) => {
+  const messages = await runtime.call("context.assemble", query, systemPrompt);
   const response = (await provider.makeRequest({ model, messages, webSearch })).content;
   if (!response.ok) throw new Error(`Claude API error: ${response.status} - ${await response.text()}`);
-  const embedding = await runtime.call('embedding.embedText', { text: `${messages}\n${response}` });
+  const embedding = await runtime.call('embedding.embedText', `${messages}\n${response}`);
   await processStream(response, onChunk);
-  await runtime.call('graph-db.addInferenceNode', { query, messages, response, model, embedding });
+  // await runtime.call('graph-db.addInferenceNode', { query, messages, response, model, embedding });
   return response;
 };
 const onChunk = async (chunk) => {
-  let content;
+  let content = "";
   await runtime.log(content += chunk);
 };
 const processStream = async (resp, onChunk) => {

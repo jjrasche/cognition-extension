@@ -78,10 +78,8 @@ export const getModelName = async (model) => await runtime.call('transformer.get
 const isValidAPIService = (service) => manifest.apiKeys.includes(service) || (() => { throw new Error(`Invalid API service: ${service}. Valid services are: ${manifest.apiKeys.join(', ')}`); })();
 const getAPIKey = async (service) => isValidAPIService(service) && await runtime.call('api-keys.getKey', { service });
 
-export const embedText = async (params) => {
-  const { text, modelName } = params;
+export const embedText = async (text, modelName) => {
   if (!text) throw new Error('Text required');
-  
   // Route to cloud or local based on model name
   if (isCloudModel(modelName)) {
     return await embedTextCloud(text, modelName);

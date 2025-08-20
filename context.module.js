@@ -10,14 +10,13 @@ export const manifest = {
 let runtime;
 export const initialize = (rt) => runtime = rt;
 
-export const assemble = async (params) => {
-  const { query } = params;
-  const similarInteractions = [];
-  const conversationHistory = buildConversationHistory(similarInteractions);
-  const systemPrompt = "You are Cognition, an AI assistant with access to the user's data and capabilities.";
+export const assemble = async (query, systemPrompt = defaultSystemPrompt) => {
+  const conversationHistory = buildConversationHistory([]);
   return [{ role: 'system', content: systemPrompt }, ...conversationHistory, { role: 'user', content: query }];
 };
 
 const buildConversationHistory = (similarInteractions = []) => similarInteractions
   .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
   .flatMap(interaction => [{ role: 'user', content: interaction.userPrompt }, { role: 'assistant', content: interaction.response }]);
+
+const defaultSystemPrompt = "You are Cognition, an AI assistant with access to the user's data and capabilities.";

@@ -26,5 +26,5 @@
   "include": [
     "*.js",
     "*.d.ts"
-, "types/type.d.ts"  ]
+  ]
 }

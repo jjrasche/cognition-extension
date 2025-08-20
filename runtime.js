@@ -269,9 +269,16 @@ class Runtime {
         };
         check();
     });
+    processWithWorkerPool = async (items, processFunc, maxConcurrency = 3, startIndex = 0) => {
+        let index = startIndex;
+        const workers = Array(Math.min(maxConcurrency, items.length)).map(async () => {
+            while (index < items.length) await processFunc(index++);
+        });
+        await Promise.all(workers);
+    };
     log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
-    logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '')
-    
+    logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '');
+
     // Test utilities
     testUtils = {
         strictEqual: (a, b) => a === b,

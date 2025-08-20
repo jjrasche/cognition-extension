@@ -56,7 +56,7 @@ export const findSimilarNodes = async (params) => {
 };
 export const searchByText = async (params) => {
     const { text, threshold = 0.5 } = params;
-    const embedding = await runtime.call('embedding.embedText', { text });
+    const embedding = await runtime.call('embedding.embedText', text);
     return (await getAllNodesWithEmbeddings())
         .map(node => ({ node, similarity: cosineSimilarity(embedding, node.embedding) }))
         .filter(({ similarity }) => similarity >= threshold)
