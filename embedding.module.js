@@ -1,3 +1,5 @@
+import { calculateCosineSimilarity } from "./helpers.js";
+
 /*
   Goal: Achieve high semantic resolution for LLM context selection by distinguishing between 5+ distinct relevance levels (synonyms, related concepts, same domain, tangentially related, unrelated) to enable precise retrieval of the most contextually useful content while avoiding token waste from irrelevant or weakly related material.
   Why: LLM performance depends heavily on context quality. Poor semantic resolution leads to including irrelevant content (wasting tokens) or missing relevant content (degrading responses). High-resolution embeddings enable building superior RAG systems and conversation context selection.
@@ -488,13 +490,6 @@ export const runEmbeddingTests = async (params = {}) => {
   return results;
 };
 
-// Utility functions
-const calculateCosineSimilarity = (vecA, vecB) => {
-  const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
-  const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
-  const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
-  return dotProduct / (magnitudeA * magnitudeB);
-};
 
 const evaluateSimilarity = (actual, expected) => {
   switch (expected) {

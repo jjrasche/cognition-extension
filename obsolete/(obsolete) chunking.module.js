@@ -1,3 +1,9 @@
+/*
+chunk quality:
+ - Retrievability: what relevant queries could this answer? 
+ - Standalone Comprehensibility: Can humans understand this chunk without surrounding context?
+ - Semantic Density: High information content per token
+*/
 export const manifest = {
   name: "chunking",
   version: "2.1.0",
@@ -10,7 +16,7 @@ export const manifest = {
 let runtime;
 export const initialize = async (rt) => runtime = rt;
 
-export const chunkByStructure = async ({ text, granularity = 'paragraph' }) => {
+export const chunkByStructure = async (text, granularity = 'paragraph') => {
   if (!text?.trim()) return [];
   
   const rules = getRules(granularity);
@@ -53,6 +59,30 @@ export const chunkByStructure = async ({ text, granularity = 'paragraph' }) => {
 const getRules = (granularity) => GRANULARITY_RULES[granularity] || (() => { throw new Error(`Unknown granularity: ${granularity}`); })();
 const applyConverters = (text, converters) => converters.reduce((result, conv) => result.replace(conv.pattern, conv.replacement), text);
 const preprocessText = (text) => applyConverters(text, HTML_CONVERTERS).trim();
+
+const calculateSemanticScoring = async (chunk) => {
+  const sentences = await chunkByStructure(chunk.text, 'sentence');
+  const embeddings = await Promise.all(sentences.map(s => runtime.call('embedding.embedText', s)));
+  
+  const pairwiseScores = [];
+  for (let i = 0; i < embeddings.length - 1; i++) {
+    const similarity = cosineSimilarity(embeddings[i], embeddings[i+1]);
+    pairwiseScores.push({ sentence1: i, sentence2: i+1, similarity });
+  }
+  
+  // Aggregation techniques
+  const avgSimilarity = pairwiseScores.reduce((sum, p) => sum + p.similarity, 0) / pairwiseScores.length;
+  const minSimilarity = Math.min(...pairwiseScores.map(p => p.similarity)); // Weakest link
+  const variance = calculateVariance(pairwiseScores.map(p => p.similarity));
+  
+  return {
+    sentences,
+    pairwiseScores,
+    coherenceScore: avgSimilarity,
+    weakestLink: minSimilarity,
+    consistency: 1 - variance // Lower variance = more consistent
+  };
+};
 
 // Patterns - only what we actually use
 const CODE_BLOCK_PATTERN = /```[\s\S]*?```/gm;

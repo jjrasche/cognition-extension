@@ -1,5 +1,5 @@
 import { modules } from './module-registry.js';
-import { retryAsync } from './helpers.js';
+import { retryAsync, asserts, string } from './helpers.js';
 class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
@@ -7,9 +7,11 @@ class Runtime {
         this.contextModules = [];
         this.errors = [];
         this.moduleState = new Map();
+        this.asserts = asserts;
         // this.testResults = [];
         this.testResults = null;
         this.allContextTestResults = new Map();
+
     }
 
     initialize = async () => {
@@ -288,47 +290,16 @@ class Runtime {
     log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '');
 
-    // Test utilities
-    testUtils = {
-        strictEqual: (a, b) => a === b,
-        looseEqual: (a, b) => a == b,
-        contains: (arr, item) => arr.includes(item),
-        containsAll: (arr, items) => items.every(item => arr.includes(item)),
-        deepEqual: (a, b) => {
-            if (a === b) return true;
-            if (!a || !b || typeof a !== typeof b) return false;
-            if (typeof a === 'object') {
-                const keysA = Object.keys(a), keysB = Object.keys(b);
-                return keysA.length === keysB.length && keysA.every(key => this.testUtils.deepEqual(a[key], b[key]));
-            }
-            return false;
-        },
-        // Returns true if A contains all key-value pairs from B
-        containsKeyValuePairs: (a, b) => {
-            if (a === b) return true;
-            if (!a || !b) return false;
-            if (typeof a !== 'object' || typeof b !== 'object') return a === b;
-            
-            // Check if all keys in B exist in A with equal values
-            return Object.keys(b).every(key => {
-                if (!(key in a)) return false;
-                if (typeof a[key] === 'object' && typeof b[key] === 'object') {
-                    return this.testUtils.containsKeyValuePairs(a[key], b[key]);
-                }
-                return a[key] === b[key];
-            });
-        },
-        // constrains single-assertion tests across all modules
-        runUnitTest: async (name, testFn) => {
-            try {
-                const { actual, expected, assert } = await testFn();
-                const passed = assert(actual, expected);
-                return { name, actual, assert, expected, passed };
-            } catch (error) {
-                return { name, passed: false, error: error.message };
-            }
+    // constrains single-assertion tests across all modules
+    runUnitTest = async (name, testFn) => {
+        try {
+            const { actual, expected, assert } = await testFn();
+            const passed = assert(actual, expected);
+            return { name, actual, assert, expected, passed };
+        } catch (error) {
+            return { name, passed: false, error: error.message };
         }
-    };
+    }
     runTests = async () => {
         if (!this.testResults) return;
         const mods = this.contextModules.filter(module => this.moduleHasProperty(module, "test"));
@@ -379,17 +350,12 @@ class Runtime {
                 'Module': test.module,
                 'Test #': i + 1,
                 'Test Name': test.name,
-                'Expected': this.truncateOrNA(test.expected),
+                'Expected': string.truncateOrNA(test.expected),
                 'Assert': test?.assert?.name ?? 'N/A',
-                'Actual': this.truncateOrNA(test.actual)
+                'Actual': string.truncateOrNA(test.actual)
             })));
             console.log(JSON.stringify(failedTests, null, 2), failedTests);
         }
-    }
-    truncateOrNA = (value, maxLength = 50) => {
-        if (value == null) return 'N/A';
-        const str = JSON.stringify(value);
-        return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
     }
 }
 

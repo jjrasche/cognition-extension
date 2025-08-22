@@ -1,6 +1,6 @@
 import './helpers.js';
 import * as apiKeysModule from './api-keys.module.js';
-import * as chunkingModule from './chunking.module.js';
+import * as chunkModule from './chunk.module.js';
 import * as claudeApiModule from './claude-api.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
 import * as contextModule from './context.module.js';
@@ -31,7 +31,7 @@ import * as chromeLocalModule from './chrome-local.module.js'
 export const modules = [
 	apiKeysModule,
 	chromeSyncModule,
-	chunkingModule,
+	chunkModule,
 	claudeApiModule,
 	// contentScriptHandlerModule,
 	contextModule,
