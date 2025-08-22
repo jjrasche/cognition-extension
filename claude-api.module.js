@@ -39,7 +39,17 @@ export const makeRequest = async (model, messages, webSearch) => {
   const request = { method: 'POST', headers: buildHeaders(), body: JSON.stringify(body) }
   return await fetch('https://api.anthropic.com/v1/messages', request);
 };
-export const getContent = async (response) => JSON.parse(await response.text()).content[0].text;
+export const getContent = async (response) => {
+  const data = JSON.parse(await response.text());
+  console.log("[claude]", data);
+  // With tool use, there can be multiple text blocks - concatenate ALL of them
+  const textBlocks = data.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text);
+  
+  // Join all text blocks to get the complete response
+  return textBlocks.join('');
+};
 const addWebSearchTool = (webSearch) => ({ "type": "web_search_20250305", "name": "web_search", "max_uses": webSearch.max_uses || null, "allowed_domains": webSearch.allowed_domains || null, ...(webSearch.options ?? {})})
 const buildHeaders = () => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' });
 

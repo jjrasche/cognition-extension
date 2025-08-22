@@ -8,7 +8,7 @@ export const manifest = {
 	actions: ["processSingleDistrict", "processBatch", "getStats"]
 };
 
-let runtime, stats, districts, maxProcessed = 2;
+let runtime, stats, districts, maxProcessed = 10;
 const dir = 'Documents/cognition/data', filename = 'school-district-data.json';
 export const initialize = async (rt) => {
 	runtime = rt;
@@ -68,8 +68,8 @@ const loadDistricts = async () => {
 const extractSuperintendentData = async (district) => {
 	const prompt = buildSuperintendentPrompt(district);
 	const systemPrompt = "You are an AI assistant specialized in finding superintendent information for school districts. Use the provided website to find the most accurate and up-to-date information. list every url you searched in ";
-	const response = await runtime.call('inference.prompt', prompt, systemPrompt, webSearch(district));
-	return parseSuperintendentResponse(response.content);
+	const content = await runtime.call('inference.prompt', prompt, systemPrompt, webSearch(district));
+	return parseSuperintendentResponse(content);
 };
 const webSearch = (district) => ({ max_uses: 5, allowedDomains: [district.website] });
 const saveDistricts = async (districts) => await runtime.call('file.write', { dir, filename, data: JSON.stringify(districts, null, 2) });
