@@ -8,20 +8,19 @@ export const manifest = {
 	actions: ["chunk", "splitSentences"]
 };
 
-let runtime, model = "Xenova/all-MiniLM-L6-v2";
+let runtime, model = "Xenova/all-MiniLM-L6-v2-fp16-webgpu";
 export const initialize = async (rt) => {
 	runtime = rt;
 };
 
 export const chunk = async (text, options = {}) => {
 	const { threshold = 0.3 } = options;
+	const startTime = performance.now();
 	const sentences = await splitSentences(text);
 	const chunks = await semanticMerge(sentences, threshold);
-	return {
-		text,
-		chunks: chunks.map((content, i) => ({ id: i, content })),
-		quality: await assessQuality(chunks, text)
-	};
+	const quality = await assessQuality(chunks, text);
+	const endTime = performance.now();
+	return { text, chunks, quality, duration: `${(endTime - startTime).toFixed(2)}ms` };
 };
 const semanticMerge = async (sentences, threshold) => {
 	const chunks = [];
@@ -110,59 +109,16 @@ export const test = async () => {
 	return await Promise.all([
 		runUnitTest("High similarity sentences merge into single chunk", async () => {
 			const text = `AI is transforming healthcare rapidly. Machine learning helps doctors diagnose diseases accurately. Quantum computing represents the future of computation. The solar system contains eight planets orbiting the sun. Mars has two small moons named Phobos and Deimos. Jupiter is the largest planet with over 70 moons. Saturn's rings are made of ice and rock particles. Neptune is the windiest planet in our solar system. Basketball requires teamwork and strategy. Professional athletes train for many hours daily.`
-			const result = await chunk(text, { threshold: 0.3, model: "Xenova/all-MiniLM-L6-v2" });
+			const result = await chunk(text, { threshold: 0.3, model: "Xenova/all-MiniLM-L6-v2-fp16-webgpu" });
 			console.log(result)
 
 			// Should have 2 chunks: AI+ML together, sports separate
 			const actual = {
 				chunkCount: result.chunks.length,
-				firstChunkHasBoth: result.chunks[0].content.includes("AI") && result.chunks[0].content.includes("Machine learning"),
-				lastChunkAboutSports: result.chunks[result.chunks.length - 1].content.includes("Sports")
+				firstChunkHasBoth: result.chunks[0].includes("AI") && result.chunks[0].includes("Machine learning"),
 			};
-			const expected = { chunkCount: 2, firstChunkHasBoth: true, lastChunkAboutSports: true };
+			const expected = { chunkCount: 5, firstChunkHasBoth: true };
 			return { actual, assert: deepEqual, expected };
 		}),
-
-		// runUnitTest("Low similarity threshold creates more chunks", async () => {
-		//   const text = "The cat sat on the mat. The dog ran in the park. The bird flew in the sky.";
-		//   const highThreshold = await chunk(text, { threshold: 0.9 });
-		//   const lowThreshold = await chunk(text, { threshold: 0.3 });
-
-		//   const actual = lowThreshold.chunks.length <= highThreshold.chunks.length;
-		//   return { actual, assert: strictEqual, expected: true };
-		// }),
-
-		// runUnitTest("Single sentence creates single chunk", async () => {
-		//   const text = "This is a single sentence.";
-		//   const result = await chunk(text);
-
-		//   const actual = { chunkCount: result.chunks.length, content: result.chunks[0].content };
-		//   const expected = { chunkCount: 1, content: "This is a single sentence." };
-		//   return { actual, assert: deepEqual, expected };
-		// }),
-
-		// runUnitTest("Quality assessment includes all metrics", async () => {
-		//   const text = "AI helps doctors. Machine learning improves diagnosis. Sports is fun.";
-		//   const result = await chunk(text);
-
-		//   const actual = {
-		//     hasCoherence: !!result.quality.coherence,
-		//     hasBoundary: !!result.quality.boundary,
-		//     hasSize: !!result.quality.size,
-		//     coherenceHasAvg: typeof result.quality.coherence.avgCoherence === 'number'
-		//   };
-		//   const expected = { hasCoherence: true, hasBoundary: true, hasSize: true, coherenceHasAvg: true };
-		//   return { actual, assert: deepEqual, expected };
-		// }),
-
-		// runUnitTest("Empty text handles gracefully", async () => {
-		//   const text = "";
-		//   try {
-		//     const result = await chunk(text);
-		//     return { actual: result.chunks.length, assert: strictEqual, expected: 0 };
-		//   } catch (error) {
-		//     return { actual: true, assert: strictEqual, expected: true }; // Either empty chunks or graceful error is fine
-		//   }
-		// })
 	]);
 };

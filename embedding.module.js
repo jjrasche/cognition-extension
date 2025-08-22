@@ -66,7 +66,7 @@ export const manifest = {
     'jina-embeddings-v3',
     'jina-embeddings-v2-base-en'
   ],
-  defaultModel: "Xenova/all-MiniLM-L6-v2",
+  defaultModel: "Xenova/all-MiniLM-L6-v2-fp16-webgpu",
   apiKeys: ["jina"],
 };
 
@@ -82,24 +82,16 @@ const getAPIKey = async (service) => isValidAPIService(service) && await runtime
 export const embedText = async (text, options = {}) => {
   let { model = manifest.defaultModel } = options;
   if (!text) throw new Error('Text required');
-  // Route to cloud or local based on model name
   if (isCloudModel(model)) {
     return await embedTextCloud(text, model);
   }
   
   // Local embedding logic (unchanged)
   const startTime = performance.now();
-  model = await runtime.call('transformer.getModel', model || (await getModelName(manifest.localModels[0])));
+  model = await runtime.call('transformer.getModel', model);
   if (!model) throw new Error('Model not loaded');  
-  const result = await model(text, { 
-    pooling: 'mean',
-    normalize: true,
-    return_tensor: false
-  });
-  
+  const result = await model(text, { pooling: 'mean', normalize: true, return_tensor: false });
   const endTime = performance.now();
-  runtime.log(`[Embedding] Inference completed in ${(endTime - startTime).toFixed(2)}ms`);
-
   return Object.values(result.ort_tensor.cpuData);
   // return {
   //   embedding: result,
