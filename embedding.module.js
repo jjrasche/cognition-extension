@@ -73,27 +73,24 @@ export const manifest = {
 let runtime;
 export const initialize = async (rt) => {
   runtime = rt;
-
 }
 
 export const getModelName = async (model) => await runtime.call('transformer.getModelName', model);
 const isValidAPIService = (service) => manifest.apiKeys.includes(service) || (() => { throw new Error(`Invalid API service: ${service}. Valid services are: ${manifest.apiKeys.join(', ')}`); })();
 const getAPIKey = async (service) => isValidAPIService(service) && await runtime.call('api-keys.getKey', { service });
 
-export const embedText = async (text, modelName) => {
+export const embedText = async (text, options = {}) => {
+  let { model = manifest.defaultModel } = options;
   if (!text) throw new Error('Text required');
   // Route to cloud or local based on model name
-  if (isCloudModel(modelName)) {
-    return await embedTextCloud(text, modelName);
+  if (isCloudModel(model)) {
+    return await embedTextCloud(text, model);
   }
   
   // Local embedding logic (unchanged)
   const startTime = performance.now();
-  const model = await runtime.call('transformer.getModel', modelName || (await getModelName(manifest.localModels[0])));
-  if (!model) throw new Error('Model not loaded');
-    
-  runtime.log(`[Embedding] About to run inference with text: "${text.substring(0, 50)}..."`);
-  
+  model = await runtime.call('transformer.getModel', model || (await getModelName(manifest.localModels[0])));
+  if (!model) throw new Error('Model not loaded');  
   const result = await model(text, { 
     pooling: 'mean',
     normalize: true,
@@ -102,19 +99,20 @@ export const embedText = async (text, modelName) => {
   
   const endTime = performance.now();
   runtime.log(`[Embedding] Inference completed in ${(endTime - startTime).toFixed(2)}ms`);
-  
-  return {
-    embedding: result,
-    dimensions: result.ort_tensor?.dims || 'unknown',
-    processingTime: `${(endTime - startTime).toFixed(2)}ms`,
-    modelUsed: manifest.localModels[0],
-    device: result.ort_tensor?.dataLocation || 'unknown',
-    tensorInfo: {
-      type: result.ort_tensor?.type,
-      size: result.ort_tensor?.size,
-      dims: result.ort_tensor?.dims
-    }
-  };
+
+  return Object.values(result.ort_tensor.cpuData);
+  // return {
+  //   embedding: result,
+  //   dimensions: result.ort_tensor?.dims || 'unknown',
+  //   processingTime: `${(endTime - startTime).toFixed(2)}ms`,
+  //   modelUsed: manifest.localModels[0],
+  //   device: result.ort_tensor?.dataLocation || 'unknown',
+  //   tensorInfo: {
+  //     type: result.ort_tensor?.type,
+  //     size: result.ort_tensor?.size,
+  //     dims: result.ort_tensor?.dims
+  //   }
+  // };
 };
 
 const isCloudModel = (modelName) => manifest.cloudModels.includes(modelName);

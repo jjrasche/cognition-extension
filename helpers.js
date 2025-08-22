@@ -53,6 +53,23 @@ export const calculateCosineSimilarity = (vecA, vecB) => {
 	const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
 	return dotProduct / (magnitudeA * magnitudeB);
 }
+export const calculateVariance = (numbers) => {
+  if (numbers.length === 0) return 0;
+  const mean = numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
+  const squaredDifferences = numbers.map(n => Math.pow(n - mean, 2));
+  return squaredDifferences.reduce((sum, sq) => sum + sq, 0) / numbers.length;
+};
+
+// testing
+export const runUnitTest = async (name, testFn) => {
+	try {
+		const { actual, expected, assert } = await testFn();
+		const passed = assert(actual, expected);
+		return { name, actual, assert, expected, passed };
+	} catch (error) {
+		return { name, passed: false, error: error.message };
+	}
+}
 
 export const asserts = {
 	strictEqual: (a, b) => a === b,

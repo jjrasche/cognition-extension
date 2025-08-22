@@ -1,5 +1,5 @@
 import { modules } from './module-registry.js';
-import { retryAsync, asserts, string } from './helpers.js';
+import { retryAsync, asserts, truncateOrNA, runUnitTest } from './helpers.js';
 class Runtime {
     constructor(runtimeName) {
         this.runtimeName = runtimeName;
@@ -7,9 +7,9 @@ class Runtime {
         this.contextModules = [];
         this.errors = [];
         this.moduleState = new Map();
-        this.asserts = asserts;
-        // this.testResults = [];
-        this.testResults = null;
+        this.testUtils = { ...asserts, runUnitTest };
+        this.testResults = [];
+        // this.testResults = null;
         this.allContextTestResults = new Map();
 
     }
@@ -290,16 +290,7 @@ class Runtime {
     log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
     logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '');
 
-    // constrains single-assertion tests across all modules
-    runUnitTest = async (name, testFn) => {
-        try {
-            const { actual, expected, assert } = await testFn();
-            const passed = assert(actual, expected);
-            return { name, actual, assert, expected, passed };
-        } catch (error) {
-            return { name, passed: false, error: error.message };
-        }
-    }
+    // testing
     runTests = async () => {
         if (!this.testResults) return;
         const mods = this.contextModules.filter(module => this.moduleHasProperty(module, "test"));
@@ -307,9 +298,10 @@ class Runtime {
             const newTests = await this.runModuleTests(mod);
             this.testResults = this.testResults.concat(newTests);
         }));
-        this.log(`[Runtime] All tests complete. Total: ${this.testResults.length}`);
+        this.log(`[${this.runtimeName}] All tests complete. Total: ${this.testResults.length}`);
         this.allContextTestResults = this.allContextTestResults.set(this.runtimeName, this.testResults);
         this.broadcastTestResults();
+        if (this.areAllTestsComplete()) this.showTests();
     };
     runModuleTests = async (module) =>  (await module['test']()).map(test => {
         const ret =   {...test, module: module.manifest.name};
@@ -350,9 +342,9 @@ class Runtime {
                 'Module': test.module,
                 'Test #': i + 1,
                 'Test Name': test.name,
-                'Expected': string.truncateOrNA(test.expected),
+                'Expected': truncateOrNA(test.expected),
                 'Assert': test?.assert?.name ?? 'N/A',
-                'Actual': string.truncateOrNA(test.actual)
+                'Actual': truncateOrNA(test.actual)
             })));
             console.log(JSON.stringify(failedTests, null, 2), failedTests);
         }
