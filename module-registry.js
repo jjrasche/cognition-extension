@@ -11,14 +11,15 @@ import * as embeddingModule from './embedding.module.js';
 import * as fileModule from './file.module.js';
 // import * as fitbitModule from './fitbit.module.js';
 import * as graphDbModule from './graph-db.module.js';
-// import * as groqInferenceModule from './groq-inference.module.js';
+import * as groqInferenceModule from './groq-inference.module.js';
 import * as indexedDbModule from './indexed-db.module.js';
 // import * as inferenceModelValidationModule from './inference-model-validation.module.js';
 import * as inferenceModule from './inference.module.js';
 // import * as oauthModule from './oauth.module.js';
 import * as tabModule from './tab.module.js';
 // import * as textInputModule from './text-input.module.js';
-import * as transcriptModule from './transcript.module.js';
+import * as webSpeechSTTModule from './web-speech-stt.module.js';
+import * as webSpeechTTSModule from './web-speech-tts.module.js';
 import * as transformerModule from './transformer.module.js';
 import * as chromeSyncModule from './chrome-sync.module.js';
 import * as domToTreeModule from './dom-to-tree.module.js';
@@ -44,14 +45,15 @@ export const modules = [
 	fileModule,
 	// fitbitModule,
 	graphDbModule,
-	// groqInferenceModule,
+	groqInferenceModule,
 	indexedDbModule,
 	// inferenceModelValidationModule,
 	inferenceModule,
 	// oauthModule,
 	tabModule,
 	// textInputModule,
-	transcriptModule,
+	webSpeechSTTModule,
+	webSpeechTTSModule,
 	transformerModule,
 	treeToDomModule,
 	uiModule,

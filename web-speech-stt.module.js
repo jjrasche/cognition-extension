@@ -1,10 +1,10 @@
 import { getId } from "./helpers.js";
 
 export const manifest = {
-  name: "transcript",
+  name: "web-speech-stt",
   context: ["extension-page"],
   version: "1.0.0", 
-  description: "WebKit speech recognition streaming to UI",
+  description: "Web speech recognition streaming to UI",
   dependencies: ["ui"],
   actions: ["startListening", "stopListening", "getStatus"],
 };

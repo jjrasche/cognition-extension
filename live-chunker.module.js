@@ -5,7 +5,7 @@ export const manifest = {
     context: ["extension-page"],
     version: "1.0.0",
     description: "Real-time speech chunking with bubble visualization",
-    dependencies: ["transcript", "ui", "chunk"],
+    dependencies: ["web-speech-stt", "ui", "chunk"],
     actions: ["startDemo", "stopDemo", "processThought", "getChunks", "setThreshold", "setMode", "handleChunkClick", "handleSynthesize"],
 };
 
@@ -34,7 +34,7 @@ export const startDemo = async () => {
     isActive = true;
     chunks = [];
     selectedForMerge = null;
-    await runtime.call('transcript.startListening');
+    await runtime.call('web-speech-stt.startListening');
     await renderChunkerUI();
     return { success: true, message: 'Live chunking demo started' };
 };
@@ -43,7 +43,7 @@ export const stopDemo = async () => {
     isActive = false;
     mode = 'view';
     selectedForMerge = null;
-    await runtime.call('transcript.stopListening');
+    await runtime.call('web-speech-stt.stopListening');
     return { success: true, message: 'Live chunking demo stopped' };
 };
 

@@ -19,8 +19,6 @@ let runtime, db, neededDirectories = [];
 export const initialize = async (rt) => {
   runtime = rt;
   db = await getDB();
-  await runtime.wait(2000);
-  debugger;
   // neededDirectories = getModuleRequiredDirectories().filter(async dirName => !(await hasDir({name: dirName})));
   if (neededDirectories.length > 0) await promptUserToInitiateFileAccess();
 };

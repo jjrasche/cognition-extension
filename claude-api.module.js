@@ -40,7 +40,7 @@ export const makeRequest = async (model, messages, webSearch) => {
   return await fetch('https://api.anthropic.com/v1/messages', request);
 };
 export const getContent = async (response) => {
-  const data = JSON.parse(await response.text());
+  const data = JSON.parse(await response.json());
   console.log("[claude]", data);
   // With tool use, there can be multiple text blocks - concatenate ALL of them
   const textBlocks = data.content

@@ -3,87 +3,133 @@ export const manifest = {
   context: ["service-worker"],
   version: "1.0.0",
   description: "Manages LLM inference across multiple providers with streaming support",
-  dependencies: ["chrome-sync", "graph-db"],//, "embedding"],
-  permissions: ["storage"],
-  actions: ["prompt", "changeModelAndProvider", "showProviderModule"],
+  dependencies: ["chrome-sync", "graph-db", "ui"],
+  actions: ["prompt", "showProviderModule", "uiPicker", "updateForm", "saveForm"],
 };
+
 let runtime, model, provider, providers = [];
+
 export const initialize = async (rt) => {
   runtime = rt;
-  await registerProviders(runtime);
-  provider = await loadProvider();
-  model = await loadModel();
-  if (!provider || !model) promptForProviderAndModel();
-}
-// providers
-const loadProvider = async () => await providers.find(async p => p.manifest.name === (await runtime.call('chrome-sync.get', "inference.provider")));
-const loadModel = async () => {
-  const modelName = await runtime.call('chrome-sync.get', "inference.model");
-  const ret = provider.manifest.inferenceModels?.find(m => m.id === modelName);
-  runtime.log(`[inference] Loaded model ${modelName} for provider ${provider.manifest.name}`);
-  return ret;
+  await registerProviders();
+  await loadConfig();
+  // (!provider || !model) && await showProviderSelection();
 };
-const registerProviders = async (runtime) => runtime.getModulesWithProperty('inferenceModels').forEach(async provider => {
-  verifyImplementationFunctions(provider);
-  // await verifyModels(provider);
-  providers.push(provider);
-});
-const requiredImplementationMethods = ["makeRequest", "formatInteractionFromResponse", "getContent"];
-const verifyImplementationFunctions = (provider) => requiredImplementationMethods.forEach(fn => {
-  if (typeof provider[fn] !== 'function') throw new Error(`Provider ${provider.manifest.name} missing ${fn} method`);
-});
-const verifyModels = (provider) => runtime.call("inference-model-validation.validateModels", { models: provider.manifest.inferenceModels || [] });
-export const changeModelAndProvider = async ({ providerName, modelName }) => (await saveProvider(providerName), await saveModel(modelName));
-const saveProvider = async (providerName) =>  await runtime.call('chrome-sync.set', { key: "inference.provider", value: providerName });
-const saveModel = async (modelName) => await runtime.call('chrome-sync.set', { key: "inference.model", value: modelName });
-const promptForProviderAndModel = async () => {
-const providerOptions = providers.map(p => ({ value: p.manifest.name, text: p.manifest.name }));
+
+const registerProviders = async () => (providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function')), runtime.log(`[Inference] Registered ${providers.length} providers`));
+
+const loadConfig = async () => {
+  const [savedProvider, savedModel] = await Promise.all([runtime.call('chrome-sync.get', "inference.provider"), runtime.call('chrome-sync.get', "inference.model")]);
+  provider = providers.find(p => p.manifest.name === savedProvider);
+  model = provider?.manifest.inferenceModels?.find(m => m.id === savedModel);
+  (provider && model) && runtime.log(`[Inference] Loaded: ${provider.manifest.name} - ${model.name}`);
+};
+
+const saveConfig = async (providerName, modelName) => Promise.all([runtime.call('chrome-sync.set', { "inference.provider": providerName }), runtime.call('chrome-sync.set', { "inference.model": modelName })]);
+
+const showProviderSelection = async (selectedProviderName = '') => runtime.call('ui.showModal', { title: "Configure AI Provider & Model", tree: buildFormTree(selectedProviderName) });
+
+export const uiPicker = async () => await showProviderSelection(provider?.manifest.name || '');
+
+const buildFormTree = (selectedProviderName = '') => {
+  const selectedProvider = providers.find(p => p.manifest.name === selectedProviderName);
+  const providerOptions = [{ value: "", text: "Choose a provider..." }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
+  const modelOptions = selectedProvider ? [{ value: "", text: "Choose a model..." }, ...selectedProvider.manifest.inferenceModels.map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))] : [{ value: "", text: "Select a provider first" }];
   
-  // todo: figure out how to do the dynamic form business logic within the module updating the form 
-  // https://claude.ai/chat/ea732f00-4b45-42e6-a3df-410d6229173e
+  return {
+    "provider-model-form": {
+      tag: "form", events: { submit: "inference.saveForm" },
+      "provider-select": { 
+        tag: "select", 
+        name: "provider", 
+        value: selectedProviderName, 
+        required: true, 
+        options: providerOptions, 
+        events: { change: "inference.updateForm" }, 
+        style: "width: 100%; margin-bottom: 16px;" 
+      },
+      "model-select": { 
+        tag: "select", 
+        name: "model", 
+        value: selectedProvider && model?.id || "",
+        required: true, 
+        disabled: !selectedProvider, 
+        options: modelOptions, 
+        style: "width: 100%; margin-bottom: 16px;" 
+      },
+      ...(selectedProvider && { 
+        "info": { 
+          tag: "div", 
+          text: `Provider: ${selectedProvider.manifest.name} | Models: ${selectedProvider.manifest.inferenceModels?.length || 0}`, 
+          style: "background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 14px;" 
+        } 
+      }),
+      "actions": {
+        tag: "div", 
+        style: "display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-primary);",
+        "cancel": { 
+          tag: "button", 
+          type: "button", 
+          text: "Cancel", 
+          class: "cognition-button-secondary", 
+          events: { click: "ui.closeModal" } 
+        },
+        "submit": { 
+          tag: "button", 
+          type: "submit", 
+          text: "Save", 
+          class: "cognition-button-primary", 
+          disabled: !selectedProvider 
+        }
+      }
+    }
+  };
+};
 
+// Update form when dependent fields change (like provider selection)
+export const updateForm = async (eventData) => {
+  const selectedProviderName = eventData.target.value;
+  const updatedTree = buildFormTree(selectedProviderName);
+  await runtime.call('ui.updateModal', { tree: updatedTree });
+  runtime.log(`[Inference] Form updated for provider: ${selectedProviderName}`);
+};
 
-  // const tree = {
-  //   "form": { 
-  //     tag: "form",
-  //     data: { action: "inference.setProviderAndModel" },
-  //     "provider-label": { tag: "label", text: "Provider:", class: "form-label" },
-  //     "provider-select": { tag: "select", name: "providerName", value: current.provider, options: providerOptions },
-  //     "model-label": { tag: "label",  text: "Model:", class: "form-label" },
-  //     "model-select": { tag: "select", name: "modelName", value: current.model, dependsOn: "provider-select", optionsByDependency: getModelsByProvider() },
-  //     "submit-btn": { tag: "button", parent: "form", type: "submit", text: "Select Model" }
-  //   }
-  // };
-
-  //   return await runtime.call('ui.renderForm', {
-  //   title: "Select Inference Provider & Model",
-  //   tree,
-  //   onSubmit: "inference.changeModelAndProvider",
-  //   onFieldChange: "inference.updateModelForm",
-  //   formData: current
-  // });
+// Save form when submitted
+export const saveForm = async (eventData) => {
+  eventData.preventDefault?.();
+  const { provider: providerName, model: modelName } = eventData.formData;
   
-}
+  if (!providerName || !modelName) {
+    runtime.logError('[Inference] Missing selection');
+    return;
+  }
+  
+  const selectedProvider = providers.find(p => p.manifest.name === providerName);
+  const selectedModel = selectedProvider?.manifest.inferenceModels?.find(m => m.id === modelName);
+  
+  if (!selectedProvider || !selectedModel) {
+    runtime.logError('[Inference] Invalid selection');
+    return;
+  }
+  
+  provider = selectedProvider;
+  model = selectedModel;
+  
+  await saveConfig(providerName, modelName);
+  await runtime.call('ui.closeModal');
+  runtime.log(`[Inference] ✅ Configured: ${provider.manifest.name} - ${model.name}`);
+};
 
-export const showProviderModule = () => runtime.log(`Provider: ${provider.manifest.name}\tModel: ${model.name}`);
 export const prompt = async (query, systemPrompt, webSearch) => {
+  (!provider || !model) && (await showProviderSelection(), (() => { throw new Error('No provider/model configured'); })());
+  
   const messages = await runtime.call("context.assemble", query, systemPrompt);
-  const response = (await provider.makeRequest(model, messages, webSearch));
-  if (!response.ok) throw new Error(`Claude API error: ${response.status} - ${await response.text()}`);
-  // const embedding = await runtime.call('embedding.embedText', `${messages}\n${response}`);
-  // const content = await processStream(response, onChunk);
-  const content = await provider.getContent(response)
-  runtime.log(`[inference] content:`, content);
-  // await runtime.call('graph-db.addInferenceNode', { query, messages, response, model, embedding });
+  const response = await provider.makeRequest(model, messages, webSearch);
+  !response.ok && (() => { throw new Error(`${provider.manifest.name} API error: ${response.status}`); })();
+  
+  const content = await provider.getContent(response);
+  runtime.call('graph-db.addInferenceNode', { query, prompt: messages, response: content, model: model.id, provider: provider.manifest.name }).catch(() => {});
   return content;
 };
-// const onChunk = async (chunk) => {
-//   let content = "";
-//   await runtime.log(content += chunk);
-// };
-// const processStream = async (resp, onChunk) => {
-//   let [reader, decoder, content, metadata] = [resp.body.getReader(), new TextDecoder(), '', { tokens: 0 }];
-//   try { for (let chunk; !(chunk = await reader.read()).done;) decoder.decode(chunk.value).split('\n').filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]').forEach(l => { try { const p = JSON.parse(l.slice(6)), d = p.delta?.text || p.content?.[0]?.text; d && (content += d, onChunk(d)); p.usage && (metadata.tokens = p.usage); } catch { } }); }
-//   finally { reader.releaseLock(); }
-//   return { content, metadata };
-// };
+
+export const showProviderModule = () => provider && model ? runtime.log(`[Inference] ${provider.manifest.name} - ${model.name}`) : runtime.log('[Inference] Not configured');

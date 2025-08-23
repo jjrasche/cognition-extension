@@ -18,23 +18,42 @@ let runtime, apiKey;
 export const initialize = async (rt) => {
   runtime = rt;
   apiKey = await runtime.call("api-keys.getKey",  manifest.apiKeys[0]);
+  if (!apiKey) throw new Error('GROQ API key not configured');
 };
 
-export const makeRequest = async (prompt, model) => {
-  const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model, prompt,
-      temperature: 0.7, max_tokens: 1024, stream: false
-    })
-  });
-  if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`Groq API error: ${response.status} - ${errorData}`);
-  }
+export const makeRequest = async (model, messages) => {
+  const systemMessage = messages.find(m => m.role === 'system');
+  const chatMessages = messages.filter(m => m.role !== 'system');
+  const requestBody = {
+    model: model.id,
+    messages: systemMessage ? [systemMessage, ...chatMessages] : chatMessages,
+    temperature: 0.7,
+    max_tokens: Math.min(model.maxOutput || 4096, 4096),
+    stream: false
+  };  
+  return await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+};
+
+// export const makeRequest = async (prompt, model) => {
+//   const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+//     method: 'POST',
+//     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+//     body: JSON.stringify({
+//       model, prompt,
+//       temperature: 0.7, max_tokens: 1024, stream: false
+//     })
+//   });
+//   if (!response.ok) {
+//     const errorData = await response.text();
+//     throw new Error(`Groq API error: ${response.status} - ${errorData}`);
+//   }
+//   const data = await response.json();
+//   return { content: data.choices[0]?.message?.content || 'No response', usage: data.usage };
+// };
+export const getContent = async (response) => {
   const data = await response.json();
-  return { content: data.choices[0]?.message?.content || 'No response', usage: data.usage };
+  const content = data.choices?.[0]?.message?.content;
+  return content;
 };
 export const formatInteractionFromResponse = async (response) => {};
 export const getInteractionsFromExport = async (exportData) => {}

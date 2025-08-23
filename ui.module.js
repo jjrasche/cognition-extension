@@ -4,7 +4,7 @@ export const manifest = {
     context: ['extension-page'],
     description: 'Extension page layout and tree orchestration',
     dependencies: ['tree-to-dom'],
-    actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening'],
+    actions: ['initializeLayout', 'renderTree', 'showTTSControls', 'handleSearchKeydown', 'showModal', 'closeModal', 'updateModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt'],
 };
 let runtime;
 export const initialize = async (rt) => {
@@ -19,9 +19,14 @@ export const initializeLayout = async () => {
             tag: "div", id: MAIN_LAYOUT_ID,
             "main-content": { tag: "div", id: MAIN_CONTENT_ID, innerHTML: loadingHTML("Enter a search query to begin") },
             "search-bar": {
-                tag: "div", id: "cognition-search-bar", style: "position: relative; display: flex; align-items: center; gap: 10px;",
-                "search-input": { tag: "input", id: SEARCH_INPUT_ID, type: "text", placeholder: "Search the web...", events: { keydown: "ui.handleSearchKeydown" }, style: "flex: 1;" },
+            tag: "div", id: "cognition-search-bar", style: "position: relative; display: flex; align-items: center; gap: 10px;",
+            "search-input": { tag: "input", id: SEARCH_INPUT_ID, type: "text", placeholder: "Search the web...", events: { keydown: "ui.handleSearchKeydown" }, style: "flex: 1;" },
+            "button-group": {   
+                tag: "div", style: "display: flex; gap: 8px;",
+                "settings-button": { tag: "button", text: "⚙️", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 16px;", events: { click: "ui.showTTSControls" } },
+                "speech-button": { tag: "button", id: "speech-button", text: "🔊", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.speakPrompt" } },
                 "mic-button": { tag: "button", id: "mic-button", text: "🎤", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.toggleListening" } }
+            }
             }
         }
     };
@@ -40,37 +45,172 @@ export const handleSearchKeydown = async (event) => {
 };
 const getMicButton = () => document.querySelector('#mic-button') ?? (() => { throw new Error('Mic button not found'); })();
 export const toggleListening = async () => {
-    const status = await runtime.call('transcript.getStatus');
+    const status = await runtime.call('web-speech-stt.getStatus');
     const button = getMicButton();
 
     if (status.isListening) {
-        await runtime.call('transcript.stopListening');
+        await runtime.call('web-speech-stt.stopListening');
         button.textContent = '🎤';
         button["style"].background = '';
     } else {
-        await runtime.call('transcript.startListening');
+        await runtime.call('web-speech-stt.startListening');
         button.textContent = '🔴';
         button["style"].background = 'rgba(255, 0, 0, 0.1)';
     }
+};
+const getSpeechButton = () => document.querySelector('#speech-button') ?? (() => { throw new Error('Speech button not found'); })();
+export const speakPrompt = async () => {
+  const text = getSearchInput()?.value?.trim();
+  if (!text) return;
+  
+  const button = getSpeechButton();
+  button.textContent = '⏳';
+  
+  try {
+    const settings = await runtime.call('web-speech-tts.getSettings');
+    const result = await runtime.call('tts.speak', text, settings);
+    if (!result.success) runtime.logError('[UI] TTS failed:', result.error);
+  } catch (error) {
+    runtime.logError('[UI] TTS error:', error);
+  } finally {
+    button.textContent = '🔊';
+  }
+};
+
+export const showTTSControls = async () => {
+  const settings = await runtime.call('web-speech-tts.getSettings');
+  
+  const controlsTree = {
+    "tts-controls-form": {
+      tag: "form",
+      events: { submit: "web-speech-tts.saveSettings" },
+      "rate-control": {
+        tag: "div", class: "control-group",
+        "rate-label": { tag: "label", text: "Speed:" },
+        "rate-slider": { tag: "input", type: "range", name: "rate", min: "0.5", max: "3", step: "0.1", value: settings.rate },
+        "rate-value": { tag: "span", text: settings.rate, class: "value-display" }
+      },
+      "pitch-control": {
+        tag: "div", class: "control-group",
+        "pitch-label": { tag: "label", text: "Pitch:" },
+        "pitch-slider": { tag: "input", type: "range", name: "pitch", min: "0.5", max: "2", step: "0.1", value: settings.pitch },
+        "pitch-value": { tag: "span", text: settings.pitch, class: "value-display" }
+      },
+      "volume-control": {
+        tag: "div", class: "control-group",
+        "volume-label": { tag: "label", text: "Volume:" },
+        "volume-slider": { tag: "input", type: "range", name: "volume", min: "0", max: "1", step: "0.1", value: settings.volume },
+        "volume-value": { tag: "span", text: settings.volume, class: "value-display" }
+      },
+      "pause-control": {
+        tag: "div", class: "control-group",
+        "pause-label": { tag: "label", text: "Add word pauses:" },
+        "pause-checkbox": { tag: "input", type: "checkbox", name: "addPauses", checked: settings.addPauses }
+      },
+      "controls-actions": {
+        tag: "div", class: "modal-actions",
+        "test-btn": { tag: "button", type: "button", text: "Test", class: "cognition-button-secondary", events: { click: "ui.testTTSSettings" } },
+        "save-btn": { tag: "button", type: "submit", text: "Save", class: "cognition-button-primary" }
+      }
+    }
+  };
+
+  await runtime.call('ui.showModal', {
+    title: "Speech Settings",
+    content: "Adjust voice properties:",
+    tree: controlsTree
+  });
+};
+
+export const testTTSSettings = async (event) => {
+  const formData = new FormData(event.target.closest('form'));
+  const settings = {
+    rate: parseFloat(formData.get('rate')),
+    pitch: parseFloat(formData.get('pitch')),
+    volume: parseFloat(formData.get('volume')),
+    addPauses: formData.get('addPauses') === 'on'
+  };
+  
+  await runtime.call('tts.speak', 'This is a test of the speech settings.', settings);
+};
+
+export const saveTTSSettings = async (event) => {
+  await runtime.call('web-speech-tts.saveSettings', event);
+  await runtime.call('ui.closeModal');
 };
 export const renderTree = async (tree, container) => {
     const target = container || getMainContent();
     if (!target) throw new Error('Container not found');
     return await runtime.call('tree-to-dom.transform', tree, target);
 };
-export const showModal = async ({ title, content, actions }) => {
+// Updated showModal function to handle tree rendering
+export const showModal = async ({ title, content = "", tree, actions = {} }) => {
+    // Close any existing modal first
+    await closeModal();
+    
     const modalTree = {
         "modal-overlay": {
-            tag: "div", class: "cognition-overlay",
+            tag: "div", 
+            class: "cognition-overlay",
             "modal": {
-                tag: "div", class: "cognition-modal",
-                "header": { tag: "h3", text: title, class: "cognition-modal-header" },
-                "content": { tag: "div", text: content, class: "cognition-modal-content" },
-                "actions": { tag: "div", class: "cognition-modal-actions", ...actions }
+                tag: "div", 
+                class: "cognition-modal",
+                "header": { 
+                    tag: "h3", 
+                    text: title, 
+                    class: "cognition-modal-header" 
+                },
+                "content": { 
+                    tag: "div", 
+                    class: "cognition-modal-content",
+                    ...(content && { innerHTML: content })
+                },
+                "actions": { 
+                    tag: "div", 
+                    class: "cognition-modal-actions", 
+                    ...actions 
+                }
             }
         }
     };
+
+    // Render the base modal structure
     await renderTree(modalTree, document.body);
+    
+    // If we have a tree to render inside the content area, render it there
+    if (tree) {
+        const contentDiv = document.querySelector('.cognition-modal-content');
+        if (contentDiv) {
+            await renderTree(tree, contentDiv);
+        } else {
+            runtime.logError('[UI] Could not find modal content div for tree rendering');
+        }
+    }
+};
+
+// Add this new function to your UI module:
+export const updateModal = async ({ tree, content }) => {
+    const modalContent = document.querySelector('.cognition-modal-content');
+    
+    if (!modalContent) {
+        runtime.logError('[UI] Cannot update modal - modal content not found');
+        return;
+    }
+    
+    // Clear existing content
+    modalContent.innerHTML = '';
+    
+    // If we have new content HTML, set it
+    if (content) {
+        modalContent.innerHTML = content;
+    }
+    
+    // If we have a new tree to render, render it
+    if (tree) {
+        await renderTree(tree, modalContent);
+    }
+    
+    runtime.log('[UI] Modal updated successfully');
 };
 export const updatePrompt = async (text) => {
     const input = getSearchInput();
