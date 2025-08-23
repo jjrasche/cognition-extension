@@ -4,9 +4,8 @@ export const manifest = {
     context: ['extension-page'],
     description: 'Extension page layout and tree orchestration',
     dependencies: ['tree-to-dom'],
-    actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal'],
+    actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening'],
 };
-
 let runtime;
 export const initialize = async (rt) => {
     runtime = rt;
@@ -20,8 +19,9 @@ export const initializeLayout = async () => {
             tag: "div", id: MAIN_LAYOUT_ID,
             "main-content": { tag: "div", id: MAIN_CONTENT_ID, innerHTML: loadingHTML("Enter a search query to begin") },
             "search-bar": {
-                tag: "div", id: "cognition-search-bar",
-                "search-input": { tag: "input", id: SEARCH_INPUT_ID, type: "text", placeholder: "Search the web...", events: { keydown: "ui.handleSearchKeydown" } }
+                tag: "div", id: "cognition-search-bar", style: "position: relative; display: flex; align-items: center; gap: 10px;",
+                "search-input": { tag: "input", id: SEARCH_INPUT_ID, type: "text", placeholder: "Search the web...", events: { keydown: "ui.handleSearchKeydown" }, style: "flex: 1;" },
+                "mic-button": { tag: "button", id: "mic-button", text: "🎤", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.toggleListening" } }
             }
         }
     };
@@ -31,11 +31,26 @@ export const initializeLayout = async () => {
 export const handleSearchKeydown = async (event) => {
     if (event.key === 'Enter' && event.target.value.trim()) {
         showState('Searching...', 'loading');
-        try { 
+        try {
             const tree = await runtime.call('web-search.getSearchTree', event.target.value.trim());
             await renderTree(tree);
         }
         catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
+    }
+};
+const getMicButton = () => document.querySelector('#mic-button') ?? (() => { throw new Error('Mic button not found'); })();
+export const toggleListening = async () => {
+    const status = await runtime.call('transcript.getStatus');
+    const button = getMicButton();
+
+    if (status.isListening) {
+        await runtime.call('transcript.stopListening');
+        button.textContent = '🎤';
+        button["style"].background = '';
+    } else {
+        await runtime.call('transcript.startListening');
+        button.textContent = '🔴';
+        button["style"].background = 'rgba(255, 0, 0, 0.1)';
     }
 };
 export const renderTree = async (tree, container) => {
@@ -44,18 +59,26 @@ export const renderTree = async (tree, container) => {
     return await runtime.call('tree-to-dom.transform', tree, target);
 };
 export const showModal = async ({ title, content, actions }) => {
-  const modalTree = {
-    "modal-overlay": {
-      tag: "div", class: "cognition-overlay",
-      "modal": {
-        tag: "div", class: "cognition-modal",
-        "header": { tag: "h3", text: title, class: "cognition-modal-header" },
-        "content": { tag: "div", text: content, class: "cognition-modal-content" },
-        "actions": { tag: "div", class: "cognition-modal-actions", ...actions }
-      }
-    }
-  };
-  await renderTree(modalTree, document.body);
+    const modalTree = {
+        "modal-overlay": {
+            tag: "div", class: "cognition-overlay",
+            "modal": {
+                tag: "div", class: "cognition-modal",
+                "header": { tag: "h3", text: title, class: "cognition-modal-header" },
+                "content": { tag: "div", text: content, class: "cognition-modal-content" },
+                "actions": { tag: "div", class: "cognition-modal-actions", ...actions }
+            }
+        }
+    };
+    await renderTree(modalTree, document.body);
+};
+export const updatePrompt = async (text) => {
+    const input = getSearchInput();
+    if (input) input["value"] = text;
+};
+export const clearPrompt = async () => {
+    const input = getSearchInput();
+    if (input) input["value"] = '';
 };
 export const closeModal = async () => document.querySelector('.cognition-overlay')?.remove();
 const showState = (message, type) => getMainContent()["innerHTML"] = type === 'error' ? errorHTML(message) : loadingHTML(message);

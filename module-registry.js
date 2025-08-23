@@ -18,7 +18,7 @@ import * as inferenceModule from './inference.module.js';
 // import * as oauthModule from './oauth.module.js';
 import * as tabModule from './tab.module.js';
 // import * as textInputModule from './text-input.module.js';
-// import * as transcriptModule from './transcript.module.js';
+import * as transcriptModule from './transcript.module.js';
 import * as transformerModule from './transformer.module.js';
 import * as chromeSyncModule from './chrome-sync.module.js';
 import * as domToTreeModule from './dom-to-tree.module.js';
@@ -49,7 +49,7 @@ export const modules = [
 	// oauthModule,
 	tabModule,
 	// textInputModule,
-	// transcriptModule,
+	transcriptModule,
 	transformerModule,
 	treeToDomModule,
 	uiModule,
