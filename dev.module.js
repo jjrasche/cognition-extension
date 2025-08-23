@@ -25,14 +25,23 @@ const createActionShortcuts = () => {
     runtime.log('[Dev] Production mode - skipping dev shortcuts');
     return;
   }
-  addModuleManifestsToConsole();
+  addModuleToConsole();
   addModuleActionsToConsole();
   addEasyAccessVariablesToConsole();
 };
-const addModuleManifestsToConsole = () => runtime.getContextModules().forEach(module => {
+const addModuleToConsole = () => runtime.getContextModules().forEach(module => {
   const camelModuleName = kebabToCamel(module.manifest.name);
   globalThis[camelModuleName] = {};
   globalThis[camelModuleName].manifest = module.manifest;
+  globalThis[camelModuleName].test = async () => {
+    const results = await runtime.runModuleTests(module);
+    runtime.log(`[Dev] ${camelModuleName}.test → ${results.filter(r => r.passed).length}/${results.length} passed`);
+ console.table(results.reduce((acc, r) => {
+   acc[r.name] = { Result: r.passed ? '✅' : '❌', errror: r.error || '' };
+   return acc;
+ }, {}));
+      return results;
+  };
 });
 
 const addModuleActionsToConsole = () => {
@@ -114,57 +123,3 @@ export const testEmbeddingSpeed = async (text, runs = 10) => {
   console.table(sorted);
   return sorted;
 }
-
-
-
-
-// Test if Intl.Segmenter can detect sentence completeness without punctuation
-
-const testCases = [
-  // Complete sentences without punctuation
-  { text: "I went to the store today", expected: "complete", reason: "Complete thought with subject, verb, object" },
-  { text: "The weather is really nice", expected: "complete", reason: "Complete descriptive statement" },
-  { text: "She finished her homework early", expected: "complete", reason: "Complete action statement" },
-  
-  // Incomplete fragments
-  { text: "When I was", expected: "incomplete", reason: "Subordinate clause without main clause" },
-  { text: "Because the rain", expected: "incomplete", reason: "Dependent clause fragment" },
-  { text: "After we went to", expected: "incomplete", reason: "Prepositional phrase fragment" },
-  
-  // Tricky cases
-  { text: "Well I think", expected: "incomplete", reason: "Trailing incomplete thought" },
-  { text: "So anyway", expected: "incomplete", reason: "Connector without content" },
-  { text: "The thing is", expected: "incomplete", reason: "Incomplete explanation setup" }
-];
-
-export const testSegmenterCompleteness = () => {
-  console.log("🧪 Testing Intl.Segmenter for sentence completeness detection\n");
-  
-  const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
-  
-  testCases.forEach((testCase, index) => {
-    const segments = Array.from(segmenter.segment(testCase.text));
-    
-    console.log(`Test ${index + 1}: "${testCase.text}"`);
-    console.log(`Expected: ${testCase.expected}`);
-    console.log(`Segments found: ${segments.length}`);
-    console.log(`Segments:`, segments.map(s => `"${s.segment}"`));
-    
-    // Segmenter's logic: if it creates a sentence segment, it thinks it's complete
-    const segmenterThinks = segments.length > 0 && segments[0].segment.trim() === testCase.text ? "complete" : "incomplete";
-    
-    console.log(`Segmenter thinks: ${segmenterThinks}`);
-    console.log(`Match: ${segmenterThinks === testCase.expected ? '✅' : '❌'}`);
-    console.log(`Reason: ${testCase.reason}\n`);
-  });
-  
-  // Test with punctuation for comparison
-  console.log("🔍 Comparison with punctuation:");
-  const withPunctuation = "I went to the store today.";
-  const segments = Array.from(segmenter.segment(withPunctuation));
-  console.log(`"${withPunctuation}" → ${segments.length} segments`);
-  console.log(`Segments:`, segments.map(s => `"${s.segment}"`));
-};
-
-// Run the test
-testSegmenterCompleteness();

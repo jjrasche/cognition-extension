@@ -8,8 +8,8 @@ class Runtime {
         this.errors = [];
         this.moduleState = new Map();
         this.testUtils = { ...asserts, runUnitTest };
-        this.testResults = [];
-        // this.testResults = null;
+        // this.testResults = [];
+        this.testResults = null;
         this.allContextTestResults = new Map();
 
     }
@@ -303,12 +303,9 @@ class Runtime {
         this.broadcastTestResults();
         if (this.areAllTestsComplete()) this.showTests();
     };
-    runModuleTests = async (module) =>  (await module['test']()).map(test => {
-        const ret =   {...test, module: module.manifest.name};
-        return ret;
-    });
-    showTests = () => {
-        const results = Array.from(this.allContextTestResults.values()).flat();
+    runModuleTests = async (module) =>  (await module['test']()).map(test => ({...test, module: module.manifest.name}));
+    showTests = (results) => {
+        results = results ?? Array.from(this.allContextTestResults.values()).flat();
         this.showModuleSummary(results);
         this.showTestFailures(results);
     };

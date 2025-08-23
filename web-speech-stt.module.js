@@ -8,6 +8,24 @@ export const manifest = {
   dependencies: ["ui"],
   actions: ["startListening", "stopListening", "getStatus"],
 };
+                // "mic-button": { tag: "button", id: "mic-button", text: "🎤", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.toggleListening" } }
+
+
+const getMicButton = () => document.querySelector('#mic-button') ?? (() => { throw new Error('Mic button not found'); })();
+export const toggleListening = async () => {
+    const status = await runtime.call('web-speech-stt.getStatus');
+    const button = getMicButton();
+
+    if (status.isListening) {
+        await runtime.call('web-speech-stt.stopListening');
+        button.textContent = '🎤';
+        button["style"].background = '';
+    } else {
+        await runtime.call('web-speech-stt.startListening');
+        button.textContent = '🔴';
+        button["style"].background = 'rgba(255, 0, 0, 0.1)';
+    }
+};
 
 let runtime, recognition, isListening = false, currentTranscript = '';
 let lastFinalTime = Date.now();

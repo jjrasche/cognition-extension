@@ -25,6 +25,7 @@ const createElement = (id, node, elements, parent) => {
     parent.appendChild(el);
     bindNodeEvents(id, node, elements);
     createChildren(node, elements, el);
+    handleFocus(el, node); // Add focus handling after DOM insertion
 };
 const createChildren = (node, elements, parent) => Object.entries(node).forEach(([childId, child]) => typeof child === 'object' && child.tag && createElement(childId, child, elements, parent));
 const setProps = (el, node) => (setBasicProps(el, node), setFormProps(el, node), setDataProps(el, node), setOtherProps(el, node));
@@ -34,12 +35,13 @@ const setClassProp = (el, node) => node.class && (el.className = node.class);
 const setIdProp = (el, node) => node.id && (el.id = node.id);
 const setFormProps = (el, node) => ['name', 'type', 'value', 'placeholder', 'required'].forEach(prop => node[prop] && (el[prop] = node[prop]));
 const setDataProps = (el, node) => node.data && Object.entries(node.data).forEach(([key, value]) => el.setAttribute(`data-${key}`, value));
-const specialProps = new Set(['tag', 'text', 'class', 'id', 'events', 'data', 'name', 'type', 'value', 'placeholder', 'required', 'options']);
+const specialProps = new Set(['tag', 'text', 'class', 'id', 'events', 'data', 'name', 'type', 'value', 'placeholder', 'required', 'options', 'focus']);
 const setOtherProps = (el, node) => Object.entries(node).forEach(([key, value]) => !specialProps.has(key) && !(typeof value === 'object' && value.tag) && el.setAttribute(key, value));
 const populateOptions = (select, options) => {
     select.innerHTML = '';
     options.forEach(opt => select.appendChild(createOption(opt)));
 };
+const handleFocus = (el, node) => node.focus && setTimeout(() => el.focus(), 0);
 const createOption = (opt) => {
     const data = normalizeOptionData(opt);
     return Object.assign(document.createElement('option'), { value: data.value, textContent: data.text, selected: data.selected || false });
@@ -49,9 +51,7 @@ const bindNodeEvents = (id, node, elements) => {
     const el = elements[id];
     if (!el || !node.events) return;
     Object.entries(node.events).forEach(([event, handler]) => {
-        console.log(`Binding ${event} to ${id} -> ${handler}`);
         el.addEventListener(event, async (e) => {
-            console.log(`Event ${event} triggered on ${id}`);
             if (event === 'submit') e.preventDefault();
             try { await runtime.call(handler, createEventData(e, el)); }
             catch (error) { runtime.logError(`Event handler failed: ${handler}`, error); }
@@ -62,13 +62,14 @@ const createEventData = (event, element) => {
     const form = element.tagName === 'FORM' ? element : element.closest('form');
     return {
         type: event.type,
-        key: event.key,  // Add this for keyboard events
+        key: event.key,
         target: { 
             tagName: element.tagName.toLowerCase(), 
             id: element.id, 
             name: element.name, 
             value: element.value 
-        }, 
+        },
+        focusedElement: document.activeElement?.["name"] || null,
         ...(form && { formData: serializeForm(form) })
     };
 };

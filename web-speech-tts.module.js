@@ -7,6 +7,93 @@ export const manifest = {
   actions: ["speak", "stop", "getVoices", "setVoice", "getStatus", "getSettings", "saveSettings"]
 };
 
+                // "settings-button": { tag: "button", text: "⚙️", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 16px;", events: { click: "ui.showTTSControls" } },
+                // "speech-button": { tag: "button", id: "speech-button", text: "🔊", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.speakPrompt" } },
+
+
+                // const getSpeechButton = () => document.querySelector('#speech-button') ?? (() => { throw new Error('Speech button not found'); })();
+                // export const speakPrompt = async () => {
+                //   const text = getSearchInput()?.["value"]?.trim();
+                //   if (!text) return;
+                  
+                //   const button = getSpeechButton();
+                //   button.textContent = '⏳';
+                  
+                //   try {
+                //     const settings = await runtime.call('web-speech-tts.getSettings');
+                //     const result = await runtime.call('tts.speak', text, settings);
+                //     if (!result.success) runtime.logError('[UI] TTS failed:', result.error);
+                //   } catch (error) {
+                //     runtime.logError('[UI] TTS error:', error);
+                //   } finally {
+                //     button.textContent = '🔊';
+                //   }
+                // };
+
+
+export const showTTSControls = async () => {
+  const settings = await runtime.call('web-speech-tts.getSettings');
+  
+  const controlsTree = {
+    "tts-controls-form": {
+      tag: "form",
+      events: { submit: "web-speech-tts.saveSettings" },
+      "rate-control": {
+        tag: "div", class: "control-group",
+        "rate-label": { tag: "label", text: "Speed:" },
+        "rate-slider": { tag: "input", type: "range", name: "rate", min: "0.5", max: "3", step: "0.1", value: settings.rate },
+        "rate-value": { tag: "span", text: settings.rate, class: "value-display" }
+      },
+      "pitch-control": {
+        tag: "div", class: "control-group",
+        "pitch-label": { tag: "label", text: "Pitch:" },
+        "pitch-slider": { tag: "input", type: "range", name: "pitch", min: "0.5", max: "2", step: "0.1", value: settings.pitch },
+        "pitch-value": { tag: "span", text: settings.pitch, class: "value-display" }
+      },
+      "volume-control": {
+        tag: "div", class: "control-group",
+        "volume-label": { tag: "label", text: "Volume:" },
+        "volume-slider": { tag: "input", type: "range", name: "volume", min: "0", max: "1", step: "0.1", value: settings.volume },
+        "volume-value": { tag: "span", text: settings.volume, class: "value-display" }
+      },
+      "pause-control": {
+        tag: "div", class: "control-group",
+        "pause-label": { tag: "label", text: "Add word pauses:" },
+        "pause-checkbox": { tag: "input", type: "checkbox", name: "addPauses", checked: settings.addPauses }
+      },
+      "controls-actions": {
+        tag: "div", class: "modal-actions",
+        "test-btn": { tag: "button", type: "button", text: "Test", class: "cognition-button-secondary", events: { click: "ui.testTTSSettings" } },
+        "save-btn": { tag: "button", type: "submit", text: "Save", class: "cognition-button-primary" }
+      }
+    }
+  };
+
+  await runtime.call('ui.showModal', {
+    title: "Speech Settings",
+    content: "Adjust voice properties:",
+    tree: controlsTree
+  });
+};
+
+export const testTTSSettings = async (event) => {
+  const formData = new FormData(event.target.closest('form'));
+  const settings = {
+    rate: parseFloat(formData.get('rate')),
+    pitch: parseFloat(formData.get('pitch')),
+    volume: parseFloat(formData.get('volume')),
+    addPauses: formData.get('addPauses') === 'on'
+  };
+  
+  await runtime.call('tts.speak', 'This is a test of the speech settings.', settings);
+};
+
+export const saveTTSSettings = async (event) => {
+  await runtime.call('web-speech-tts.saveSettings', event);
+  await runtime.call('ui.closeModal');
+};
+
+
 let runtime, synthesis, currentUtterance, preferredVoice;
 
 export const initialize = async (rt) => {

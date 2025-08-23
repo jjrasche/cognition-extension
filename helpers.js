@@ -67,7 +67,7 @@ export const runUnitTest = async (name, testFn) => {
 		const passed = assert(actual, expected);
 		return { name, actual, assert, expected, passed };
 	} catch (error) {
-		return { name, passed: false, error: error.message };
+		return { name, passed: false, error };
 	}
 }
 
