@@ -5,7 +5,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Registry and assess chunking strategies",
 	dependencies: ["chrome-sync", "embedding"],
-	actions: ["chunk", "splitSentences"]
+	actions: ["chunk", "splitSentences", "calculateChunkSimilarity"]
 };
 
 let runtime, model = "Xenova/all-MiniLM-L6-v2-fp16-webgpu";
@@ -51,7 +51,7 @@ const assessQuality = async (chunks, text) => {
 		size: assessSizeDistribution(chunks)
 	};
 };
-const calculateChunkSimilarity = async (a, b) => {
+export const calculateChunkSimilarity = async (a, b) => {
 	const embedding1 = await runtime.call('embedding.embedText', a, { model });
 	const embedding2 = await runtime.call('embedding.embedText', b, { model });
 	return calculateCosineSimilarity(embedding1, embedding2);

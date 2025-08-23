@@ -27,6 +27,7 @@ import * as uiModule from './ui.module.js';
 import * as webSearchModule from './web-search.module.js';
 import * as superIntendentModule from './superintendent.module.js';
 import * as chromeLocalModule from './chrome-local.module.js'
+import * as liveChunkingModule from './live-chunker.module.js';
 
 export const modules = [
 	apiKeysModule,
@@ -36,6 +37,7 @@ export const modules = [
 	// contentScriptHandlerModule,
 	contextModule,
 	// debugModule,
+	liveChunkingModule,
 	developmentModule,
 	// emailModule,
 	embeddingModule,

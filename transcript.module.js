@@ -1,3 +1,5 @@
+import { getId } from "./helpers.js";
+
 export const manifest = {
   name: "transcript",
   context: ["extension-page"],
@@ -8,7 +10,8 @@ export const manifest = {
 };
 
 let runtime, recognition, isListening = false, currentTranscript = '';
-
+let lastFinalTime = Date.now();
+let pauseBasedThoughts = [];
 export const initialize = async (rt) => {
   runtime = rt;
   if (!window["webkitSpeechRecognition"]) return runtime.logError('[Transcript] WebKit speech not supported');
@@ -27,16 +30,49 @@ export const initialize = async (rt) => {
       const transcript = event.results[i][0].transcript;
       event.results[i].isFinal ? (final += transcript) : (interim += transcript);
     }
-    
-    // Accumulate final results, don't overwrite
     if (final) {
-      currentTranscript += final;
+      currentTranscript += processVoiceCommands(final);
+      detectThoughtBoundary(final);
       runtime.log('[Transcript] Final added:', final);
     }
-    
-    // Display accumulated final + current interim
     await runtime.call('ui.updatePrompt', currentTranscript + interim);
   };
+};
+
+// Add this function
+const detectThoughtBoundary = (finalText) => {
+  const now = Date.now();
+  const pauseDuration = now - lastFinalTime;
+  
+  // If significant pause (1500ms+) or this is first thought
+  if (pauseDuration > 1500 || pauseBasedThoughts.length === 0) {
+    // Create new thought
+    const thoughtId = getId();
+    pauseBasedThoughts.push({
+      text: finalText.trim(),
+      id: thoughtId,
+      timestamp: now,
+      pauseBefore: pauseDuration
+    });
+    
+    runtime.log(`[Transcript] New thought boundary detected (${pauseDuration}ms pause):`, finalText);
+    
+    // Notify live-chunker of new thought
+    runtime.call('live-chunker.processThought', {
+      id: thoughtId,
+      text: finalText.trim(),
+      timestamp: now,
+      pauseDuration
+    });
+  } else {
+    // Append to current thought
+    const currentThought = pauseBasedThoughts[pauseBasedThoughts.length - 1];
+    currentThought.text += ' ' + finalText.trim();
+    
+    runtime.log(`[Transcript] Extending current thought:`, currentThought.text);
+  }
+  
+  lastFinalTime = now;
 };
 
 export const startListening = async () => {
@@ -49,6 +85,16 @@ export const stopListening = async () => {
 	recognition.stop();
 };
 export const getStatus = async () => ({ isListening, currentTranscript, isSupported: !!window["webkitSpeechRecognition"] });
+
+const processVoiceCommands = (text) => {
+  return text
+    .replace(/\bperiod\b/gi, '.')
+    .replace(/\bcomma\b/gi, ',')
+    .replace(/\bquestion mark\b/gi, '?')
+    .replace(/\bexclamation point\b/gi, '!')
+    .replace(/\bnew paragraph\b/gi, '\n\n')
+    .replace(/\bnew line\b/gi, '\n');
+};
 
 // export const manifest = {
 //   name: "transcript",
