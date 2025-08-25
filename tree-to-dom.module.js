@@ -20,8 +20,10 @@ const createElement = (id, node, elements, parent) => {
     if (!node.tag) return;
     const el = document.createElement(node.tag);
     setProps(el, node);
-    if (node.tag === 'select' && node.options) populateOptions(el, node.options);
-    elements[id] = el; // Store element first
+    if (node.tag === 'select' && node.options) {
+        populateOptions(el, node.options);
+        if (node.value) el.value = node.value; // Set value AFTER options exist
+    } elements[id] = el; // Store element first
     parent.appendChild(el);
     bindNodeEvents(id, node, elements);
     createChildren(node, elements, el);
@@ -33,9 +35,12 @@ const setBasicProps = (el, node) => (setTextProp(el, node), setClassProp(el, nod
 const setTextProp = (el, node) => node.text && (el.textContent = node.text);
 const setClassProp = (el, node) => node.class && (el.className = node.class);
 const setIdProp = (el, node) => node.id && (el.id = node.id);
-const setFormProps = (el, node) => ['name', 'type', 'value', 'placeholder', 'required'].forEach(prop => node[prop] && (el[prop] = node[prop]));
+const setFormProps = (el, node) => {
+    ['name', 'type', 'value', 'placeholder', 'required'].forEach(prop => node[prop] && (el[prop] = node[prop]));
+    if ('disabled' in node) el.disabled = node.disabled;
+};
 const setDataProps = (el, node) => node.data && Object.entries(node.data).forEach(([key, value]) => el.setAttribute(`data-${key}`, value));
-const specialProps = new Set(['tag', 'text', 'class', 'id', 'events', 'data', 'name', 'type', 'value', 'placeholder', 'required', 'options', 'focus']);
+const specialProps = new Set(['tag', 'text', 'class', 'id', 'events', 'data', 'name', 'type', 'value', 'placeholder', 'required', 'options', 'focus', 'disabled']);
 const setOtherProps = (el, node) => Object.entries(node).forEach(([key, value]) => !specialProps.has(key) && !(typeof value === 'object' && value.tag) && el.setAttribute(key, value));
 const populateOptions = (select, options) => {
     select.innerHTML = '';
@@ -46,7 +51,7 @@ const createOption = (opt) => {
     const data = normalizeOptionData(opt);
     return Object.assign(document.createElement('option'), { value: data.value, textContent: data.text, selected: data.selected || false });
 };
-const normalizeOptionData = (opt) => typeof opt === 'string'  ? { value: opt, text: opt }  : { value: opt.value || opt.id, text: opt.text || opt.label || opt.value, selected: opt.selected };
+const normalizeOptionData = (opt) => typeof opt === 'string' ? { value: opt, text: opt } : { value: opt.value || opt.id, text: opt.text || opt.label || opt.value, selected: opt.selected };
 const bindNodeEvents = (id, node, elements) => {
     const el = elements[id];
     if (!el || !node.events) return;
@@ -63,11 +68,11 @@ const createEventData = (event, element) => {
     return {
         type: event.type,
         key: event.key,
-        target: { 
-            tagName: element.tagName.toLowerCase(), 
-            id: element.id, 
-            name: element.name, 
-            value: element.value 
+        target: {
+            tagName: element.tagName.toLowerCase(),
+            id: element.id,
+            name: element.name,
+            value: element.value
         },
         focusedElement: document.activeElement?.["name"] || null,
         ...(form && { formData: serializeForm(form) })
@@ -253,7 +258,7 @@ export const test = async () => {
         const checkboxObj = { tag: "input", name: "newsletter", type: "checkbox" };
         const radioObj1 = { tag: "input", name: "plan", value: "basic", type: "radio" };
         const radioObj2 = { tag: "input", name: "plan", value: "premium", type: "radio" };
-        const selectObj = { tag: "select", name: "country", options: [ { value: "us", text: "United States" }, { value: "ca", text: "Canada" }] };
+        const selectObj = { tag: "select", name: "country", options: [{ value: "us", text: "United States" }, { value: "ca", text: "Canada" }] };
         const textareaObj = { tag: "textarea", name: "comments", value: "Test comments" };
         const tree = { [formObj.id]: { ...formObj, "text-input": textInputObj, "email-input": emailInputObj, "checkbox-input": checkboxObj, "radio-basic": radioObj1, "radio-premium": radioObj2, "select-input": selectObj, "textarea-input": textareaObj } };
         runtimeCalls = [];

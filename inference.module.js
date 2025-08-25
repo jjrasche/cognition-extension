@@ -32,65 +32,34 @@ const showProviderSelection = async (selectedProviderName = '') => runtime.call(
 export const uiPicker = async () => await showProviderSelection(provider?.manifest.name || '');
 
 const buildFormTree = (selectedProviderName = '') => {
-  const selectedProvider = providers.find(p => p.manifest.name === selectedProviderName);
-  const providerOptions = [{ value: "", text: "Choose a provider..." }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
-  const modelOptions = selectedProvider ? [{ value: "", text: "Choose a model..." }, ...selectedProvider.manifest.inferenceModels.map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))] : [{ value: "", text: "Select a provider first" }];
-  
-  return {
-    "provider-model-form": {
-      tag: "form", events: { submit: "inference.saveForm" },
-      "provider-select": { 
-        tag: "select", 
-        name: "provider", 
-        value: selectedProviderName, 
-        required: true, 
-        options: providerOptions, 
-        events: { change: "inference.updateForm" }, 
-        style: "width: 100%; margin-bottom: 16px;" 
-      },
-      "model-select": { 
-        tag: "select", 
-        name: "model", 
-        value: selectedProvider && model?.id || "",
-        required: true, 
-        disabled: !selectedProvider, 
-        options: modelOptions, 
-        style: "width: 100%; margin-bottom: 16px;" 
-      },
-      ...(selectedProvider && { 
-        "info": { 
-          tag: "div", 
-          text: `Provider: ${selectedProvider.manifest.name} | Models: ${selectedProvider.manifest.inferenceModels?.length || 0}`, 
-          style: "background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 14px;" 
-        } 
-      }),
-      "actions": {
-        tag: "div", 
-        style: "display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-primary);",
-        "cancel": { 
-          tag: "button", 
-          type: "button", 
-          text: "Cancel", 
-          class: "cognition-button-secondary", 
-          events: { click: "ui.closeModal" } 
-        },
-        "submit": { 
-          tag: "button", 
-          type: "submit", 
-          text: "Save", 
-          class: "cognition-button-primary", 
-          disabled: !selectedProvider 
-        }
-      }
-    }
-  };
+ const selectedProvider = providers.find(p => p.manifest.name === selectedProviderName);
+ const providerOptions = [{ value: "", text: "Choose a provider..." }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
+ const selectedModel = selectedProvider?.manifest.inferenceModels?.[0];
+ const modelOptions = selectedProvider ? [{ value: "", text: "Choose a model..." }, ...selectedProvider.manifest.inferenceModels.map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))] : [{ value: "", text: "Select a provider first" }];
+ 
+ return {
+   "provider-model-form": {
+     tag: "form", events: { submit: "inference.saveForm" },
+     "provider-select": { tag: "select", name: "provider", value: selectedProviderName, required: true, options: providerOptions, events: { change: "inference.updateForm" }, style: "width: 100%; margin-bottom: 16px;" },
+     "model-select": { tag: "select", name: "model", value: selectedModel?.id || "", required: true, disabled: !selectedProvider, options: modelOptions, style: "width: 100%; margin-bottom: 16px;" },
+     ...(selectedProvider && { "info": { tag: "div", text: `Provider: ${selectedProvider.manifest.name} | Models: ${selectedProvider.manifest.inferenceModels?.length || 0}`, style: "background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 14px;" } }),
+     "actions": {
+       tag: "div", style: "display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-primary);",
+       "cancel": { tag: "button", type: "button", text: "Cancel", class: "cognition-button-secondary", events: { click: "ui.closeModal" } },
+       "submit": { tag: "button", type: "submit", text: "Save", class: "cognition-button-primary", disabled: !selectedProvider }
+     }
+   }
+ };
 };
 
 // Update form when dependent fields change (like provider selection)
 export const updateForm = async (eventData) => {
   const selectedProviderName = eventData.target.value;
   const updatedTree = buildFormTree(selectedProviderName);
-  await runtime.call('ui.updateModal', { tree: updatedTree });
+  await runtime.call('ui.showModal', { 
+  title: "Configure AI Provider & Model", 
+  tree: updatedTree 
+});
   runtime.log(`[Inference] Form updated for provider: ${selectedProviderName}`);
 };
 
