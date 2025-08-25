@@ -104,14 +104,14 @@ const getOrbitingChunks = async (cluster) => {
 	const embedding = await runtime.call('embedding.embedText', combinedText);
 
 	// Find semantically similar graph nodes
-	const relatedNodes = await runtime.call('graph-db.searchByEmbedding', embedding, 0.6);
+	const relatedNodes = await runtime.call('graph-db.searchByText', { text: combinedText, threshold: 0.4 });
 
 	return relatedNodes.map(node => ({
 		id: node.id,
-		text: node.content.substring(0, 100) + '...',
-		similarity: node.similarity,
-		distance: 1 - node.similarity, // for visual positioning
-		approved: null // pending user swipe
+		text: node.content?.substring(0, 100) + '...' || 'No content',
+		similarity: node.similarity || 0,
+		distance: 1 - (node.similarity || 0),
+		approved: null
 	}));
 };
 
