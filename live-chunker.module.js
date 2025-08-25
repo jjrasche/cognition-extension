@@ -90,8 +90,29 @@ export const processThought = async (thought) => {
 		}
 	}
 
+	for (const chunk of chunks) {
+		const orbitingChunks = await getOrbitingChunks(chunk);
+		chunk.orbitingChunks = orbitingChunks;
+	}
+
 	similarityDuration = performance.now() - startTime;
 	await renderChunkerUI();
+};
+
+const getOrbitingChunks = async (cluster) => {
+	const combinedText = cluster.thoughts.map(t => t.text).join(' ');
+	const embedding = await runtime.call('embedding.embedText', combinedText);
+
+	// Find semantically similar graph nodes
+	const relatedNodes = await runtime.call('graph-db.searchByEmbedding', embedding, 0.6);
+
+	return relatedNodes.map(node => ({
+		id: node.id,
+		text: node.content.substring(0, 100) + '...',
+		similarity: node.similarity,
+		distance: 1 - node.similarity, // for visual positioning
+		approved: null // pending user swipe
+	}));
 };
 
 export const setMode = async (eventOrMode) => {
@@ -255,6 +276,25 @@ const createChunkBubbles = async () => {
 			...(thoughtCount > 1 && {
 				[`${bubbleId}-synthesize`]: { tag: "button", text: "💡 Synthesize", class: "cognition-button-secondary", style: "font-size: 10px; padding: 4px 8px; margin-top: 6px;", events: { click: "live-chunker.handleSynthesize" }, "data-chunk-id": chunk.id }
 			}),
+			...(chunk.orbitingChunks && chunk.orbitingChunks.length > 0 && {
+				[`${bubbleId}-orbiting-container`]: {
+					tag: "div",
+					style: "position: relative; margin-top: 8px;",
+					...chunk.orbitingChunks.reduce((orbitBubbles, orbitChunk, i) => {
+						orbitBubbles[`${bubbleId}-orbit-${i}`] = {
+							tag: "div",
+							class: "orbiting-chunk",
+							style: `display: inline-block; margin: 2px; padding: 4px 8px; background: rgba(255,255,255,0.7); border-radius: 12px; font-size: 10px; cursor: pointer; border: 1px solid #ddd;`,
+							text: orbitChunk.text,
+							events: { click: "live-chunker.handleOrbitSwipe" },
+							"data-chunk-id": chunk.id,
+							"data-orbit-id": orbitChunk.id,
+							title: `Similarity: ${(orbitChunk.similarity * 100).toFixed(1)}%`
+						};
+						return orbitBubbles;
+					}, {})
+				}
+			})
 		};
 	}));
 	return bubbles;

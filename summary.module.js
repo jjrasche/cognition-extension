@@ -15,16 +15,75 @@ export const summarize = async (text, options = {}) => {
 	const response = await runtime.call('inference.prompt', { query: prompt, ...options });
 	return parseSummaryResponse(response);
 };
-const buildSummaryPrompt = (text) => `Analyze this text and provide: ONE SENTENCE: [single sentence main point] FIVE WORDS: [exactly 5 words essence] KEY TOPIC: [1-2 words what this is about]\n\nTEXT: ${text}`;
+
+const buildSummaryPrompt = (text) => `You must respond with ONLY valid JSON in this exact format:
+
+{
+  "oneSentence": "[comprehensive sentence]",
+  "keyWords": "[3-5 keywords separated by commas]", 
+  "mainTopics": "[2-4 topics separated by commas]"
+}
+
+Use comma-separated strings, not arrays.
+
+TEXT: ${text}`;
+
 const parseSummaryResponse = (response) => {
-	const lines = response.split('\n').filter(line => line.trim());
-	return {
-		oneSentence: (extractAfterColon(lines.find(l => l.includes('ONE SENTENCE:'))) || 'Failed to extract').trim(),
-		fiveWords: (extractAfterColon(lines.find(l => l.includes('FIVE WORDS:'))) || 'Failed to extract').trim(),
-		keyTopic: (extractAfterColon(lines.find(l => l.includes('KEY TOPIC:'))) || 'Failed to extract').trim()
-	};
+	try {
+		// Clean and extract JSON
+		let jsonStr = response.trim();
+		const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+		if (jsonMatch) {
+			jsonStr = jsonMatch[0];
+		}
+
+		// Repair incomplete JSON
+		if (!jsonStr.endsWith('}')) {
+			jsonStr += '}';
+		}
+
+		// Parse JSON
+		const parsed = JSON.parse(jsonStr);
+
+		// Handle both array and string formats
+		const extractValue = (value) => {
+			if (Array.isArray(value)) {
+				return value.join(', ');  // Convert arrays to comma-separated strings
+			}
+			return value || 'Failed to extract';
+		};
+
+		return {
+			oneSentence: parsed.oneSentence || 'Failed to extract',
+			keyWords: extractValue(parsed.keyWords),
+			mainTopics: extractValue(parsed.mainTopics)
+		};
+
+	} catch (error) {
+		runtime.logError('[Summary] JSON parse failed:', error);
+		return {
+			oneSentence: 'Failed to extract',
+			keyWords: 'Failed to extract',
+			mainTopics: 'Failed to extract'
+		};
+	}
 };
-const extractAfterColon = (line) => line ? line.split(':').slice(1).join(':').trim() : null;
+// const buildSummaryPrompt = (text) => `Analyze this text and provide: ONE SENTENCE: [single sentence main point] FIVE WORDS: [exactly 5 words essence] KEY TOPIC: [1-2 words what this is about]\n\nTEXT: ${text}`;
+// const parseSummaryResponse = (response) => {
+// 	const lines = response.split('\n').filter(line => line.trim());
+// 	return {
+// 		oneSentence: (extractAfterColon(lines.find(l => l.includes('ONE SENTENCE:'))) || 'Failed to extract').trim(),
+// 		fiveWords: (extractAfterColon(lines.find(l => l.includes('FIVE WORDS:'))) || 'Failed to extract').trim(),
+// 		keyTopic: (extractAfterColon(lines.find(l => l.includes('KEY TOPIC:'))) || 'Failed to extract').trim()
+// 	};
+// };
+// // Update this function to strip markdown
+// const extractAfterColon = (line) => {
+// 	if (!line) return null;
+// 	const text = line.split(':').slice(1).join(':').trim();
+// 	// Strip markdown bold formatting
+// 	return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^\*+|\*+$/g, '').trim();
+// };
 export const evaluate = async (options = {}) => await Promise.all([{
 	id: "chunking_strategy",
 	text: `You're right to question this - we actually didn't definitively settle on it. Let me recap where we left the discussion: Your Initial Question: Should we replace token-based entirely and focus purely on structural components? Your Concerns: 'I don't think there should be any overlap' (We agreed on this), 'I'm not sure if I should throw my entire strategy into assuming punctuation and structure' (This was still uncertain), You questioned whether very long sentences should matter in a pure structure approach. My Recommendation: Try pure structure first, add token guardrails only if needed. Your Response: 'I am working on the four level sentence paragraph section document concept' (but you didn't explicitly approve removing tokens entirely). We have two options: Option A: Pure Structure (No Token Limits) granularity: 'sentence' → Split on sentences, regardless of size, granularity: 'paragraph' → Split on paragraphs, regardless of size. Option B: Structure + Token Safety Net granularity: 'sentence', maxTokens: 100 → Prefer sentences, but split if too long, granularity: 'paragraph', maxTokens: 300 → Prefer paragraphs, but split if too long.`,
