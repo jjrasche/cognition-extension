@@ -29,12 +29,14 @@ import * as webSearchModule from './web-search.module.js';
 import * as superIntendentModule from './superintendent.module.js';
 import * as chromeLocalModule from './chrome-local.module.js'
 import * as liveChunkingModule from './live-chunker.module.js';
+import * as summaryModule from './summary.module.js';
 
 export const modules = [
 	apiKeysModule,
 	chromeSyncModule,
 	chunkModule,
 	claudeApiModule,
+	summaryModule,
 	// contentScriptHandlerModule,
 	contextModule,
 	// debugModule,
@@ -64,18 +66,18 @@ export const modules = [
 ];
 
 export const coreFiles = [
-  'manifest.json',
-  'module-registry.js',
-  'helpers.js',
-  'runtime.js',
-  'service-worker.js',
-  'extension-page.js',
-  'extension-page.html',
-  'extension-page.css',
-  'offscreen.html',
-  'offscreen.js',
+	'manifest.json',
+	'module-registry.js',
+	'helpers.js',
+	'runtime.js',
+	'service-worker.js',
+	'extension-page.js',
+	'extension-page.html',
+	'extension-page.css',
+	'offscreen.html',
+	'offscreen.js',
 ];
 
 export const devFiles = [
-  'dev-reload.js',
+	'dev-reload.js',
 ];

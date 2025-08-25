@@ -66,9 +66,9 @@ const loadDistricts = async () => {
 	districts = JSON.parse(content);
 };
 const extractSuperintendentData = async (district) => {
-	const prompt = buildSuperintendentPrompt(district);
+	const query = buildSuperintendentPrompt(district);
 	const systemPrompt = "You are an AI assistant specialized in finding superintendent information for school districts. Use the provided website to find the most accurate and up-to-date information. list every url you searched in ";
-	const content = await runtime.call('inference.prompt', prompt, systemPrompt, webSearch(district));
+	const content = await runtime.call('inference.prompt', { query, systemPrompt, webSearch: webSearch(district) });
 	return parseSuperintendentResponse(content);
 };
 const webSearch = (district) => ({ max_uses: 5, allowedDomains: [district.website] });
