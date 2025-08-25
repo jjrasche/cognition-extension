@@ -1,6 +1,7 @@
 export const manifest = {
   name: "groq-inference",
   version: "1.0.0",
+  context: ["service-worker"],
   dependencies: ["api-keys"],
   apiKeys: ["groq"],
   actions: ["makeRequest", "formatInteractionFromResponse", "getInteractionsFromExport"],
@@ -31,7 +32,8 @@ export const makeRequest = async (model, messages) => {
     max_tokens: Math.min(model.maxOutput || 4096, 4096),
     stream: false
   };  
-  return await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+  const req = { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) };
+  return await fetch('https://api.groq.com/openai/v1/chat/completions', req);
 };
 
 // export const makeRequest = async (prompt, model) => {
