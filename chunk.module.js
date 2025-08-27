@@ -37,7 +37,11 @@ const semanticMerge = async (sentences, threshold) => {
 		}
 	}
 	chunks.push(currentChunk);
-	return chunks;
+	return await Promise.all(chunks.map(async chunk => {
+		const text = chunk.sentences.map(s => s.sentence).join(' ');
+		const embedding = await runtime.call('embedding.embedText', text, { model });
+		return { ...chunk, text, embedding };
+	}));
 };
 const calculateCentroid = (embeddings) => embeddings[0].map((_, i) => embeddings.reduce((sum, embedding) => sum + embedding[i], 0) / embeddings.length);
 export const splitSentences = async (text, options = {}) => {
@@ -63,7 +67,7 @@ const assessSemanticCoherence = async (chunks) => {
 	if (chunks.length < 2) return { avgCoherence: 1, minCoherence: 1, maxCoherence: 1, coherenceVariance: 0 };
 	const scores = [];
 	for (let i = 0; i < chunks.length - 1; i++) {
-		scores.push(await calculateCosineSimilarity(chunks[i].embedding, chunks[i + 1].embedding));
+		scores.push(calculateCosineSimilarity(chunks[i].embedding, chunks[i + 1].embedding));
 	}
 	return {
 		avgCoherence: scores.reduce((sum, s) => sum + s, 0) / scores.length,
@@ -74,7 +78,8 @@ const assessSemanticCoherence = async (chunks) => {
 };
 const assessBoundaryQuality = async (chunks, originalText) => {
 	let currentIndex = 0;
-	const boundaryScores = chunks.map(text => {
+	const boundaryScores = chunks.map(chunk => {
+		const text = chunk.text;
 		const startIndex = originalText.indexOf(text, currentIndex);
 		const endIndex = startIndex + text.length;
 		currentIndex = endIndex;
@@ -95,7 +100,7 @@ const assessBoundaryQuality = async (chunks, originalText) => {
 	};
 };
 const assessSizeDistribution = (chunks) => {
-	const sizes = chunks.map(c => c.length);
+	const sizes = chunks.map(c => c.text.length);
 	return {
 		avgSize: sizes.reduce((sum, s) => sum + s, 0) / sizes.length,
 		minSize: Math.min(...sizes),
