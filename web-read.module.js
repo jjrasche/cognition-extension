@@ -1,5 +1,5 @@
 export const manifest = {
-	name: "dom-to-tree",
+	name: "web-read",
 	context: ["extension-page"],
 	actions: ["extractPage"],
 	externalDependencies: [
@@ -10,12 +10,7 @@ export const manifest = {
 let runtime, readability;
 export const initialize = async (rt) => {
 	runtime = rt;
-	try {
-		readability = (await import(chrome.runtime.getURL('libs/readability.js'))).Readability;
-		runtime.log('[DOM-to-Tree] Final Readability type:', typeof readability);
-	} catch (error) {
-		runtime.logError('[DOM-to-Tree] Failed to import Readability:', error);
-	}
+	readability = (await import(chrome.runtime.getURL('libs/readability.js'))).Readability;
 };
 
 export const extractPage = async (url) => {
@@ -23,16 +18,16 @@ export const extractPage = async (url) => {
 	const dom = new DOMParser().parseFromString(html, 'text/html');
 	const reader = new readability(dom.cloneNode(true));
 	const article = reader.parse();
-	if (article) {
-		return {
-			title: article.title,
-			title2: title,
-			content: article.textContent,
-			htmlContent: article.content,
-			excerpt: article.excerpt,
-			metadata: { url: actualUrl, timestamp: new Date().toISOString() }
-		};
-	}
+	if (!article) throw new Error('Could not extract article from page');
+	return {
+		"article-container": {
+			tag: "article", class: "readability-article",
+			"back-button": { tag: "button", text: "← Back to Search", class: "cognition-button-secondary cognition-back-button", events: { click: "ui.initializeLayout" } },
+			"article-title": { tag: "h1", text: article.title, class: "cognition-markdown-title" },
+			"article-url": { tag: "div", text: actualUrl, class: "cognition-markdown-url" },
+			"article-content": { tag: "div", innerHTML: article.content, class: "cognition-markdown-content" }
+		}
+	};
 };
 const extractRawDOM = async (url) => runtime.call("tab.executeTemp", url, () => ({
 	html: document.documentElement.outerHTML,

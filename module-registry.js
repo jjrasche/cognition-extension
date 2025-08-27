@@ -22,7 +22,7 @@ import * as webSpeechSTTModule from './web-speech-stt.module.js';
 import * as webSpeechTTSModule from './web-speech-tts.module.js';
 import * as transformerModule from './transformer.module.js';
 import * as chromeSyncModule from './chrome-sync.module.js';
-import * as domToTreeModule from './dom-to-tree.module.js';
+import * as webReadModule from './web-read.module.js';
 import * as treeToDomModule from './tree-to-dom.module.js';
 import * as uiModule from './ui.module.js';
 import * as webSearchModule from './web-search.module.js';
@@ -59,7 +59,7 @@ export const modules = [
 	transformerModule,
 	treeToDomModule,
 	uiModule,
-	domToTreeModule,
+	webReadModule,
 	webSearchModule,
 	superIntendentModule,
 	chromeLocalModule
