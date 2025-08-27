@@ -22,26 +22,34 @@ export const chunk = async (text, options = {}) => {
 	const endTime = performance.now();
 	return { text, chunks, quality, duration: `${(endTime - startTime).toFixed(2)}ms` };
 };
+
 const semanticMerge = async (sentences, threshold) => {
 	const chunks = [];
-	let currentChunk = sentences[0];
+	let currentChunk = { sentences: [sentences[0]], centroid: sentences[0].embedding };
 	for (let i = 1; i < sentences.length; i++) {
-		const sim = await calculateChunkSimilarity(currentChunk, sentences[i]);
-		if (sim > threshold) {
-			currentChunk += ' ' + sentences[i];
+		const shouldMerge = calculateCosineSimilarity(currentChunk.centroid, sentences[i].embedding) > threshold;
+		if (shouldMerge) {
+			currentChunk.sentences.push(sentences[i]);
+			currentChunk.centroid = calculateCentroid(currentChunk.sentences.map(s => s.embedding));
 		} else {
 			chunks.push(currentChunk);
-			currentChunk = sentences[i];
+			currentChunk = { sentences: [sentences[i]], centroid: sentences[i].embedding };
 		}
 	}
 	chunks.push(currentChunk);
 	return chunks;
 };
+const calculateCentroid = (embeddings) => embeddings[0].map((_, i) => embeddings.reduce((sum, embedding) => sum + embedding[i], 0) / embeddings.length);
 export const splitSentences = async (text, options = {}) => {
 	const { locale = 'en' } = options;
 	const segmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
-	return Array.from(segmenter.segment(text)).map(s => s.segment.trim());
+	const sentences = await Promise.all(Array.from(segmenter.segment(text))
+		.map(sentence => sentence.segment.trim())
+		.map(sentence => ({ sentence, embedding: getEmbedding(sentence) }))
+	);
+	return sentences;
 };
+const getEmbedding = async (text) => await runtime.call('embedding.embedText', text, { model });
 
 // quality assessment
 const assessQuality = async (chunks, text) => {
@@ -51,16 +59,11 @@ const assessQuality = async (chunks, text) => {
 		size: assessSizeDistribution(chunks)
 	};
 };
-export const calculateChunkSimilarity = async (a, b) => {
-	const embedding1 = await runtime.call('embedding.embedText', a, { model });
-	const embedding2 = await runtime.call('embedding.embedText', b, { model });
-	return calculateCosineSimilarity(embedding1, embedding2);
-}
 const assessSemanticCoherence = async (chunks) => {
 	if (chunks.length < 2) return { avgCoherence: 1, minCoherence: 1, maxCoherence: 1, coherenceVariance: 0 };
 	const scores = [];
 	for (let i = 0; i < chunks.length - 1; i++) {
-		scores.push(await calculateChunkSimilarity(chunks[i], chunks[i + 1]));
+		scores.push(await calculateCosineSimilarity(chunks[i].embedding, chunks[i + 1].embedding));
 	}
 	return {
 		avgCoherence: scores.reduce((sum, s) => sum + s, 0) / scores.length,

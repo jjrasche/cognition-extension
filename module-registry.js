@@ -30,6 +30,7 @@ import * as superIntendentModule from './superintendent.module.js';
 import * as chromeLocalModule from './chrome-local.module.js'
 import * as liveChunkingModule from './live-chunker.module.js';
 import * as summaryModule from './summary.module.js';
+import * as fileToGraphModule from './file-to-graph.module.js'
 
 export const modules = [
 	apiKeysModule,
@@ -62,7 +63,8 @@ export const modules = [
 	webReadModule,
 	webSearchModule,
 	superIntendentModule,
-	chromeLocalModule
+	chromeLocalModule,
+	fileToGraphModule
 ];
 
 export const coreFiles = [
