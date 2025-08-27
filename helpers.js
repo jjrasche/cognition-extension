@@ -54,21 +54,21 @@ export const calculateCosineSimilarity = (vecA, vecB) => {
 	return dotProduct / (magnitudeA * magnitudeB);
 }
 export const calculateVariance = (numbers) => {
-  if (numbers.length === 0) return 0;
-  const mean = numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
-  const squaredDifferences = numbers.map(n => Math.pow(n - mean, 2));
-  return squaredDifferences.reduce((sum, sq) => sum + sq, 0) / numbers.length;
+	if (numbers.length === 0) return 0;
+	const mean = numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
+	const squaredDifferences = numbers.map(n => Math.pow(n - mean, 2));
+	return squaredDifferences.reduce((sum, sq) => sum + sq, 0) / numbers.length;
 };
 
 // testing
-export const runUnitTest = async (name, testFn) => {
+export const runUnitTest = async (name, testFn, afterFn) => {
 	try {
 		const { actual, expected, assert } = await testFn();
 		const passed = assert(actual, expected);
 		return { name, actual, assert, expected, passed };
-	} catch (error) {
-		return { name, passed: false, error };
 	}
+	catch (error) { return { name, passed: false, error }; }
+	finally { afterFn && await afterFn(); }
 }
 
 export const asserts = {
@@ -85,12 +85,12 @@ export const asserts = {
 		}
 		return false;
 	},
-    // Returns true if A contains all key-value pairs from B
+	// Returns true if A contains all key-value pairs from B
 	containsKeyValuePairs: (a, b) => {
 		if (a === b) return true;
 		if (!a || !b) return false;
 		if (typeof a !== 'object' || typeof b !== 'object') return a === b;
-		
+
 		// Check if all keys in B exist in A with equal values
 		return Object.keys(b).every(key => {
 			if (!(key in a)) return false;

@@ -1,18 +1,28 @@
-import { getId } from "./helpers.js";
+import { getId, calculateCosineSimilarity } from "./helpers.js";
 
 export const manifest = {
 	name: "live-chunker",
 	context: ["extension-page"],
-	version: "1.0.0",
-	description: "Real-time speech chunking with bubble visualization",
-	dependencies: ["web-speech-stt", "ui", "chunk"],
-	actions: ["startDemo", "stopDemo", "processThought", "getChunks", "setThreshold", "setMode", "handleChunkClick", "handleSynthesize"],
+	version: "2.0.0",
+	description: "Real-time hierarchical thought clustering with dynamic re-clustering",
+	dependencies: ["web-speech-stt", "ui", "embedding", "summary"],
+	actions: ["startDemo", "stopDemo", "processThought", "getClusters", "setThreshold", "setMode", "handleClusterClick", "handleSynthesize"],
 };
 
-let runtime, chunks = [], isActive = false, threshold = 0.4, mode = 'view';
-let similarityDuration = 0;
+let runtime, clusters = [], isActive = false, threshold = 0.4, mode = 'view';
+let processingDuration = 0;
 let selectedForMerge = null;
 
+const thoughts = [
+	{ text: "I'm thinking about building a new application", pause: 2000 }, // 2 sec pause
+	{ text: "it would be really cool to use AI for clustering thoughts", pause: 3000 }, // 3 sec pause - related to first
+	{ text: "maybe I should grab some coffee first", pause: 5000 }, // 5 sec pause - topic change
+	{ text: "actually tea sounds better today", pause: 1000 }, // 1 sec pause - related to coffee
+	{ text: "the weather is really nice outside", pause: 4000 }, // 4 sec pause - new topic
+	{ text: "perfect for a walk in the park", pause: 1500 }, // 1.5 sec pause - related to weather
+	{ text: "I wonder how the clustering algorithm handles similar concepts", pause: 6000 }, // 6 sec pause - back to tech
+	{ text: "semantic similarity is fascinating", pause: 2000 } // 2 sec pause - related to clustering
+];
 export const initialize = async (rt) => {
 	runtime = rt;
 	setupKeyboardListeners();
@@ -32,11 +42,11 @@ const setupKeyboardListeners = () => {
 
 export const startDemo = async () => {
 	isActive = true;
-	chunks = [];
+	clusters = [];
 	selectedForMerge = null;
 	await runtime.call('web-speech-stt.startListening');
-	await renderChunkerUI();
-	return { success: true, message: 'Live chunking demo started' };
+	await renderClusterUI();
+	return { success: true, message: 'Live clustering demo started' };
 };
 
 export const stopDemo = async () => {
@@ -44,278 +54,417 @@ export const stopDemo = async () => {
 	mode = 'view';
 	selectedForMerge = null;
 	await runtime.call('web-speech-stt.stopListening');
-	return { success: true, message: 'Live chunking demo stopped' };
+	return { success: true, message: 'Live clustering demo stopped' };
 };
 
 export const processThought = async (thought) => {
 	if (!isActive) return;
 
-	runtime.log('[Live-Chunker] Processing thought:', thought);
-
 	const startTime = performance.now();
 
-	if (chunks.length === 0) {
-		// First chunk - just create it
-		chunks.push({
-			thoughts: [thought],
-			id: getId('chunk-')
-		});
-	} else {
-		// Test similarity with all existing chunks
-		const similarities = await Promise.all(
-			chunks.map(async chunk => {
-				const chunkText = chunk.thoughts.map(t => t.text).join(' ');
-				return await runtime.call('chunk.calculateChunkSimilarity', chunkText, thought.text);
-			})
-		);
+	// Embed the thought once and cache it
+	const embedding = await runtime.call('embedding.embedText', thought.text);
+	const enrichedThought = { ...thought, embedding, id: thought.id || getId('thought-') };
 
-		const maxSimilarity = Math.max(...similarities);
-		const bestChunkIndex = similarities.indexOf(maxSimilarity);
+	// Add to thoughts collection
+	thoughts.push(enrichedThought);
 
-		const now = Date.now();
-		const lastThoughtTime = chunks[bestChunkIndex].thoughts[chunks[bestChunkIndex].thoughts.length - 1]?.timestamp || now;
-		const timeDelta = now - lastThoughtTime;
+	// Re-cluster all thoughts with current threshold
+	clusters = await hierarchicalCluster(thoughts, threshold);
 
-		if (shouldMergeWithChunk(maxSimilarity, timeDelta)) {
-			// Add to existing chunk
-			chunks[bestChunkIndex].thoughts.push(thought);
-			runtime.log(`[Live-Chunker] Added to chunk ${bestChunkIndex} (${maxSimilarity.toFixed(3)} similarity)`);
-		} else {
-			// Create new chunk
-			chunks.push({
-				thoughts: [thought],
-				id: getId('chunk-')
-			});
-			runtime.log('[Live-Chunker] Created new chunk');
+	// Add synthesis to clusters with multiple thoughts
+	for (const cluster of clusters.filter(c => c.thoughts.length > 1)) {
+		if (!cluster.synthesis || cluster.thoughts.length !== cluster.lastSynthesisCount) {
+			await addSynthesis(cluster);
 		}
 	}
 
-	for (const chunk of chunks) {
-		const orbitingChunks = await getOrbitingChunks(chunk);
-		chunk.orbitingChunks = orbitingChunks;
+	// Update graph connections for each cluster
+	for (const cluster of clusters) {
+		cluster.orbitingNodes = await getOrbitingNodes(cluster);
 	}
 
-	similarityDuration = performance.now() - startTime;
-	await renderChunkerUI();
+	processingDuration = performance.now() - startTime;
+	await renderClusterUI();
 };
 
-const getOrbitingChunks = async (cluster) => {
-	const combinedText = cluster.thoughts.map(t => t.text).join(' ');
-	const embedding = await runtime.call('embedding.embedText', combinedText);
+const hierarchicalCluster = async (allThoughts, baseThreshold) => {
+	if (allThoughts.length === 0) return [];
 
-	// Find semantically similar graph nodes
-	const relatedNodes = await runtime.call('graph-db.searchByText', { text: combinedText, threshold: 0.4 });
+	// More lenient for thought-thought merging, stricter for cluster-cluster
+	const thoughtThreshold = baseThreshold * 1.2; // More lenient
+	const clusterThreshold = baseThreshold * 0.8; // More strict
 
-	return relatedNodes.map(node => ({
-		id: node.id,
-		text: node.content?.substring(0, 100) + '...' || 'No content',
-		similarity: node.similarity || 0,
-		distance: 1 - (node.similarity || 0),
-		approved: null
+	// Initialize: each thought is its own cluster
+	let currentClusters = allThoughts.map(thought => ({
+		thoughts: [thought],
+		centroid: thought.embedding,
+		id: getId('cluster-'),
+		isOriginalThought: true
 	}));
+
+	while (true) {
+		const bestMerge = findBestMergeCandidate(currentClusters);
+		runtime.log(`${(bestMerge.similarity * 100).toFixed(1)}% \n\t C1: "${bestMerge.cluster1.thoughts[0]?.text || 'Empty'}" (${bestMerge.cluster1.thoughts.length}) \n\t C2: "${bestMerge.cluster2.thoughts[0]?.text || 'Empty'}" (${bestMerge.cluster2.thoughts.length}) \n\t ${bestMerge.bothAreClusters ? 'Cluster-Cluster' : 'Thought-Thought'} merge`)
+		if (!bestMerge) break;
+
+		// Use appropriate threshold based on what we're merging
+		const activeThreshold = (bestMerge.bothAreClusters) ? clusterThreshold : thoughtThreshold;
+
+		if (bestMerge.similarity < activeThreshold) break;
+
+		// Merge the two best candidates
+		const merged = mergeClusters(bestMerge.cluster1, bestMerge.cluster2);
+		currentClusters = currentClusters.filter(c => c !== bestMerge.cluster1 && c !== bestMerge.cluster2);
+		currentClusters.push(merged);
+	}
+
+	// Cleanup pass: remove thoughts too distant from cluster centroids
+	let displacedThoughts = [];
+	currentClusters = currentClusters.map(cluster => {
+		if (cluster.thoughts.length === 1) return cluster; // Single thoughts can't be displaced
+
+		const displaced = cluster.thoughts.filter(thought =>
+			calculateCosineSimilarity(thought.embedding, cluster.centroid) < baseThreshold
+		);
+
+		if (displaced.length > 0) {
+			displacedThoughts.push(...displaced);
+			const remaining = cluster.thoughts.filter(t => !displaced.includes(t));
+
+			if (remaining.length === 0) return null; // Cluster dissolved
+
+			return {
+				...cluster,
+				thoughts: remaining,
+				centroid: calculateCentroid(remaining.map(t => t.embedding))
+			};
+		}
+
+		return cluster;
+	}).filter(Boolean);
+
+	// Recursively re-cluster displaced thoughts
+	if (displacedThoughts.length > 0) {
+		const newClusters = await hierarchicalCluster(displacedThoughts, baseThreshold);
+		currentClusters.push(...newClusters);
+	}
+
+	return currentClusters;
 };
 
-export const setMode = async (eventOrMode) => {
-	// Handle both direct calls and UI events
-	const newMode = typeof eventOrMode === 'string' ? eventOrMode : eventOrMode.target.dataset.mode;
+const findBestMergeCandidate = (currentClusters) => {
+	let bestSimilarity = -1;
+	let bestPair = null;
 
-	mode = mode === newMode ? 'view' : newMode; // Toggle if same mode
-	selectedForMerge = null; // Reset merge selection
+	for (let i = 0; i < currentClusters.length; i++) {
+		for (let j = i + 1; j < currentClusters.length; j++) {
+			const similarity = calculateCosineSimilarity(
+				currentClusters[i].centroid,
+				currentClusters[j].centroid
+			);
 
-	await renderChunkerUI();
-	runtime.log(`[Live-Chunker] Mode: ${mode}`);
+			if (similarity > bestSimilarity) {
+				bestSimilarity = similarity;
+				bestPair = {
+					cluster1: currentClusters[i],
+					cluster2: currentClusters[j],
+					similarity,
+					bothAreClusters: !currentClusters[i].isOriginalThought && !currentClusters[j].isOriginalThought
+				};
+			}
+		}
+	}
+
+	return bestPair;
+};
+
+const mergeClusters = (cluster1, cluster2) => ({
+	thoughts: [...cluster1.thoughts, ...cluster2.thoughts].sort((a, b) => a.timestamp - b.timestamp),
+	centroid: calculateCentroid([...cluster1.thoughts, ...cluster2.thoughts].map(t => t.embedding)),
+	id: getId('cluster-'),
+	isOriginalThought: false,
+	mergedFrom: [cluster1.id, cluster2.id]
+});
+
+const calculateCentroid = (embeddings) => {
+	const dims = embeddings[0].length;
+	const centroid = new Array(dims).fill(0);
+
+	for (const embedding of embeddings) {
+		for (let i = 0; i < dims; i++) {
+			centroid[i] += embedding[i];
+		}
+	}
+
+	return centroid.map(val => val / embeddings.length);
+};
+
+const addSynthesis = async (cluster) => {
+	try {
+		const allText = cluster.thoughts.map(t => t.text).join(' ');
+		cluster.synthesis = await runtime.call('summary.summarize', allText);
+		cluster.lastSynthesisCount = cluster.thoughts.length;
+		cluster.synthesisAt = new Date().toISOString();
+	} catch (error) {
+		runtime.logError('[Live-Chunker] Synthesis failed:', error);
+		cluster.synthesis = { oneSentence: 'Synthesis failed', keyWords: '', mainTopics: '' };
+	}
+};
+
+const getOrbitingNodes = async (cluster) => {
+	const allText = cluster.thoughts.map(t => t.text).join(' ');
+	const relatedNodes = await runtime.call('graph-db.searchByText', { text: allText, threshold: 0.4 });
+
+	return relatedNodes.slice(0, 5).map(node => ({
+		id: node.id,
+		text: (node.content || 'No content').substring(0, 80) + '...',
+		similarity: node.similarity || 0,
+		distance: 1 - (node.similarity || 0)
+	}));
 };
 
 export const setThreshold = async (event) => {
 	threshold = parseFloat(event.target.value);
-	await renderChunkerUI();
-	runtime.log(`[Live-Chunker] Threshold: ${threshold}`);
+
+	// Re-cluster all thoughts with new threshold
+	if (thoughts.length > 0) {
+		const startTime = performance.now();
+		clusters = await hierarchicalCluster(thoughts, threshold);
+
+		// Re-synthesize clusters that changed
+		for (const cluster of clusters.filter(c => c.thoughts.length > 1)) {
+			await addSynthesis(cluster);
+			cluster.orbitingNodes = await getOrbitingNodes(cluster);
+		}
+
+		processingDuration = performance.now() - startTime;
+	}
+
+	await renderClusterUI();
+	runtime.log(`[Live-Chunker] Re-clustered with threshold: ${threshold}`);
 };
 
-export const handleChunkClick = async (event) => {
-	const chunkId = event.target.closest('[data-chunk-id]').dataset.chunkId;
+export const setMode = async (eventOrMode) => {
+	const newMode = typeof eventOrMode === 'string' ? eventOrMode : eventOrMode.target.dataset.mode;
+	mode = mode === newMode ? 'view' : newMode;
+	selectedForMerge = null;
+	await renderClusterUI();
+	runtime.log(`[Live-Chunker] Mode: ${mode}`);
+};
+
+export const handleClusterClick = async (event) => {
+	const clusterId = event.target.closest('[data-cluster-id]').dataset.clusterId;
 
 	if (mode === 'delete') {
-		await deleteChunk(chunkId);
+		await deleteCluster(clusterId);
 	} else if (mode === 'merge') {
-		await handleMergeClick(chunkId);
+		await handleMergeClick(clusterId);
 	}
 };
 
-const shouldMergeWithChunk = (semanticSim, timeDelta) => {
-	const semanticWeight = 0.7;
-	const temporalWeight = 0.3;
-	const maxTimeDelta = 30000; // 30 seconds
-
-	const temporalSim = Math.max(0, 1 - (timeDelta / maxTimeDelta));
-	const combinedScore = (semanticSim * semanticWeight) + (temporalSim * temporalWeight);
-
-	return combinedScore > 0.4;
-};
-
-const synthesizeChunk = async (chunk) => {
-	const prompt = `Synthesize the core idea from these related thoughts:\n${chunk.sentences.join('\n')}`;
-	return await runtime.call('inference.prompt', { query: prompt, systemPrompt: "Create a 1-2 sentence synthesis of the main idea." });
-};
-
-const handleMergeClick = async (chunkId) => {
+const handleMergeClick = async (clusterId) => {
 	if (!selectedForMerge) {
-		// First selection
-		selectedForMerge = chunkId;
-		await renderChunkerUI(); // Re-render to show selection
-		runtime.log(`[Live-Chunker] Selected chunk for merge: ${chunkId}`);
-	} else if (selectedForMerge === chunkId) {
-		// Clicked same chunk - deselect
+		selectedForMerge = clusterId;
+		await renderClusterUI();
+		runtime.log(`[Live-Chunker] Selected cluster for merge: ${clusterId}`);
+	} else if (selectedForMerge === clusterId) {
 		selectedForMerge = null;
-		await renderChunkerUI();
-		runtime.log(`[Live-Chunker] Deselected chunk`);
+		await renderClusterUI();
+		runtime.log(`[Live-Chunker] Deselected cluster`);
 	} else {
-		// Second selection - merge them
-		await mergeChunks(selectedForMerge, chunkId);
+		await manualMergeClusters(selectedForMerge, clusterId);
 	}
 };
 
-const mergeChunks = async (chunk1Id, chunk2Id) => {
-	const chunk1Index = chunks.findIndex(c => c.id === chunk1Id);
-	const chunk2Index = chunks.findIndex(c => c.id === chunk2Id);
+const manualMergeClusters = async (cluster1Id, cluster2Id) => {
+	const cluster1Index = clusters.findIndex(c => c.id === cluster1Id);
+	const cluster2Index = clusters.findIndex(c => c.id === cluster2Id);
 
-	if (chunk1Index === -1 || chunk2Index === -1) return;
+	if (cluster1Index === -1 || cluster2Index === -1) return;
 
-	// Merge chunk2 into chunk1 (chronologically)
-	chunks[chunk1Index].thoughts = [...chunks[chunk1Index].thoughts, ...chunks[chunk2Index].thoughts]
-		.sort((a, b) => a.timestamp - b.timestamp);
-	chunks.splice(chunk2Index, 1);
+	const merged = mergeClusters(clusters[cluster1Index], clusters[cluster2Index]);
+	clusters = clusters.filter((_, i) => i !== cluster1Index && i !== cluster2Index);
+	clusters.push(merged);
+
+	await addSynthesis(merged);
+	merged.orbitingNodes = await getOrbitingNodes(merged);
 
 	selectedForMerge = null;
 	mode = 'view';
-	await renderChunkerUI();
-	runtime.log(`[Live-Chunker] Merged chunks`);
+	await renderClusterUI();
+	runtime.log(`[Live-Chunker] Manually merged clusters`);
 };
 
-const deleteChunk = async (chunkId) => {
-	const index = chunks.findIndex(c => c.id === chunkId);
+const deleteCluster = async (clusterId) => {
+	const index = clusters.findIndex(c => c.id === clusterId);
 	if (index === -1) return;
 
-	chunks.splice(index, 1);
+	// Remove cluster's thoughts from thoughts array
+	const clusterThoughts = clusters[index].thoughts;
+	thoughts = thoughts.filter(t => !clusterThoughts.includes(t));
+	clusters.splice(index, 1);
+
 	mode = 'view';
-	await renderChunkerUI();
-	runtime.log(`[Live-Chunker] Deleted chunk`);
+	await renderClusterUI();
+	runtime.log(`[Live-Chunker] Deleted cluster and its thoughts`);
 };
 
-const renderChunkerUI = async () => {
+export const handleSynthesize = async (event) => {
+	const clusterId = event.target.dataset.clusterId;
+	const cluster = clusters.find(c => c.id === clusterId);
+	if (!cluster) return;
+
+	await runtime.call('ui.showModal', {
+		title: "Cluster Synthesis",
+		content: `
+			<div style="margin-bottom: 16px;">
+				<strong>Summary:</strong> ${cluster.synthesis?.oneSentence || 'No synthesis available'}
+			</div>
+			<div style="margin-bottom: 16px;">
+				<strong>Key Words:</strong> ${cluster.synthesis?.keyWords || 'None'}
+			</div>
+			<div style="margin-bottom: 16px;">
+				<strong>Main Topics:</strong> ${cluster.synthesis?.mainTopics || 'None'}
+			</div>
+			<div style="font-size: 12px; color: #666;">
+				${cluster.thoughts.length} thoughts • Generated ${cluster.synthesisAt ? new Date(cluster.synthesisAt).toLocaleTimeString() : 'never'}
+			</div>
+		`,
+		actions: { "close-btn": { tag: "button", text: "Close", class: "cognition-button-primary", events: { click: "ui.closeModal" } } }
+	});
+};
+
+const renderClusterUI = async () => {
 	const tree = {
-		"chunker-container": {
-			tag: "div", class: "chunker-container", style: "padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;",
+		"cluster-container": {
+			tag: "div", class: "cluster-container", style: "padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;",
 			"controls": {
 				tag: "div", style: "margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;",
 				"threshold-control": {
 					tag: "label", text: `Similarity Threshold: ${threshold} `, style: "display: flex; align-items: center; gap: 8px; font-size: 14px;",
 					"threshold-slider": { tag: "input", type: "range", min: "0.1", max: "0.9", step: "0.05", value: threshold.toString(), events: { input: "live-chunker.setThreshold" }, style: "width: 120px;" }
 				},
-				"performance": { tag: "span", text: `Calc: ${similarityDuration.toFixed(1)}ms`, style: "font-size: 12px; color: #666; opacity: 0.7; background: #f0f0f0; padding: 4px 8px; border-radius: 4px;" },
+				"stats": {
+					tag: "div", style: "font-size: 12px; color: #666; display: flex; gap: 12px;",
+					"thought-count": { tag: "span", text: `${thoughts.length} thoughts`, style: "background: #e8f4f8; padding: 4px 8px; border-radius: 4px;" },
+					"cluster-count": { tag: "span", text: `${clusters.length} clusters`, style: "background: #f0f8e8; padding: 4px 8px; border-radius: 4px;" },
+					"performance": { tag: "span", text: `${processingDuration.toFixed(1)}ms`, style: "background: #f8f0e8; padding: 4px 8px; border-radius: 4px;" }
+				},
 				"mode-buttons": {
 					tag: "div", style: "display: flex; gap: 8px;",
 					"merge-btn": { tag: "button", text: mode === 'merge' ? "✓ Merge (M)" : "Merge (M)", class: mode === 'merge' ? "cognition-button-primary" : "cognition-button-secondary", events: { click: "live-chunker.setMode" }, "data-mode": "merge", style: "font-size: 12px; padding: 6px 12px;" },
 					"delete-btn": { tag: "button", text: mode === 'delete' ? "✓ Delete (D)" : "Delete (D)", class: mode === 'delete' ? "cognition-button-primary" : "cognition-button-secondary", events: { click: "live-chunker.setMode" }, "data-mode": "delete", style: "font-size: 12px; padding: 6px 12px;" }
 				}
 			},
-			"chunks": { tag: "div", style: "display: flex; flex-wrap: wrap; gap: 15px;", ...await createChunkBubbles() }
+			"clusters": { tag: "div", style: "display: flex; flex-wrap: wrap; gap: 15px;", ...createClusterBubbles() }
 		}
 	};
 
 	await runtime.call('ui.renderTree', tree);
 };
 
-const createChunkBubbles = async () => {
+const createClusterBubbles = () => {
 	const bubbles = {};
 
-	await Promise.all(chunks.map(async (chunk, index) => {
-		const chunkDetails = await Promise.all(chunk.thoughts.map(async (thought, i) => {
-			if (i === 0) return { thought, similarity: null };
-			const prevThought = chunk.thoughts[i - 1];
-			const similarity = await runtime.call('chunk.calculateChunkSimilarity', prevThought.text, thought.text);
-			return { thought, similarity };
-		}));
-		const bubbleId = `chunk-${chunk.id}`;
-		const thoughtCount = chunk.thoughts.length;
-		const allText = chunk.thoughts.map(t => t.text).join(' ');
-		const previewText = allText.length > 100 ? allText.substring(0, 97) + '...' : allText;
+	clusters.forEach((cluster, index) => {
+		const bubbleId = `cluster-${cluster.id}`;
+		const thoughtCount = cluster.thoughts.length;
+		const allText = cluster.thoughts.map(t => t.text).join(' ');
+		const previewText = allText.length > 120 ? allText.substring(0, 117) + '...' : allText;
 
-		const isSelected = selectedForMerge === chunk.id;
+		const isSelected = selectedForMerge === cluster.id;
 		const isInteractive = mode === 'merge' || mode === 'delete';
 
 		// Color calculation
 		const hue = (index * 60) % 360;
-		const baseColor = `hsl(${hue}, 70%, 85%)`;
-		const borderColor = `hsl(${hue}, 70%, 70%)`;
+		const saturation = thoughtCount === 1 ? '50%' : '70%';
+		const lightness = thoughtCount === 1 ? '90%' : '85%';
+		const baseColor = `hsl(${hue}, ${saturation}, ${lightness})`;
+		const borderColor = `hsl(${hue}, ${saturation}, 70%)`;
 
 		let backgroundColor = baseColor;
 		let borderWidth = '2px';
 
 		if (mode === 'delete') {
-			backgroundColor = `hsl(0, 60%, 90%)`; // Reddish tint for delete mode
+			backgroundColor = `hsl(0, 60%, 90%)`;
 		} else if (isSelected) {
-			backgroundColor = `hsl(${hue}, 80%, 75%)`; // Brighter when selected
+			backgroundColor = `hsl(${hue}, 80%, 75%)`;
 			borderWidth = '3px';
 		}
 
 		bubbles[bubbleId] = {
 			tag: "div",
-			class: `chunk-bubble ${isInteractive ? 'interactive' : ''}`,
-			style: ` background: ${backgroundColor}; border-radius: 15px; padding: 12px 16px; border: ${borderWidth} solid ${borderColor}; max-width: 300px; min-width: 180px; cursor: ${isInteractive ? 'pointer' : 'default'}; opacity: ${mode === 'view' ? '1' : '0.85'}; transition: all 0.2s ease; box-shadow: ${isSelected ? '0 4px 12px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.1)'}; transform: ${isSelected ? 'translateY(-2px)' : 'none'};`,
-			events: isInteractive ? { click: "live-chunker.handleChunkClick" } : {},
-			"data-chunk-id": chunk.id,
-			title: allText, // Full text on hover
-			[`${bubbleId}-count`]: { tag: "div", text: `${thoughtCount} thought${thoughtCount > 1 ? 's' : ''}`, style: "font-size: 11px; color: #666; margin-bottom: 6px; font-weight: bold;" },
-			[`${bubbleId}-text`]: { tag: "div", text: previewText, style: "font-size: 13px; line-height: 1.4; color: #333;" },
-			[`${bubbleId}-similarities`]: { tag: "div", style: "margin-top: 8px; font-size: 10px; color: #666;", innerHTML: chunkDetails.slice(1).map((detail, i) => `${i + 1}→${i + 2}: ${(detail.similarity * 100).toFixed(0)}%`).join(' · ') },
-			// Show selection indicator for merge mode
+			class: `cluster-bubble ${isInteractive ? 'interactive' : ''}`,
+			style: `background: ${backgroundColor}; border-radius: 15px; padding: 12px 16px; border: ${borderWidth} solid ${borderColor}; max-width: 320px; min-width: 200px; cursor: ${isInteractive ? 'pointer' : 'default'}; opacity: ${mode === 'view' ? '1' : '0.85'}; transition: all 0.2s ease; box-shadow: ${isSelected ? '0 4px 12px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.1)'}; transform: ${isSelected ? 'translateY(-2px)' : 'none'};`,
+			events: isInteractive ? { click: "live-chunker.handleClusterClick" } : {},
+			"data-cluster-id": cluster.id,
+			title: allText,
+			[`${bubbleId}-header`]: {
+				tag: "div", style: "display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;",
+				[`${bubbleId}-count`]: { tag: "div", text: `${thoughtCount} thought${thoughtCount > 1 ? 's' : ''}`, style: "font-size: 11px; color: #666; font-weight: bold;" },
+				...(thoughtCount > 1 && {
+					[`${bubbleId}-type`]: { tag: "div", text: "CLUSTER", style: "font-size: 9px; background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 8px; color: #333;" }
+				})
+			},
+			[`${bubbleId}-text`]: { tag: "div", text: previewText, style: "font-size: 13px; line-height: 1.4; color: #333; margin-bottom: 8px;" },
+
+			// Synthesis section for multi-thought clusters
+			...(cluster.synthesis && {
+				[`${bubbleId}-synthesis`]: {
+					tag: "div", style: "background: rgba(255,255,255,0.6); padding: 8px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid rgba(0,0,0,0.2);",
+					[`${bubbleId}-synthesis-text`]: { tag: "div", text: cluster.synthesis.oneSentence, style: "font-size: 12px; font-style: italic; color: #444; margin-bottom: 4px;" },
+					[`${bubbleId}-synthesis-keywords`]: { tag: "div", text: `Keywords: ${cluster.synthesis.keyWords}`, style: "font-size: 10px; color: #666;" }
+				}
+			}),
+
+			// Controls
+			[`${bubbleId}-controls`]: {
+				tag: "div", style: "display: flex; gap: 6px; margin-top: 8px;",
+				...(thoughtCount > 1 && {
+					[`${bubbleId}-synthesize`]: { tag: "button", text: "💡", class: "cognition-button-secondary", style: "font-size: 12px; padding: 4px 8px;", events: { click: "live-chunker.handleSynthesize" }, "data-cluster-id": cluster.id, title: "View synthesis" }
+				})
+			},
+
+			// Selection indicator
 			...(isSelected && {
-				[`${bubbleId}-selected`]: { tag: "div", text: "✓ Selected", style: "font-size: 10px; color: #0066cc; margin-top: 6px; font-weight: bold;" }
+				[`${bubbleId}-selected`]: { tag: "div", text: "✓ Selected for merge", style: "font-size: 10px; color: #0066cc; margin-top: 6px; font-weight: bold;" }
 			}),
-			...(thoughtCount > 1 && {
-				[`${bubbleId}-synthesize`]: { tag: "button", text: "💡 Synthesize", class: "cognition-button-secondary", style: "font-size: 10px; padding: 4px 8px; margin-top: 6px;", events: { click: "live-chunker.handleSynthesize" }, "data-chunk-id": chunk.id }
-			}),
-			...(chunk.orbitingChunks && chunk.orbitingChunks.length > 0 && {
-				[`${bubbleId}-orbiting-container`]: {
-					tag: "div",
-					style: "position: relative; margin-top: 8px;",
-					...chunk.orbitingChunks.reduce((orbitBubbles, orbitChunk, i) => {
-						orbitBubbles[`${bubbleId}-orbit-${i}`] = {
-							tag: "div",
-							class: "orbiting-chunk",
-							style: `display: inline-block; margin: 2px; padding: 4px 8px; background: rgba(255,255,255,0.7); border-radius: 12px; font-size: 10px; cursor: pointer; border: 1px solid #ddd;`,
-							text: orbitChunk.text,
-							events: { click: "live-chunker.handleOrbitSwipe" },
-							"data-chunk-id": chunk.id,
-							"data-orbit-id": orbitChunk.id,
-							title: `Similarity: ${(orbitChunk.similarity * 100).toFixed(1)}%`
-						};
-						return orbitBubbles;
-					}, {})
+
+			// Orbiting nodes
+			...(cluster.orbitingNodes && cluster.orbitingNodes.length > 0 && {
+				[`${bubbleId}-orbiting`]: {
+					tag: "div", style: "margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.1);",
+					[`${bubbleId}-orbit-label`]: { tag: "div", text: "Related:", style: "font-size: 9px; color: #666; margin-bottom: 4px;" },
+					[`${bubbleId}-orbit-list`]: {
+						tag: "div", style: "display: flex; flex-wrap: wrap; gap: 4px;",
+						...cluster.orbitingNodes.reduce((orbitBubbles, node, i) => {
+							orbitBubbles[`${bubbleId}-orbit-${i}`] = {
+								tag: "div",
+								style: "display: inline-block; padding: 2px 6px; background: rgba(255,255,255,0.8); border-radius: 8px; font-size: 9px; cursor: pointer; border: 1px solid #ddd;",
+								text: node.text.substring(0, 30) + (node.text.length > 30 ? '...' : ''),
+								title: `${node.text} (${(node.similarity * 100).toFixed(1)}% similar)`
+							};
+							return orbitBubbles;
+						}, {})
+					}
 				}
 			})
 		};
-	}));
+	});
+
 	return bubbles;
 };
 
-export const handleSynthesize = async (event) => {
-	const chunkId = event.target.dataset.chunkId;
-	const chunk = chunks.find(c => c.id === chunkId);
-	if (!chunk) return;
-
-	const synthesis = await synthesizeChunk(chunk);
-	// Display synthesis in a modal or update the bubble
-	await runtime.call('ui.showModal', {
-		title: "Thought Synthesis",
-		content: synthesis,
-		actions: { "close-btn": { tag: "button", text: "Close", class: "cognition-button-primary", events: { click: "ui.closeModal" } } }
-	});
-};
-export const getChunks = async () => ({
-	chunks,
-	totalThoughts: chunks.reduce((sum, c) => sum + c.thoughts.length, 0),
+export const getClusters = async () => ({
+	thoughts: thoughts.length,
+	clusters: clusters.length,
 	threshold,
-	mode
+	mode,
+	details: clusters.map(c => ({
+		id: c.id,
+		thoughtCount: c.thoughts.length,
+		hasSynthesis: !!c.synthesis,
+		orbitingNodes: c.orbitingNodes?.length || 0
+	}))
 });
