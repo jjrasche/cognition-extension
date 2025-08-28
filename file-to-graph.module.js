@@ -37,11 +37,11 @@ export const ingestFile = async (filename) => {
 };
 
 
-const runChunkingEvaluation = async (threshold = 0.3) => {
+const runChunkingEvaluation = async (threshold) => {
 	const testCases = await loadTestCases();
 	const results = await Promise.all(testCases.map(async testCase => {
 		const chunkResult = await runtime.call('chunk.chunk', testCase.content, { threshold, testQueries: testCase.queries });
-		return {
+		const ret = {
 			fileName: testCase.fileName,
 			chunkCount: chunkResult.chunks.length,
 			retrievalConfidence: chunkResult.retrievalPrediction.confidence,
@@ -49,13 +49,17 @@ const runChunkingEvaluation = async (threshold = 0.3) => {
 			boundaryQuality: chunkResult.quality.boundary.avgBoundaryQuality,
 			avgChunkSize: chunkResult.quality.size.avgSize
 		};
+		runtime.log(`runChunkingEvaluation ${testCase.fileName}`, ret);
+		return ret;
 	}));
-	return {
+	const ret = {
 		threshold,
 		results,
 		avgConfidence: results.reduce((sum, r) => sum + r.retrievalConfidence, 0) / results.length,
 		avgChunks: results.reduce((sum, r) => sum + r.chunkCount, 0) / results.length
 	};
+	runtime.log('runChunkingEvaluation total', ret);
+	return ret;
 };
 
 const loadTestCases = async () => {
@@ -72,10 +76,9 @@ const loadTestCases = async () => {
 	}));
 };
 
-export const renderEvaluationDashboard = async () => {
-	const results = await runChunkingEvaluation(0.3);
-
-	return {
+export const renderEvaluationDashboard = async (threshold = .3) => {
+	const results = await runChunkingEvaluation(threshold);
+	const ret = {
 		"eval-dashboard": {
 			tag: "div", class: "evaluation-container",
 			"back-button": {
@@ -85,10 +88,10 @@ export const renderEvaluationDashboard = async () => {
 			},
 			"threshold-control": {
 				tag: "div", style: "margin: 20px 0;",
-				"threshold-label": { tag: "label", text: `Threshold: ${results.threshold}` },
+				"threshold-label": { tag: "label", text: `Threshold: ${threshold}` },
 				"threshold-slider": {
-					tag: "input", type: "range", min: "0.1", max: "0.9", step: "0.05",
-					value: results.threshold,
+					tag: "input", type: "range", min: "-.3", max: "0.9", step: "0.1",
+					value: threshold,
 					events: { input: "file-to-graph.handleThresholdChange" }
 				}
 			},
@@ -100,6 +103,8 @@ export const renderEvaluationDashboard = async () => {
 			"results-table": buildResultsTable(results.results)
 		}
 	};
+	runtime.log('renderEvaluationDashboard', ret);
+	return ret;
 };
 
 const buildResultsTable = (results) => {
@@ -130,7 +135,7 @@ const buildTableRows = (results) => {
 		const rowId = `row-${index}`;
 		rows[rowId] = {
 			tag: "tr",
-			style: index % 2 === 0 ? "background-color: #f9f9f9;" : "",
+			style: index % 2 === 0 ? "background-color: #000000ff;" : "",
 			[`${rowId}-file`]: {
 				tag: "td",
 				text: result.fileName,
@@ -163,6 +168,6 @@ const buildTableRows = (results) => {
 };
 export const handleThresholdChange = async (event) => {
 	const threshold = parseFloat(event.target.value);
-	const tree = await renderEvaluationDashboard(); // Re-render with new threshold
+	const tree = await renderEvaluationDashboard(threshold);
 	await runtime.call('ui.renderTree', tree);
 };

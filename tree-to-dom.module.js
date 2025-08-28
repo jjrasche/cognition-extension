@@ -38,6 +38,11 @@ const setClassProp = (el, node) => node.class && (el.className = node.class);
 const setIdProp = (el, node) => node.id && (el.id = node.id);
 const setFormProps = (el, node) => {
 	['name', 'type', 'value', 'placeholder', 'required'].forEach(prop => node[prop] && (el[prop] = node[prop]));
+	if (node.type === 'range' && node.value !== undefined) {
+		el.value = node.value;
+		setTimeout(() => { el.value = node.value; }, 0);
+	} else if (node.value !== undefined) el.value = node.value;
+
 	if ('disabled' in node) el.disabled = node.disabled;
 };
 const setDataProps = (el, node) => node.data && Object.entries(node.data).forEach(([key, value]) => el.setAttribute(`data-${key}`, value));

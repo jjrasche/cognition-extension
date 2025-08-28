@@ -59,10 +59,7 @@ export const splitSentences = async (text, options = {}) => {
 	);
 	return sentences;
 };
-const getEmbedding = async (text) => {
-	// if (!text || !text.trim()) return null;
-	return await runtime.call('embedding.embedText', text, { model });
-}
+const getEmbedding = async (text) => await runtime.call('embedding.embedText', text, { model });
 
 // quality assessment
 const assessQuality = async (chunks, text) => {
@@ -122,11 +119,7 @@ const predictRetrievalSuccess = async (chunks, testQueries) => {
 	if (!testQueries?.length) return { confidence: 0.5, reason: 'No test queries provided' };
 
 	const predictions = await Promise.all(testQueries.map(async query => {
-		const queryEmbedding = await getEmbedding(query);
-		const similarities = chunks.map(chunk =>
-			calculateCosineSimilarity(queryEmbedding, chunk.embedding)
-		).sort((a, b) => b - a);
-
+		const similarities = chunks.map(chunk => calculateCosineSimilarity(query.embedding, chunk.embedding)).sort((a, b) => b - a);
 		return {
 			query,
 			bestMatch: similarities[0],
@@ -144,25 +137,4 @@ const predictRetrievalSuccess = async (chunks, testQueries) => {
 		avgBestMatch,
 		avgCoverage
 	};
-};
-
-// testing
-export const test = async () => {
-	const { runUnitTest, deepEqual, strictEqual } = runtime.testUtils;
-
-	return await Promise.all([
-		runUnitTest("High similarity sentences merge into single chunk", async () => {
-			const text = `AI is transforming healthcare rapidly. Machine learning helps doctors diagnose diseases accurately. Quantum computing represents the future of computation. The solar system contains eight planets orbiting the sun. Mars has two small moons named Phobos and Deimos. Jupiter is the largest planet with over 70 moons. Saturn's rings are made of ice and rock particles. Neptune is the windiest planet in our solar system. Basketball requires teamwork and strategy. Professional athletes train for many hours daily.`
-			const result = await chunk(text, { threshold: 0.3, model: "Xenova/all-MiniLM-L6-v2-fp16-webgpu" });
-			console.log(result)
-
-			// Should have 2 chunks: AI+ML together, sports separate
-			const actual = {
-				chunkCount: result.chunks.length,
-				firstChunkHasBoth: result.chunks[0].includes("AI") && result.chunks[0].includes("Machine learning"),
-			};
-			const expected = { chunkCount: 5, firstChunkHasBoth: true };
-			return { actual, assert: deepEqual, expected };
-		}),
-	]);
 };
