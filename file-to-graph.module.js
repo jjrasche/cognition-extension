@@ -21,11 +21,11 @@ export const ingestFile = async (filename) => {
 	const content = await runtime.call('file.read', { dir: 'SelectedNotes', filename });
 	runtime.log(`${filename}  ${content.length}`);
 	const { chunks } = await runtime.call('chunk.chunk', content);
-	await Promise.all(chunks.map(async (chunkText, index) => await runtime.call('graph-db.addNode', {
-		type: 'file-chunk',
-		content: chunkText,
-		metadata: { sourceFile: filename, chunkIndex: index, ingestedAt: new Date().toISOString() }
-	})));
+	// await Promise.all(chunks.map(async (chunkText, index) => await runtime.call('graph-db.addNode', {
+	// 	type: 'file-chunk',
+	// 	content: chunkText,
+	// 	metadata: { sourceFile: filename, chunkIndex: index, ingestedAt: new Date().toISOString() }
+	// })));
 	return { filename, chunks };
 };
 const getMarkdownFiles = async () => (await runtime.call("file.listFiles", { dir: 'SelectedNotes' })).filter(f => f.endsWith('.md'));

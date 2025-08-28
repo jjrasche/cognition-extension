@@ -14,13 +14,14 @@ export const initialize = async (rt) => {
 };
 
 export const chunk = async (text, options = {}) => {
-	const { threshold = 0.3 } = options;
+	const { threshold = 0.3, testQueries = [] } = options;
 	const startTime = performance.now();
 	const sentences = await splitSentences(text);
 	const chunks = await semanticMerge(sentences, threshold);
 	const quality = await assessQuality(chunks, text);
+	const retrievalPrediction = await predictRetrievalSuccess(chunks, testQueries);
 	const endTime = performance.now();
-	return { text, chunks, quality, duration: `${(endTime - startTime).toFixed(2)}ms` };
+	return { text, chunks, quality, retrievalPrediction, threshold, duration: `${(endTime - startTime).toFixed(2)}ms` };
 };
 
 const semanticMerge = async (sentences, threshold) => {
@@ -49,7 +50,7 @@ export const splitSentences = async (text, options = {}) => {
 	const segmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
 	const sentences = await Promise.all(Array.from(segmenter.segment(text))
 		.map(sentence => sentence.segment.trim())
-		.map(sentence => ({ sentence, embedding: getEmbedding(sentence) }))
+		.map(async sentence => ({ sentence, embedding: await getEmbedding(sentence) }))
 	);
 	return sentences;
 };
@@ -107,6 +108,33 @@ const assessSizeDistribution = (chunks) => {
 		maxSize: Math.max(...sizes),
 		sizeVariance: calculateVariance(sizes),
 		sizeStdDev: Math.sqrt(calculateVariance(sizes))
+	};
+};
+const predictRetrievalSuccess = async (chunks, testQueries) => {
+	if (!testQueries?.length) return { confidence: 0.5, reason: 'No test queries provided' };
+
+	const predictions = await Promise.all(testQueries.map(async query => {
+		const queryEmbedding = await runtime.call('embedding.embedText', query, { model });
+		const similarities = chunks.map(chunk =>
+			calculateCosineSimilarity(queryEmbedding, chunk.embedding)
+		).sort((a, b) => b - a);
+
+		return {
+			query,
+			bestMatch: similarities[0],
+			top10Avg: similarities.slice(0, 10).reduce((sum, s) => sum + s, 0) / Math.min(10, similarities.length),
+			coverage: similarities.filter(s => s > 0.5).length / similarities.length
+		};
+	}));
+
+	const avgBestMatch = predictions.reduce((sum, p) => sum + p.bestMatch, 0) / predictions.length;
+	const avgCoverage = predictions.reduce((sum, p) => sum + p.coverage, 0) / predictions.length;
+
+	return {
+		confidence: (avgBestMatch * 0.6) + (avgCoverage * 0.4),
+		predictions,
+		avgBestMatch,
+		avgCoverage
 	};
 };
 
