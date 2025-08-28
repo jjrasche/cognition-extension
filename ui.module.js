@@ -40,9 +40,11 @@ export const handleSearchKeydown = async (event) => {
 		else showState('No valid action found', 'error');
 	} catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
 };
+// todo: move these declarations to the modules and pull for all of them in UI module initialization
 const searchInputActions = [
+	{ name: "chunking evaluation", condition: input => input === "eval", func: async (input) => await renderTree(await runtime.call('file-to-graph.renderEvaluationDashboard', input)) },
 	{ name: "read webpage", condition: input => new URL(input.startsWith('http') ? input : `https://${input}`), func: async (input) => await renderTree(await runtime.call('web-read.extractPage', input)) },
-	{ name: "search web", condition: input => input.length < 20, func: async (input) => await renderTree(await runtime.call('web-search.getSearchTree', input)) }
+	{ name: "search web", condition: input => input.length < 20, func: async (input) => await renderTree(await runtime.call('web-search.getSearchTree', input)) },
 ];
 const getAction = async (input) => {
 	const actions = await Promise.all(searchInputActions.filter(async a => await a.condition(input)));

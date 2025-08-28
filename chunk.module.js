@@ -15,11 +15,15 @@ export const initialize = async (rt) => {
 
 export const chunk = async (text, options = {}) => {
 	const { threshold = 0.3, testQueries = [] } = options;
-	const startTime = performance.now();
-	const sentences = await splitSentences(text);
-	const chunks = await semanticMerge(sentences, threshold);
-	const quality = await assessQuality(chunks, text);
-	const retrievalPrediction = await predictRetrievalSuccess(chunks, testQueries);
+	let startTime = performance.now(), chunks, quality, retrievalPrediction;
+	try {
+		const sentences = await splitSentences(text);
+		chunks = await semanticMerge(sentences, threshold);
+		quality = await assessQuality(chunks, text);
+		retrievalPrediction = await predictRetrievalSuccess(chunks, testQueries);
+	} catch (e) {
+		debugger;
+	}
 	const endTime = performance.now();
 	return { text, chunks, quality, retrievalPrediction, threshold, duration: `${(endTime - startTime).toFixed(2)}ms` };
 };
@@ -40,7 +44,7 @@ const semanticMerge = async (sentences, threshold) => {
 	chunks.push(currentChunk);
 	return await Promise.all(chunks.map(async chunk => {
 		const text = chunk.sentences.map(s => s.sentence).join(' ');
-		const embedding = await runtime.call('embedding.embedText', text, { model });
+		const embedding = await getEmbedding(text);
 		return { ...chunk, text, embedding };
 	}));
 };
@@ -50,11 +54,15 @@ export const splitSentences = async (text, options = {}) => {
 	const segmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
 	const sentences = await Promise.all(Array.from(segmenter.segment(text))
 		.map(sentence => sentence.segment.trim())
+		.filter(sentence => sentence.length > 0)
 		.map(async sentence => ({ sentence, embedding: await getEmbedding(sentence) }))
 	);
 	return sentences;
 };
-const getEmbedding = async (text) => await runtime.call('embedding.embedText', text, { model });
+const getEmbedding = async (text) => {
+	// if (!text || !text.trim()) return null;
+	return await runtime.call('embedding.embedText', text, { model });
+}
 
 // quality assessment
 const assessQuality = async (chunks, text) => {
@@ -114,7 +122,7 @@ const predictRetrievalSuccess = async (chunks, testQueries) => {
 	if (!testQueries?.length) return { confidence: 0.5, reason: 'No test queries provided' };
 
 	const predictions = await Promise.all(testQueries.map(async query => {
-		const queryEmbedding = await runtime.call('embedding.embedText', query, { model });
+		const queryEmbedding = await getEmbedding(query);
 		const similarities = chunks.map(chunk =>
 			calculateCosineSimilarity(queryEmbedding, chunk.embedding)
 		).sort((a, b) => b - a);

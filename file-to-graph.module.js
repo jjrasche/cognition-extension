@@ -5,7 +5,7 @@ export const manifest = {
 	description: "Ingests markdown files from directory, chunks them, and stores in graph database",
 	dependencies: ["file", "chunk", "graph-db"],
 	requiredDirectories: ["SelectedNotes"],
-	actions: ["ingestFolder", "ingestFile"]
+	actions: ["ingestFolder", "ingestFile", "renderEvaluationDashboard", "handleThresholdChange"]
 };
 
 let runtime;
@@ -34,4 +34,135 @@ export const ingestFile = async (filename) => {
 	// 	metadata: { sourceFile: filename, chunkIndex: index, ingestedAt: new Date().toISOString() }
 	// })));
 	// return { filename, chunks };
+};
+
+
+const runChunkingEvaluation = async (threshold = 0.3) => {
+	const testCases = await loadTestCases();
+	const results = await Promise.all(testCases.map(async testCase => {
+		const chunkResult = await runtime.call('chunk.chunk', testCase.content, { threshold, testQueries: testCase.queries });
+		return {
+			fileName: testCase.fileName,
+			chunkCount: chunkResult.chunks.length,
+			retrievalConfidence: chunkResult.retrievalPrediction.confidence,
+			coherence: chunkResult.quality.coherence.avgCoherence,
+			boundaryQuality: chunkResult.quality.boundary.avgBoundaryQuality,
+			avgChunkSize: chunkResult.quality.size.avgSize
+		};
+	}));
+	return {
+		threshold,
+		results,
+		avgConfidence: results.reduce((sum, r) => sum + r.retrievalConfidence, 0) / results.length,
+		avgChunks: results.reduce((sum, r) => sum + r.chunkCount, 0) / results.length
+	};
+};
+
+const loadTestCases = async () => {
+	const testFiles = await (await fetch(chrome.runtime.getURL('data/file-chunking-tests/test-cases.json'))).json();
+	return await Promise.all(testFiles.map(async filename => {
+		const { fileChunkTest } = await import(chrome.runtime.getURL(`data/file-chunking-tests/${filename}.js`));
+		if (fileChunkTest.queries.some(q => !q.embedding)) {
+			fileChunkTest.queries = await Promise.all(
+				fileChunkTest.queries.map(async query => ({ text: query, embedding: await runtime.call('embedding.embedText', query) }))
+			);
+			runtime.log(fileChunkTest);
+		}
+		return fileChunkTest;
+	}));
+};
+
+export const renderEvaluationDashboard = async () => {
+	const results = await runChunkingEvaluation(0.3);
+
+	return {
+		"eval-dashboard": {
+			tag: "div", class: "evaluation-container",
+			"back-button": {
+				tag: "button", text: "← Back",
+				class: "cognition-button-secondary",
+				events: { click: "ui.initializeLayout" }
+			},
+			"threshold-control": {
+				tag: "div", style: "margin: 20px 0;",
+				"threshold-label": { tag: "label", text: `Threshold: ${results.threshold}` },
+				"threshold-slider": {
+					tag: "input", type: "range", min: "0.1", max: "0.9", step: "0.05",
+					value: results.threshold,
+					events: { input: "file-to-graph.handleThresholdChange" }
+				}
+			},
+			"metrics-grid": {
+				tag: "div", class: "metrics-grid",
+				"confidence": { tag: "div", text: `Avg Confidence: ${results.avgConfidence.toFixed(3)}` },
+				"chunk-count": { tag: "div", text: `Avg Chunks: ${results.avgChunks}` }
+			},
+			"results-table": buildResultsTable(results.results)
+		}
+	};
+};
+
+const buildResultsTable = (results) => {
+	const tableTree = {
+		tag: "table", class: "results-table", style: "width: 100%; border-collapse: collapse; margin-top: 20px;",
+		"table-header": {
+			tag: "thead",
+			"header-row": {
+				tag: "tr",
+				"file-header": { tag: "th", text: "File", style: "border: 1px solid #ddd; padding: 8px;" },
+				"chunks-header": { tag: "th", text: "Chunks", style: "border: 1px solid #ddd; padding: 8px;" },
+				"confidence-header": { tag: "th", text: "Confidence", style: "border: 1px solid #ddd; padding: 8px;" },
+				"coherence-header": { tag: "th", text: "Coherence", style: "border: 1px solid #ddd; padding: 8px;" },
+				"boundary-header": { tag: "th", text: "Boundary", style: "border: 1px solid #ddd; padding: 8px;" }
+			}
+		},
+		"table-body": {
+			tag: "tbody",
+			...buildTableRows(results)
+		}
+	};
+
+	return tableTree;
+};
+const buildTableRows = (results) => {
+	const rows = {};
+	results.forEach((result, index) => {
+		const rowId = `row-${index}`;
+		rows[rowId] = {
+			tag: "tr",
+			style: index % 2 === 0 ? "background-color: #f9f9f9;" : "",
+			[`${rowId}-file`]: {
+				tag: "td",
+				text: result.fileName,
+				style: "border: 1px solid #ddd; padding: 8px;"
+			},
+			[`${rowId}-chunks`]: {
+				tag: "td",
+				text: result.chunkCount.toString(),
+				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
+			},
+			[`${rowId}-confidence`]: {
+				tag: "td",
+				text: result.retrievalConfidence.toFixed(3),
+				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
+			},
+			[`${rowId}-coherence`]: {
+				tag: "td",
+				text: result.coherence.toFixed(3),
+				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
+			},
+			[`${rowId}-boundary`]: {
+				tag: "td",
+				text: result.boundaryQuality.toFixed(3),
+				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
+			}
+		};
+	});
+
+	return rows;
+};
+export const handleThresholdChange = async (event) => {
+	const threshold = parseFloat(event.target.value);
+	const tree = await renderEvaluationDashboard(); // Re-render with new threshold
+	await runtime.call('ui.renderTree', tree);
 };
