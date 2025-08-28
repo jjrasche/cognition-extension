@@ -27,7 +27,7 @@
     "default_title": "Toggle Cognition UI"
   },
   "web_accessible_resources": [{
-    "resources": ["*.js", "*.html", "models/*", "onnx-runtime/*", "libs/*"],
+    "resources": ["*.js", "*.html", "models/*", "onnx-runtime/*", "libs/*", "data/*"],
     "matches": ["<all_urls>"]
   }],
   "content_security_policy": { 
