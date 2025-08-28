@@ -12,7 +12,7 @@ let runtime;
 export const initialize = async (rt) => runtime = rt;
 
 export const ingestFolder = async () => {
-	const files = await getMarkdownFiles();
+	const files = [];
 	const results = await Promise.all(files.map(filename => ingestFile(filename)));
 	// const totalChunks = results.reduce((sum, result) => sum + result.chunks.length, 0);
 	// return { filesProcessed: files.length, totalChunks };
@@ -35,4 +35,3 @@ export const ingestFile = async (filename) => {
 	// })));
 	// return { filename, chunks };
 };
-const getMarkdownFiles = async () => (await runtime.call("file.listFiles", { dir: 'SelectedNotes' })).filter(f => f.endsWith('.md'));
