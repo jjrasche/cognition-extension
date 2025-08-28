@@ -65,14 +65,18 @@ const runChunkingEvaluation = async (threshold) => {
 const loadTestCases = async () => {
 	const testFiles = await (await fetch(chrome.runtime.getURL('data/file-chunking-tests/test-cases.json'))).json();
 	return await Promise.all(testFiles.map(async filename => {
-		const { fileChunkTest } = await import(chrome.runtime.getURL(`data/file-chunking-tests/${filename}.js`));
-		if (fileChunkTest.queries.some(q => !q.embedding)) {
-			fileChunkTest.queries = await Promise.all(
-				fileChunkTest.queries.map(async query => ({ text: query, embedding: await runtime.call('embedding.embedText', query) }))
-			);
-			runtime.log(fileChunkTest);
+		try {
+			const { fileChunkTest } = await import(chrome.runtime.getURL(`data/file-chunking-tests/${filename}.js`));
+			if (fileChunkTest.queries.some(q => !q.embedding)) {
+				fileChunkTest.queries = await Promise.all(
+					fileChunkTest.queries.map(async query => ({ text: query, embedding: await runtime.call('embedding.embedText', query) }))
+				);
+				runtime.log(fileChunkTest);
+			}
+			return fileChunkTest;
+		} catch (error) {
+			runtime.log(`Error loading ${filename}:`, error);
 		}
-		return fileChunkTest;
 	}));
 };
 
@@ -90,7 +94,7 @@ export const renderEvaluationDashboard = async (threshold = .3) => {
 				tag: "div", style: "margin: 20px 0;",
 				"threshold-label": { tag: "label", text: `Threshold: ${threshold}` },
 				"threshold-slider": {
-					tag: "input", type: "range", min: "-.3", max: "0.9", step: "0.1",
+					tag: "input", type: "range", min: "0", max: ".9", step: "0.01",
 					value: threshold,
 					events: { input: "file-to-graph.handleThresholdChange" }
 				}
