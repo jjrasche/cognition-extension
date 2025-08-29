@@ -4,7 +4,7 @@ export const manifest = {
 	context: ['extension-page'],
 	description: 'Extension page layout and tree orchestration',
 	dependencies: ['tree-to-dom'],
-	actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt'],
+	actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt', "showPageSpinner", "hidePageSpinner"],
 };
 let runtime;
 export const initialize = async (rt) => {
@@ -102,6 +102,27 @@ export const clearPrompt = async () => {
 	if (input) input["value"] = '';
 };
 export const closeModal = async () => document.querySelector('.cognition-overlay')?.remove();
+export const showPageSpinner = async (message = "Processing...") => {
+	const spinnerTree = {
+		"page-spinner-overlay": {
+			tag: "div",
+			class: "cognition-overlay",
+			style: "background: rgba(0, 0, 0, 0.8); z-index: 999999;",
+			"spinner-content": {
+				tag: "div",
+				class: "cognition-loading",
+				style: "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);",
+				"spinner": { tag: "div", class: "cognition-spinner" },
+				"message": { tag: "div", text: message, class: "cognition-loading-message" }
+			}
+		}
+	};
+	await renderTree(spinnerTree, document.body);
+};
+
+export const hidePageSpinner = async () => {
+	document.querySelector('.cognition-overlay')?.remove();
+};
 const showState = (message, type) => getMainContent()["innerHTML"] = type === 'error' ? errorHTML(message) : loadingHTML(message);
 const createElement = (tag, attrs = {}) => Object.assign(document.createElement(tag), attrs);
 const loadingHTML = (message) => `<div class="cognition-loading"><div class="cognition-spinner"></div><div class="cognition-loading-message">${message}</div></div>`;

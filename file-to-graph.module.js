@@ -63,8 +63,8 @@ const runChunkingEvaluation = async (threshold) => {
 };
 
 const loadTestCases = async () => {
-	const testFiles = await (await fetch(chrome.runtime.getURL('data/file-chunking-tests/test-cases.json'))).json();
-	return await Promise.all(testFiles.map(async filename => {
+	const { fileChunkTests } = await (await import(chrome.runtime.getURL('data/file-chunking-tests/test-cases.js')));
+	return await Promise.all(fileChunkTests.map(async filename => {
 		try {
 			const { fileChunkTest } = await import(chrome.runtime.getURL(`data/file-chunking-tests/${filename}.js`));
 			if (fileChunkTest.queries.some(q => !q.embedding)) {
@@ -172,6 +172,8 @@ const buildTableRows = (results) => {
 };
 export const handleThresholdChange = async (event) => {
 	const threshold = parseFloat(event.target.value);
+	await runtime.call('ui.showPageSpinner', 'Re-evaluating chunks...');
 	const tree = await renderEvaluationDashboard(threshold);
 	await runtime.call('ui.renderTree', tree);
+	await runtime.call('ui.hidePageSpinner');
 };

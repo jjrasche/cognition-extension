@@ -71,7 +71,7 @@ const bindNodeEvents = (id, node, elements) => {
 };
 const createEventData = (event, element) => {
 	const form = element.tagName === 'FORM' ? element : element.closest('form');
-	return {
+	const ret = {
 		type: event.type,
 		key: event.key,
 		target: {
@@ -83,6 +83,8 @@ const createEventData = (event, element) => {
 		focusedElement: document.activeElement?.["name"] || null,
 		...(form && { formData: serializeForm(form) })
 	};
+	runtime.log("[tree to dom] Event Data:", ret);
+	return ret;
 };
 const serializeForm = (form) => {
 	const data = {};

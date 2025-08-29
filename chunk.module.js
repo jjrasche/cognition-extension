@@ -3,14 +3,37 @@ export const manifest = {
 	name: "chunk",
 	context: ["service-worker"],
 	version: "1.0.0",
-	description: "Registry and assess chunking strategies",
-	dependencies: ["chrome-sync", "embedding"],
-	actions: ["chunk", "splitSentences", "calculateChunkSimilarity"]
+	description: "Registry and assess chunking strategies with sentence caching",
+	dependencies: ["chrome-sync", "embedding", "chrome-local"],
+	actions: ["chunk", "splitSentences", "calculateChunkSimilarity", "clearSentenceCache", "getSentenceCacheStats"]
 };
 
-let runtime, model = "Xenova/all-MiniLM-L6-v2-fp16-webgpu";
+let runtime, model = "Xenova/all-MiniLM-L6-v2-fp16-webgpu", sentenceCache = {};
+const CACHE_KEY = 'chunk_sentence_cache';
+
 export const initialize = async (rt) => {
 	runtime = rt;
+	await loadSentenceCache();
+};
+
+const loadSentenceCache = async () => {
+	const cached = await runtime.call('chrome-local.get', CACHE_KEY);
+	sentenceCache = cached || {};
+	runtime.log(`[Chunk] Loaded ${Object.keys(sentenceCache).length} cached sentence embeddings`);
+};
+
+const saveSentenceCache = async () => {
+	await runtime.call('chrome-local.set', { [CACHE_KEY]: sentenceCache });
+};
+
+const getContentHash = (text) => {
+	let hash = 0;
+	for (let i = 0; i < text.length; i++) {
+		const char = text.charCodeAt(i);
+		hash = ((hash << 5) - hash) + char;
+		hash = hash & hash; // Convert to 32-bit integer
+	}
+	return hash.toString();
 };
 
 export const chunk = async (text, options = {}) => {
@@ -48,18 +71,56 @@ const semanticMerge = async (sentences, threshold) => {
 		return { ...chunk, text, embedding };
 	}));
 };
+
 const calculateCentroid = (embeddings) => embeddings[0].map((_, i) => embeddings.reduce((sum, embedding) => sum + embedding[i], 0) / embeddings.length);
+
 export const splitSentences = async (text, options = {}) => {
 	const { locale = 'en' } = options;
+	const contentHash = getContentHash(text);
+
+	// Check cache first
+	if (sentenceCache[contentHash]) {
+		runtime.log(`[Chunk] Cache hit for content hash: ${contentHash}`);
+		return sentenceCache[contentHash];
+	}
+
+	runtime.log(`[Chunk] Cache miss for content hash: ${contentHash} - computing sentences`);
 	const segmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
 	const sentences = await Promise.all(Array.from(segmenter.segment(text))
 		.map(sentence => sentence.segment.trim())
 		.filter(sentence => sentence.length > 0)
 		.map(async sentence => ({ sentence, embedding: await getEmbedding(sentence) }))
 	);
+
+	// Cache the result
+	sentenceCache[contentHash] = sentences;
+	await saveSentenceCache();
+	runtime.log(`[Chunk] Cached ${sentences.length} sentences for hash: ${contentHash}`);
+
 	return sentences;
 };
+
 const getEmbedding = async (text) => await runtime.call('embedding.embedText', text, { model });
+
+// Cache management actions
+export const clearSentenceCache = async () => {
+	sentenceCache = {};
+	await runtime.call('chrome-local.remove', CACHE_KEY);
+	runtime.log('[Chunk] Sentence cache cleared');
+	return { success: true, message: 'Cache cleared' };
+};
+
+export const getSentenceCacheStats = async () => {
+	const stats = {
+		entryCount: Object.keys(sentenceCache).length,
+		totalSentences: Object.values(sentenceCache).reduce((sum, sentences) => sum + sentences.length, 0),
+		avgSentencesPerEntry: Object.keys(sentenceCache).length > 0
+			? Object.values(sentenceCache).reduce((sum, sentences) => sum + sentences.length, 0) / Object.keys(sentenceCache).length
+			: 0
+	};
+	runtime.log('[Chunk] Cache stats:', stats);
+	return stats;
+};
 
 // quality assessment
 const assessQuality = async (chunks, text) => {
@@ -69,6 +130,7 @@ const assessQuality = async (chunks, text) => {
 		size: assessSizeDistribution(chunks)
 	};
 };
+
 const assessSemanticCoherence = async (chunks) => {
 	if (chunks.length < 2) return { avgCoherence: 1, minCoherence: 1, maxCoherence: 1, coherenceVariance: 0 };
 	const scores = [];
@@ -82,6 +144,7 @@ const assessSemanticCoherence = async (chunks) => {
 		coherenceVariance: calculateVariance(scores)
 	};
 };
+
 const assessBoundaryQuality = async (chunks, originalText) => {
 	let currentIndex = 0;
 	const boundaryScores = chunks.map(chunk => {
@@ -105,6 +168,7 @@ const assessBoundaryQuality = async (chunks, originalText) => {
 		cleanEnds: boundaryScores.filter(s => s.endsClean).length / boundaryScores.length
 	};
 };
+
 const assessSizeDistribution = (chunks) => {
 	const sizes = chunks.map(c => c.text.length);
 	return {
@@ -115,6 +179,7 @@ const assessSizeDistribution = (chunks) => {
 		sizeStdDev: Math.sqrt(calculateVariance(sizes))
 	};
 };
+
 const predictRetrievalSuccess = async (chunks, testQueries) => {
 	if (!testQueries?.length) return { confidence: 0.5, reason: 'No test queries provided' };
 
