@@ -7,7 +7,7 @@ export const manifest = {
 	requiredDirectories: ["SelectedNotes"],
 	actions: ["ingestFolder", "ingestFile", "renderEvaluationDashboard", "handleThresholdChange"],
 	searchActions: [
-		{ name: "chunking evaluation", condition: input => input === "eval", method: "renderEvaluationDashboard" }
+		{ name: "chunking evaluation", keyword: "eval", method: "renderEvaluationDashboard" }
 	]
 };
 

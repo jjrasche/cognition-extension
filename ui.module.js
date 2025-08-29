@@ -10,14 +10,13 @@ let runtime, searchActions;
 export const initialize = async (rt) => {
 	runtime = rt;
 	await initializeLayout();
-	searchActions = registerSearchActions();
+	registerSearchActions();
 };
-const registerSearchActions = () => runtime.getModulesWithProperty('searchActions').flatMap(m =>
-	m.manifest.searchActions.map(a => ({
-		...a,
-		func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input)
-	}))
-);
+const registerSearchActions = () => {
+	searchActions = runtime.getModulesWithProperty('searchActions').flatMap(m =>
+		m.manifest.searchActions.map(a => ({ ...a, func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input) }))
+	).sort((a, b) => a.name.localeCompare(b.name));
+}
 export const initializeLayout = async () => {
 	getMainLayout()?.remove();
 	const layoutTree = {

@@ -62,7 +62,7 @@ const waitForTabStable = async (tab, options = {}) => {
 			const poll = () => {
 				const elapsed = performance.now() - startTime;
 				(check(network)(), check(content)());
-				chrome.runtime.sendMessage({ type: 'TAB_STABILITY', data: { elapsed: Math.round(elapsed), networkStable: network.stable, contentStable: content.stable, url: window.location.hostname } }).catch(() => { }); // Ignore errors if extension context is gone
+				// chrome.runtime.sendMessage({ type: 'TAB_STABILITY', data: { elapsed: Math.round(elapsed), networkStable: network.stable, contentStable: content.stable, url: window.location.hostname } }).catch(() => { }); // Ignore errors if extension context is gone
 				if (elapsed > minWait && network.stable && content.stable) { resolve({ success: true, elapsed }); return; }
 				if (elapsed > maxWait) { resolve({ success: false, elapsed, networkStable: network.stable, contentStable: content.stable }); return; }
 				setTimeout(poll, delay);
