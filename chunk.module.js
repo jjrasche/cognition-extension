@@ -68,7 +68,7 @@ const semanticMerge = async (sentences, threshold) => {
 	return await Promise.all(chunks.map(async chunk => {
 		const text = chunk.sentences.map(s => s.sentence).join(' ');
 		const embedding = await getEmbedding(text);
-		return { ...chunk, text, embedding };
+		return { ...chunk, text, embedding, sentenceCount: chunk.sentences.length };
 	}));
 };
 
@@ -125,23 +125,10 @@ export const getSentenceCacheStats = async () => {
 // quality assessment
 const assessQuality = async (chunks, text) => {
 	return {
-		coherence: await assessSemanticCoherence(chunks),
 		boundary: await assessBoundaryQuality(chunks, text),
-		size: assessSizeDistribution(chunks)
-	};
-};
-
-const assessSemanticCoherence = async (chunks) => {
-	if (chunks.length < 2) return { avgCoherence: 1, minCoherence: 1, maxCoherence: 1, coherenceVariance: 0 };
-	const scores = [];
-	for (let i = 0; i < chunks.length - 1; i++) {
-		scores.push(calculateCosineSimilarity(chunks[i].embedding, chunks[i + 1].embedding));
-	}
-	return {
-		avgCoherence: scores.reduce((sum, s) => sum + s, 0) / scores.length,
-		minCoherence: Math.min(...scores),
-		maxCoherence: Math.max(...scores),
-		coherenceVariance: calculateVariance(scores)
+		size: assessSizeDistribution(chunks),
+		avgSentencesPerChunk: chunks.reduce((sum, c) => sum + c.sentenceCount, 0) / chunks.length,
+		percentSingleSentenceChunks: chunks.filter(c => c.sentenceCount === 1).length / chunks.length
 	};
 };
 

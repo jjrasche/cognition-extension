@@ -5,7 +5,10 @@ export const manifest = {
 	description: "Ingests markdown files from directory, chunks them, and stores in graph database",
 	dependencies: ["file", "chunk", "graph-db"],
 	requiredDirectories: ["SelectedNotes"],
-	actions: ["ingestFolder", "ingestFile", "renderEvaluationDashboard", "handleThresholdChange"]
+	actions: ["ingestFolder", "ingestFile", "renderEvaluationDashboard", "handleThresholdChange"],
+	searchActions: [
+		{ name: "chunking evaluation", condition: input => input === "eval", method: "renderEvaluationDashboard" }
+	]
 };
 
 let runtime;
@@ -45,9 +48,9 @@ const runChunkingEvaluation = async (threshold) => {
 			fileName: testCase.fileName,
 			chunkCount: chunkResult.chunks.length,
 			retrievalConfidence: chunkResult.retrievalPrediction.confidence,
-			coherence: chunkResult.quality.coherence.avgCoherence,
 			boundaryQuality: chunkResult.quality.boundary.avgBoundaryQuality,
-			avgChunkSize: chunkResult.quality.size.avgSize
+			avgSentencesPerChunk: chunkResult.quality.avgSentencesPerChunk,
+			percentSingleSentenceChunks: chunkResult.quality.percentSingleSentenceChunks
 		};
 		runtime.log(`runChunkingEvaluation ${testCase.fileName}`, ret);
 		return ret;
@@ -56,7 +59,9 @@ const runChunkingEvaluation = async (threshold) => {
 		threshold,
 		results,
 		avgConfidence: results.reduce((sum, r) => sum + r.retrievalConfidence, 0) / results.length,
-		avgChunks: results.reduce((sum, r) => sum + r.chunkCount, 0) / results.length
+		avgChunks: results.reduce((sum, r) => sum + r.chunkCount, 0) / results.length,
+		avgSentencesPerChunk: results.reduce((sum, r) => sum + r.avgSentencesPerChunk, 0) / results.length,
+		percentSingleSentenceChunks: results.reduce((sum, r) => sum + r.percentSingleSentenceChunks, 0) / results.length
 	};
 	runtime.log('runChunkingEvaluation total', ret);
 	return ret;
@@ -81,6 +86,7 @@ const loadTestCases = async () => {
 };
 
 export const renderEvaluationDashboard = async (threshold = .3) => {
+	await runtime.call('ui.showPageSpinner', 'Re-evaluating chunks...');
 	const results = await runChunkingEvaluation(threshold);
 	const ret = {
 		"eval-dashboard": {
@@ -102,12 +108,15 @@ export const renderEvaluationDashboard = async (threshold = .3) => {
 			"metrics-grid": {
 				tag: "div", class: "metrics-grid",
 				"confidence": { tag: "div", text: `Avg Confidence: ${results.avgConfidence.toFixed(3)}` },
-				"chunk-count": { tag: "div", text: `Avg Chunks: ${results.avgChunks}` }
+				"chunk-count": { tag: "div", text: `Avg Chunks: ${results.avgChunks}` },
+				"sentences-per-chunk": { tag: "div", text: `Avg Sentences/Chunk: ${results.avgSentencesPerChunk.toFixed(3)}` },
+				"single-sentence-chunks": { tag: "div", text: `Percent Single-Sentence Chunks: ${(results.percentSingleSentenceChunks * 100).toFixed(2)}%` }
 			},
 			"results-table": buildResultsTable(results.results)
 		}
 	};
 	runtime.log('renderEvaluationDashboard', ret);
+	await runtime.call('ui.hidePageSpinner');
 	return ret;
 };
 
@@ -121,8 +130,9 @@ const buildResultsTable = (results) => {
 				"file-header": { tag: "th", text: "File", style: "border: 1px solid #ddd; padding: 8px;" },
 				"chunks-header": { tag: "th", text: "Chunks", style: "border: 1px solid #ddd; padding: 8px;" },
 				"confidence-header": { tag: "th", text: "Confidence", style: "border: 1px solid #ddd; padding: 8px;" },
-				"coherence-header": { tag: "th", text: "Coherence", style: "border: 1px solid #ddd; padding: 8px;" },
-				"boundary-header": { tag: "th", text: "Boundary", style: "border: 1px solid #ddd; padding: 8px;" }
+				"boundary-header": { tag: "th", text: "Boundary", style: "border: 1px solid #ddd; padding: 8px;" },
+				"avg-sentences-per-chunk-header": { tag: "th", text: "Avg Sentences/Chunk", style: "border: 1px solid #ddd; padding: 8px;" },
+				"single-sentence-chunks-header": { tag: "th", text: "Percent Single-Sentence Chunks", style: "border: 1px solid #ddd; padding: 8px;" }
 			}
 		},
 		"table-body": {
@@ -155,14 +165,19 @@ const buildTableRows = (results) => {
 				text: result.retrievalConfidence.toFixed(3),
 				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
 			},
-			[`${rowId}-coherence`]: {
-				tag: "td",
-				text: result.coherence.toFixed(3),
-				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
-			},
 			[`${rowId}-boundary`]: {
 				tag: "td",
 				text: result.boundaryQuality.toFixed(3),
+				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
+			},
+			[`${rowId}-avg-sentences-per-chunk`]: {
+				tag: "td",
+				text: (result.avgSentencesPerChunk ?? 0).toFixed(3),
+				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
+			},
+			[`${rowId}-single-sentence-chunks`]: {
+				tag: "td",
+				text: ((result.percentSingleSentenceChunks ?? 0) * 100).toFixed(2) + "%",
 				style: "border: 1px solid #ddd; padding: 8px; text-align: center;"
 			}
 		};
@@ -172,8 +187,6 @@ const buildTableRows = (results) => {
 };
 export const handleThresholdChange = async (event) => {
 	const threshold = parseFloat(event.target.value);
-	await runtime.call('ui.showPageSpinner', 'Re-evaluating chunks...');
 	const tree = await renderEvaluationDashboard(threshold);
 	await runtime.call('ui.renderTree', tree);
-	await runtime.call('ui.hidePageSpinner');
 };

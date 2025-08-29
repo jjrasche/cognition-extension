@@ -31,6 +31,7 @@ import * as chromeLocalModule from './chrome-local.module.js'
 import * as liveChunkingModule from './live-chunker.module.js';
 import * as summaryModule from './summary.module.js';
 import * as fileToGraphModule from './file-to-graph.module.js'
+import * as atomicIdeaModule from './atomic-idea.module.js';
 
 export const modules = [
 	apiKeysModule,
@@ -64,7 +65,8 @@ export const modules = [
 	webSearchModule,
 	superIntendentModule,
 	chromeLocalModule,
-	fileToGraphModule
+	fileToGraphModule,
+	atomicIdeaModule
 ];
 
 export const coreFiles = [

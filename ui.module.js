@@ -6,12 +6,18 @@ export const manifest = {
 	dependencies: ['tree-to-dom'],
 	actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt', "showPageSpinner", "hidePageSpinner"],
 };
-let runtime;
+let runtime, searchActions;
 export const initialize = async (rt) => {
 	runtime = rt;
 	await initializeLayout();
+	searchActions = registerSearchActions();
 };
-
+const registerSearchActions = () => runtime.getModulesWithProperty('searchActions').flatMap(m =>
+	m.manifest.searchActions.map(a => ({
+		...a,
+		func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input)
+	}))
+);
 export const initializeLayout = async () => {
 	getMainLayout()?.remove();
 	const layoutTree = {
@@ -40,14 +46,8 @@ export const handleSearchKeydown = async (event) => {
 		else showState('No valid action found', 'error');
 	} catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
 };
-// todo: move these declarations to the modules and pull for all of them in UI module initialization
-const searchInputActions = [
-	{ name: "chunking evaluation", condition: input => input === "eval", func: async (input) => await renderTree(await runtime.call('file-to-graph.renderEvaluationDashboard', input)) },
-	{ name: "read webpage", condition: input => new URL(input.startsWith('http') ? input : `https://${input}`), func: async (input) => await renderTree(await runtime.call('web-read.extractPage', input)) },
-	{ name: "search web", condition: input => input.length < 20, func: async (input) => await renderTree(await runtime.call('web-search.getSearchTree', input)) },
-];
 const getAction = async (input) => {
-	const actions = await Promise.all(searchInputActions.filter(async a => await a.condition(input)));
+	const actions = searchActions.filter(a => a.condition(input));
 	if (actions.length > 0) {
 		runtime.log(`matched ${actions.length} actions for input ${input.substring(0, 20)}:\n${actions.map(a => `- ${a.name}`).join('\n')}`);
 	}
@@ -56,8 +56,13 @@ const getAction = async (input) => {
 	return actions[0];
 }
 export const renderTree = async (tree, container) => {
-	const target = container || getMainContent();
-	if (!target) throw new Error('Container not found');
+	const target = container || document.querySelector(`#${MAIN_CONTENT_ID}`);
+	if (!target) {
+		await initializeLayout();
+		const newTarget = document.querySelector(`#${MAIN_CONTENT_ID}`);
+		if (!newTarget) throw new Error('Could not create main content area');
+		return await runtime.call('tree-to-dom.transform', tree, newTarget);
+	}
 	return await runtime.call('tree-to-dom.transform', tree, target);
 };
 export const showModal = async ({ title, content = "", tree, actions = {} }) => {

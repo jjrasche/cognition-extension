@@ -4,8 +4,13 @@ export const manifest = {
 	actions: ["extractPage"],
 	externalDependencies: [
 		{ rename: 'readability.js', destination: 'libs/', url: 'https://esm.run/@mozilla/readability', sha256: '2A1B198B27A71910CDF26AE7087A8F82D714FEF1C7D5DA335AF020D1FE3B50E4' }
+	],
+	searchActions: [
+		{ name: "read webpage", condition: input => input.startsWith('http'), method: "extractPage" },
 	]
 };
+
+
 
 let runtime, readability;
 export const initialize = async (rt) => {
