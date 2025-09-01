@@ -40,6 +40,7 @@ const addModuleToConsole = () => runtime.getContextModules().forEach(module => {
 			acc[r.name] = { Result: r.passed ? '✅' : '❌', errror: r.error || '' };
 			return acc;
 		}, {}));
+		console.log(JSON.stringify(results, null, 2));
 		return results;
 	};
 });
