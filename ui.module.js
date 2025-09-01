@@ -14,8 +14,13 @@ export const initialize = async (rt) => {
 };
 const registerSearchActions = () => {
 	searchActions = runtime.getModulesWithProperty('searchActions').flatMap(m =>
-		m.manifest.searchActions.map(a => ({ ...a, func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input) }))
-	).sort((a, b) => a.name.localeCompare(b.name));
+		m.manifest.searchActions.map(a => ({
+			...a,
+			func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input),
+			condition: a.keyword ? (input) => input.toLowerCase() === a.keyword.toLowerCase() : a.condition,
+			priority: a.keyword ? 1 : 2
+		}))
+	).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
 }
 export const initializeLayout = async () => {
 	getMainLayout()?.remove();
@@ -41,7 +46,7 @@ export const handleSearchKeydown = async (event) => {
 	showState('Searching...', 'loading');
 	const action = await getAction(input);
 	try {
-		if (action) await action.func(input);
+		if (action) await renderTree(await action.func(input));
 		else showState('No valid action found', 'error');
 	} catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
 };

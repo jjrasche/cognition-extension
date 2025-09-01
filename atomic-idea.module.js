@@ -96,7 +96,7 @@ export const buildAtomicExtractorUI = (inputText = '', result) => ({
 				tag: "div", style: "flex: 1; display: flex; flex-direction: column;",
 				"input-header": { tag: "h3", text: "Input Paragraph", style: "margin-bottom: 10px;" },
 				"paragraph-form": {
-					tag: "form", style: "flex: 1; display: flex; flex-direction: column;", events: { submit: "atomic-ideas.extractAndDisplay" },
+					tag: "form", style: "flex: 1; display: flex; flex-direction: column;", events: { submit: "atomic-idea.extractAndDisplay" },
 					"paragraph-input": { tag: "textarea", name: "paragraph", value: inputText, placeholder: "Paste a paragraph here and click Extract to see atomic ideas...", style: "flex: 1; padding: 15px; font-size: 14px; line-height: 1.6; resize: none; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); color: var(--text-primary);" },
 					"extract-button": { tag: "button", type: "submit", text: "Extract Atomic Ideas", class: "cognition-button-primary", style: "margin-top: 15px; padding: 12px;" }
 				}
@@ -105,7 +105,7 @@ export const buildAtomicExtractorUI = (inputText = '', result) => ({
 				tag: "div", style: "flex: 1; display: flex; flex-direction: column;",
 				"output-header": { tag: "h3", text: "Atomic Ideas", style: "margin-bottom: 10px;" },
 				"ideas-container": {
-					tag: "div", id: "atomic-ideas-display", style: "flex: 1; border: 1px solid var(--border-primary); border-radius: 8px; padding: 15px; overflow-y: auto; background: var(--bg-secondary);",
+					tag: "div", id: "atomic-idea-display", style: "flex: 1; border: 1px solid var(--border-primary); border-radius: 8px; padding: 15px; overflow-y: auto; background: var(--bg-secondary);",
 					innerHTML: result ? buildIdeasDisplay(result) : (inputText ? '<div class="cognition-loading" style="justify-content: center; margin-top: 50px;"><div class="cognition-spinner"></div><div class="cognition-loading-message">Extracting atomic ideas...</div></div>' : '<div style="color: var(--text-muted); text-align: center; margin-top: 50px;">Click "Extract" to see atomic ideas...</div>')
 				}
 			}
