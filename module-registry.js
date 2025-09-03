@@ -32,8 +32,12 @@ import * as liveChunkingModule from './live-chunker.module.js';
 import * as summaryModule from './summary.module.js';
 import * as fileToGraphModule from './file-to-graph.module.js'
 import * as atomicIdeaModule from './atomic-idea.module.js';
+import * as siteIndexModule from './site-index.module.js';
+import * as manualAtomExtractor from './manual-atom-extractor.module.js';
 
 export const modules = [
+	manualAtomExtractor,
+	siteIndexModule,
 	apiKeysModule,
 	chromeSyncModule,
 	chunkModule,

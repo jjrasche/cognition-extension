@@ -19,7 +19,7 @@ let runtime, db, neededDirectories = [];
 export const initialize = async (rt) => {
 	runtime = rt;
 	db = await getDB();
-	// neededDirectories = getModuleRequiredDirectories().filter(async dirName => !(await hasDir({name: dirName})));
+	neededDirectories = (await Promise.all(getModuleRequiredDirectories().map(async dirName => !(await hasDir(dirName)) && dirName))).filter(dir => dir);
 	if (neededDirectories.length > 0) await promptUserToInitiateFileAccess();
 };
 
@@ -52,7 +52,7 @@ const getHandle = async (name) => {
 	const storedHandle = await getStoredHandle(name);
 	let handle = storedHandle?.handle ?? await selectDir();
 	await verifyPermission(name, handle);
-	await storeHandle(name, handle);
+	if (handle !== storedHandle?.handle) await storeHandle(name, handle);
 	return handle;
 };
 const verifyPermission = async (name, handle) => {

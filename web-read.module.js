@@ -24,15 +24,16 @@ export const extractPage = async (url) => {
 	const reader = new readability(dom.cloneNode(true));
 	const article = reader.parse();
 	if (!article) throw new Error('Could not extract article from page');
-	return {
-		"article-container": {
-			tag: "article", class: "readability-article",
-			"back-button": { tag: "button", text: "← Back to Search", class: "cognition-button-secondary cognition-back-button", events: { click: "ui.initializeLayout" } },
-			"article-title": { tag: "h1", text: article.title, class: "cognition-markdown-title" },
-			"article-url": { tag: "div", text: actualUrl, class: "cognition-markdown-url" },
-			"article-content": { tag: "div", innerHTML: article.content, class: "cognition-markdown-content" }
-		}
-	};
+	return article.content;
+	// return {
+	// 	"article-container": {
+	// 		tag: "article", class: "readability-article",
+	// 		"back-button": { tag: "button", text: "← Back to Search", class: "cognition-button-secondary cognition-back-button", events: { click: "ui.initializeLayout" } },
+	// 		"article-title": { tag: "h1", text: article.title, class: "cognition-markdown-title" },
+	// 		"article-url": { tag: "div", text: actualUrl, class: "cognition-markdown-url" },
+	// 		"article-content": { tag: "div", innerHTML: article.content, class: "cognition-markdown-content" }
+	// 	}
+	// };
 };
 const extractRawDOM = async (url) => runtime.call("tab.executeTemp", url, () => ({
 	html: document.documentElement.outerHTML,

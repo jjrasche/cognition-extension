@@ -1,3 +1,5 @@
+import { wait } from "./helpers.js";
+
 export const manifest = {
 	name: "superintendent",
 	context: ["service-worker"],
@@ -8,7 +10,8 @@ export const manifest = {
 	actions: ["processSingleDistrict", "processBatch", "getStats"]
 };
 
-let runtime, stats, districts, maxProcessed = 10;
+let runtime, stats, districts, maxProcessed = 1;
+const inference = { provider: "claude-api", model: "claude-opus-4-20250514" }//model: "claude-3-5-sonnet-20241022" }
 const dir = 'Documents/cognition/data', filename = 'school-district-data.json';
 export const initialize = async (rt) => {
 	runtime = rt;
@@ -18,8 +21,6 @@ export const initialize = async (rt) => {
 
 export const processSingleDistrict = async (idx) => {
 	const district = districts[idx];
-	if (hasExistingData(district)) return;
-	if (maxProcessed <= stats.processed) return;
 	stats.processed++;
 	try {
 		const superintendentData = await extractSuperintendentData(district);
@@ -31,11 +32,17 @@ export const processSingleDistrict = async (idx) => {
 		stats.errors++;
 		updateDistrictData(idx, createEmptyData(error.message));
 	}
+	await wait(30000);
 };
-export const processBatch = async (maxParallel = 1, startIndex = 0) => {
+export const processBatch = async (maxConcurrency = 1, startIndex = 0) => {
 	resetStats();
 	try {
-		await runtime.processWithWorkerPool(districts, processSingleDistrict, maxParallel, startIndex);
+		const districtsToProcess = districts
+			.map((district, idx) => ({ district, idx }))
+			// .filter(({ district }) => !hasExistingData(district))
+			.slice(startIndex, startIndex + maxProcessed);
+		runtime.log(`Processing districts:\n${districtsToProcess.map(d => d.district.district).join("\n\t-")}`);
+		await runtime.processWithWorkerPool(districtsToProcess.map(d => d.idx), processSingleDistrict, maxConcurrency);
 		logSummary();
 	} catch (error) {
 		runtime.logError('❌ Fatal error:', error);
@@ -68,7 +75,7 @@ const loadDistricts = async () => {
 const extractSuperintendentData = async (district) => {
 	const query = buildSuperintendentPrompt(district);
 	const systemPrompt = "You are an AI assistant specialized in finding superintendent information for school districts. Use the provided website to find the most accurate and up-to-date information. list every url you searched in ";
-	const content = await runtime.call('inference.prompt', { query, systemPrompt, webSearch: webSearch(district) });
+	const content = await runtime.call('inference.prompt', { query, systemPrompt, webSearch: webSearch(district), ...inference });
 	return parseSuperintendentResponse(content);
 };
 const webSearch = (district) => ({ max_uses: 5, allowedDomains: [district.website] });
@@ -91,7 +98,7 @@ const hasGroundTruthMismatch = (district) => {
 };
 const updateDistrictData = async (idx, data) => {
 	if (!districts[idx].superIntendent) districts[idx].superIntendent = {};
-	districts[idx].superIntendent.sonnet35 = { ...data, lastUpdated: new Date().toISOString() };
+	districts[idx].superIntendent[`${inference.model}-${(new Date()).toISOString()}`] = { ...data, lastUpdated: new Date().toISOString() };
 	await saveDistricts(districts);
 };
 const createEmptyData = (errorMessage = '') => ({ firstName: "", lastName: "", email: "", phone: "", sourceUrl: "", error: errorMessage });

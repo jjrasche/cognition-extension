@@ -1,3 +1,5 @@
+import { wait } from "./helpers.js";
+
 export const manifest = {
 	name: 'ui',
 	version: '1.0.0',
@@ -10,6 +12,7 @@ let runtime, searchActions;
 export const initialize = async (rt) => {
 	runtime = rt;
 	await initializeLayout();
+	await wait(2000);
 	registerSearchActions();
 };
 const registerSearchActions = () => {
@@ -21,6 +24,7 @@ const registerSearchActions = () => {
 			priority: a.keyword ? 1 : 2
 		}))
 	).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+	runtime.log(`Registered ${searchActions.length} search actions:\n${searchActions.map(a => `- ${a.name} (priority ${a.priority})`).join('\n')}`);
 }
 export const initializeLayout = async () => {
 	getMainLayout()?.remove();
