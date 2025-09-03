@@ -5,9 +5,9 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Extract and curate atomic ideas from conversation sources to test flow enhancement hypothesis",
 	dependencies: ["ui"],
-	actions: ["buildUI", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
+	actions: ["buildUI", "buildTree", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
 	searchActions: [
-		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildUI" }
+		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildTree" }
 	]
 };
 
@@ -30,7 +30,7 @@ export const loadSource = async () => {
 	await buildUI();
 };
 // dynamic form behavior
-export const handleTextSelection = async ({ selection }) => {
+export const handleSelection = async ({ selection }) => {
 	selectedSpans.push({ text: selection.text, elementId: selection.elementId, timestamp: Date.now() });
 	await buildUI();
 };
@@ -39,7 +39,7 @@ export const createAtomicIdea = async ({ formData }) => {
 	atomicIdeas.push({ id: getId('idea-'), text: ideaText, sourceSpans: selectedSpans.map(s => s.text), createdAt: new Date().toISOString() });
 	await clearSelections();
 };
-export const clearSelections = async () => (selectedSpans = [], await buildUI());
+const clearSelections = async () => (selectedSpans = [], await buildUI());
 export const editIdea = async (eventData) => {
 	const index = parseInt(eventData.target.dataset.ideaIndex), newText = eventData.target.value;
 	atomicIdeas[index] = { ...atomicIdeas[index], text: newText, lastEdited: new Date().toISOString() };
@@ -54,14 +54,14 @@ export const buildUI = async () => {
 	const tree = buildTree();
 	await runtime.call('ui.renderTree', tree);
 };
-const buildTree = () => ({ "manual-atom-extractor": { tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;", ...header(), ...mainContent() } });
+export const buildTree = () => ({ "manual-atom-extractor": { tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;", ...header(), ...mainContent() } });
 const header = () => ({ "header": { tag: "div", style: "margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;", ...backButton(), "title": { tag: "h2", text: "Knowledge Forge", style: "margin: 0; color: var(--text-primary);" }, ...saveButton() } });
 const backButton = () => ({ "back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", events: { click: "ui.initializeLayout" } } });
 const saveButton = () => ({ "save-button": { tag: "button", text: "Save Collection", class: "cognition-button-primary", events: { click: "manual-atom-extractor.saveCollection" } } });
 const mainContent = () => ({ "main-content": { tag: "div", style: "flex: 1; display: flex; gap: 20px; min-height: 0;", ...sourcePanel(), ...ideaPanel() } });
 const sourcePanel = () => ({ "source-panel": { tag: "div", style: panelStyle, ...sourceHeader(), ...sourceContent() } });
 const sourceHeader = () => ({ "source-header": { tag: "div", style: headerStyle, "next-sources-btn": { tag: "button", text: "Load Next Source", class: "cognition-button-secondary", events: { click: "manual-atom-extractor.loadSource" } } } });
-const sourceContent = () => ({ "source-content": { tag: "div", id: "source-content", style: "flex: 1; padding: 15px; overflow-y: auto; line-height: 1.6; cursor: text;", data: { textSelectionHandler: "manual-atom-extractor.handleTextSelection" }, innerHTML: currentSource ? formatSourceContent(currentSource) : '<p style="color: var(--text-muted); text-align: center; margin-top: 50px;">Load a conversation to begin extracting atomic ideas</p>' } });
+const sourceContent = () => ({ "source-content": { tag: "div", id: "source-content", style: "flex: 1; padding: 15px; overflow-y: auto; line-height: 1.6; cursor: text;", data: { textSelectionHandler: "manual-atom-extractor.handleSelection" }, innerHTML: currentSource ? formatSourceContent(currentSource) : '<p style="color: var(--text-muted); text-align: center; margin-top: 50px;">Load a conversation to begin extracting atomic ideas</p>' } });
 const ideaPanel = () => ({ "idea-panel": { tag: "div", style: "flex: 1; display: flex; flex-direction: column; gap: 20px;", ...ideaCreator(), ...ideaCollection() } });
 const ideaCreator = () => ({
 	"idea-creator": {

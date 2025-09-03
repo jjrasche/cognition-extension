@@ -30,7 +30,6 @@ const createElement = (id, node, elements, parent) => {
 	bindNodeEvents(id, node, elements);
 	createChildren(node, elements, el);
 	handleFocus(el, node);
-	runtime.log("Element created:", el);
 };
 const createChildren = (node, elements, parent) => Object.entries(node).forEach(([childId, child]) => typeof child === 'object' && child.tag && createElement(childId, child, elements, parent));
 const setProps = (el, node) => (setBasicProps(el, node), setFormProps(el, node), setDataProps(el, node), setOtherProps(el, node));
