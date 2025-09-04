@@ -1,83 +1,68 @@
 export const manifest = {
-    name: "indexed-db",
-    context: ["service-worker", "extension-page", "offscreen"],
-    version: "1.0.0",
-    description: "Generic IndexedDB operations extracted from graph-db",
-    permissions: [],
-    actions: ["openDb", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId", "deleteDB", "getAllDatabases"],
+	name: "indexed-db",
+	context: ["service-worker", "extension-page", "offscreen"],
+	version: "1.0.0",
+	description: "Generic IndexedDB operations extracted from graph-db",
+	permissions: [],
+	actions: ["createDB", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId", "deleteDB", "getAllDatabases"],
 };
 
-let runtime;
-export const initialize = async (rt) => (runtime = rt);
+let runtime, DBs = new Map();
+export const initialize = async (rt) => (runtime = rt, await registerModules());
+
 // Database management
-export const openDb = async (params) => {
-    const { name, version, storeConfigs } = params;
-    const db = await new Promise((resolve, reject) => {
-        const request = indexedDB.open(name, version);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-        request.onupgradeneeded = (event) => initializeDatabase(event.target.result, storeConfigs);
-    });
-    return db;
-};
-const initializeDatabase = (db, storeConfigs) => storeConfigs.forEach(config => createStoreWithIndexes(db, config));
+const registerModules = async () => await Promise.all(runtime.getModulesWithProperty('indexeddb')
+	.map(async m => {
+		await createDB(m.manifest.indexeddb);
+		runtime.log(`✅ ${m.manifest.name} database created successfully`);
+	}));
+export const createDB = async ({ name, version, storeConfigs }) => DBs.set(name, await new Promise((resolve, reject) => {
+	const request = indexedDB.open(name, version);
+	request.onerror = () => reject(request.error);
+	request.onsuccess = () => resolve(request.result);
+	request.onupgradeneeded = (event) => initializeDatabase(event, storeConfigs);
+}));
+const initializeDatabase = (event, storeConfigs) => storeConfigs.forEach(config => createStoreWithIndexes(event.target.result, config));
 const createStoreWithIndexes = (db, config) => {
-    if (db.objectStoreNames.contains(config.name)) return;
-    const store = db.createObjectStore(config.name, config.options);
-    config.indexes?.forEach(idx => store.createIndex(idx.name, idx.keyPath, idx.options));
+	if (db.objectStoreNames.contains(config.name)) return;
+	const store = db.createObjectStore(config.name, config.options);
+	config.indexes?.forEach(idx => store.createIndex(idx.name, idx.keyPath, idx.options));
 };
 // Record operations
-export const addRecord = async (params) => await promisify(getStore(params, 'readwrite').add(params.data));
-export const updateRecord = async (params) => await promisify(getStore(params, 'readwrite').put(params.data));
-export const getRecord = async (params) => await promisify(getStore(params, 'readonly').get(params.key));
-export const getAllRecords = async (params) => await promisify(getStore(params, 'readonly').getAll());
-export const removeRecord = async (params) => await promisify(getStore(params, 'readwrite').delete(params.key));
-export const countRecords = async (params) => await promisify(getStore(params, 'readonly').count());
-export const getByIndex = async (params) => {
-    const { indexName, value, limit } = params;
-    const index = getStore(params).index(indexName);
-    if (limit) return await iterateCursor(index.openCursor(value ? IDBKeyRange.only(value) : null), () => true, limit);
-    return await promisify(index.getAll(value ? IDBKeyRange.only(value) : null));
+export const addRecord = async (dbName, storeName, data) => await promisify(getStore(dbName, storeName, 'readwrite').add(data));
+export const updateRecord = async (dbName, storeName, data) => await promisify(getStore(dbName, storeName, 'readwrite').put(data));
+export const getRecord = async (dbName, storeName, key) => await promisify(getStore(dbName, storeName, 'readonly').get(key));
+export const getAllRecords = async (dbName, storeName) => await promisify(getStore(dbName, storeName, 'readonly').getAll());
+export const removeRecord = async (dbName, storeName, key) => await promisify(getStore(dbName, storeName, 'readwrite').delete(key));
+export const countRecords = async (dbName, storeName) => await promisify(getStore(dbName, storeName, 'readonly').count());
+export const getByIndex = async (dbName, storeName, indexName, value, limit) => {
+	const index = getStore(dbName, storeName).index(indexName);
+	if (limit) return await iterateCursor(index.openCursor(value ? IDBKeyRange.only(value) : null), () => true, limit);
+	return await promisify(index.getAll(value ? IDBKeyRange.only(value) : null));
 };
-// Utilities (extracted from your graph-db)
-const getStore = (params, mode = 'readonly') => params.db.transaction([params.storeName], mode).objectStore(params.storeName);
+// Utilities
+const getStore = (dbName, storeName, mode = 'readonly') => DBs.get(dbName).transaction([storeName], mode).objectStore(storeName);
 const promisify = (req) => new Promise((resolve, reject) => (req.onsuccess = () => resolve(req.result), req.onerror = () => reject(req.error)));
 const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
-    const results = [];
-    return new Promise((resolve, reject) => {
-        cursorRequest.onsuccess = (event) => {
-            const cursor = event.target.result;
-            if (cursor && results.length < limit) {
-                const shouldContinue = callback(cursor.value, cursor);
-                if (shouldContinue !== false) {
-                    results.push(cursor.value);
-                    cursor.continue();
-                } else {
-                    resolve(results);
-                }
-            } else {
-                resolve(results);
-            }
-        };
-        cursorRequest.onerror = () => reject(cursorRequest.error);
-    });
+	const results = [];
+	return new Promise((resolve, reject) => {
+		cursorRequest.onsuccess = (event) => {
+			const cursor = event.target.result;
+			if (cursor && results.length < limit) {
+				const shouldContinue = callback(cursor.value, cursor);
+				if (shouldContinue !== false) { results.push(cursor.value); cursor.continue(); }
+				else { resolve(results); }
+			} else { resolve(results); }
+		};
+		cursorRequest.onerror = () => reject(cursorRequest.error);
+	});
 };
-
-
-
-export const deleteDB = ({name}) => {
-  return new Promise((resolve, reject) => {
-    const deleteReq = indexedDB.deleteDatabase(name);
-    deleteReq.onsuccess = () => (runtime.log(`✅ ${name} database deleted successfully`, deleteReq), resolve());
-    deleteReq.onerror = () => (runtime.logError(`❌ Failed to delete ${name} database:`, deleteReq.error), reject(deleteReq.error));
-    deleteReq.onblocked = () => runtime.logError(`⚠️ ${name} database deletion blocked - close all tabs using this database`);
-  });
+export const deleteDB = (name) => {
+	return new Promise((resolve, reject) => {
+		const deleteReq = indexedDB.deleteDatabase(name);
+		deleteReq.onsuccess = () => (runtime.log(`✅ ${name} database deleted successfully`, deleteReq), resolve(true));
+		deleteReq.onerror = () => (runtime.logError(`❌ Failed to delete ${name} database:`, deleteReq.error), reject(deleteReq.error));
+		deleteReq.onblocked = () => runtime.logError(`⚠️ ${name} database deletion blocked - close all tabs using this database`);
+	});
 };
-
-
-
-export const getAllDatabases = async () => {
-  try {
-    return 'databases' in indexedDB ? (await indexedDB.databases()).map(db => ({ name: db.name, version: db.version })) : [];
-  } catch (error) { runtime.logError('[IndexedDB] Failed to get database list:', error); }
-};
+export const getAllDatabases = async () => 'databases' in indexedDB ? (await indexedDB.databases()).map(db => ({ name: db.name, version: db.version })) : [];

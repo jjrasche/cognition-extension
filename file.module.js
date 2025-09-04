@@ -5,7 +5,7 @@ export const manifest = {
 	description: "User-controlled file operations with directory handles and persistent permissions",
 	permissions: ["storage"],
 	dependencies: ["indexed-db", "tab", "ui"],
-	actions: ["write", "read", "append", "remove", "listFiles", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle", "requestRequiredDirectoryAccess", "getDB"],
+	actions: ["write", "read", "append", "remove", "listFiles", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle", "requestRequiredDirectoryAccess"],
 	indexeddb: {
 		name: 'FileHandlers',
 		version: 1,
@@ -15,15 +15,13 @@ export const manifest = {
 		]
 	}
 };
-let runtime, db, neededDirectories = [];
+let runtime, neededDirectories = [];
 export const initialize = async (rt) => {
 	runtime = rt;
-	db = await getDB();
 	neededDirectories = (await Promise.all(getModuleRequiredDirectories().map(async dirName => !(await hasDir(dirName)) && dirName))).filter(dir => dir);
 	if (neededDirectories.length > 0) await promptUserToInitiateFileAccess();
 };
 
-// export const getDB = () => db;
 const getModuleRequiredDirectories = () => [...new Set(runtime.getModulesWithProperty('requiredDirectories').flatMap(module => module.manifest.requiredDirectories || []))]
 export const requestRequiredDirectoryAccess = async () => {
 	await Promise.all(neededDirectories.map(async dirName => await getHandle(dirName)));
@@ -40,14 +38,15 @@ const promptUserToInitiateFileAccess = async () => {
 }
 
 // handle db
-export const getDB = async () => db ?? await runtime.call('indexed-db.openDb', manifest.indexeddb);
+const handlesDB = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, 'handles', ...args);
+const operationsDB = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, 'operations', ...args);
 const storeHandle = async (name, handle) => updateHandle({ id: `handle-${name}`, name, handle, timestamp: new Date().toISOString(), directoryName: handle.name });
-export const getAllHandles = async () => await runtime.call('indexed-db.getAllRecords', { db, storeName: 'handles' });
-const updateHandle = async (handleData) => await runtime.call('indexed-db.updateRecord', { db, storeName: 'handles', data: handleData });
+export const getAllHandles = async () => await handlesDB('getAllRecords');
+const updateHandle = async (handleData) => await handlesDB('updateRecord', handleData);
 // operations db
-const saveFileOperation = async (data) => await runtime.call('indexed-db.addRecord', { db, storeName: 'operations', data });
+const saveFileOperation = async (data) => await operationsDB('addRecord', data);
 // permissions
-const getStoredHandle = async (name) => await runtime.call('indexed-db.getRecord', { db, storeName: 'handles', key: `handle-${name}` });
+const getStoredHandle = async (name) => await handlesDB('getRecord', `handle-${name}`);
 const getHandle = async (name) => {
 	const storedHandle = await getStoredHandle(name);
 	let handle = storedHandle?.handle ?? await selectDir();
@@ -64,11 +63,11 @@ const verifyPermission = async (name, handle) => {
 }
 // logging
 const logFileOperation = async ({ operation, dir, filename, size }) => await saveFileOperation({ operation, directory: dir, filename, size, timestamp: new Date().toISOString() });
-export const getFileHistory = async ({ limit = 10 } = {}) => await runtime.call('indexed-db.getByIndex', { db, storeName: 'operations', indexName: 'by-timestamp', limit, direction: 'prev' });
+export const getFileHistory = async ({ limit = 10 } = {}) => await operationsDB('getByIndex', 'by-timestamp', 'prev', limit);
 // handles
 const getFileHandle = async ({ dir, filename }) => await (await getHandle(dir)).getFileHandle(filename, { create: true });
 export const deleteAllHandles = async () => (await getAllHandles()).forEach(async handle => deleteHandle(handle.id));
-export const deleteHandle = async (key) => await runtime.call('indexed-db.removeRecord', { db, storeName: 'handles', key });
+export const deleteHandle = async (key) => await handlesDB('removeRecord', key);
 // file operations
 export const listFiles = async ({ dir }) => { const files = []; for await (const [name, h] of (await getHandle(dir)).entries()) h.kind === 'file' && files.push(name); return files; };
 const getFile = async ({ dir, filename }) => await (await getFileHandle({ dir, filename })).getFile();

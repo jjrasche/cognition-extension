@@ -214,7 +214,7 @@ const addSynthesis = async (cluster) => {
 
 const getOrbitingNodes = async (cluster) => {
 	const allText = cluster.thoughts.map(t => t.text).join(' ');
-	const relatedNodes = await runtime.call('graph-db.searchByText', { text: allText, threshold: 0.4 });
+	const relatedNodes = await runtime.call('graph-db.searchByText', allText, 0.4);
 
 	return relatedNodes.slice(0, 5).map(node => ({
 		id: node.id,
