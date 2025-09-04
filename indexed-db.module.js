@@ -4,7 +4,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Generic IndexedDB operations extracted from graph-db",
 	permissions: [],
-	actions: ["createDB", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "countRecords", "getNextId", "deleteDB", "getAllDatabases"],
+	actions: ["createDB", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "getByIndexCursor", "countRecords", "getNextId", "deleteDB", "getAllDatabases"],
 };
 
 let runtime, DBs = new Map();
@@ -30,16 +30,30 @@ const createStoreWithIndexes = (db, config) => {
 };
 // Record operations
 export const addRecord = async (dbName, storeName, data) => await promisify(getStore(dbName, storeName, 'readwrite').add(data));
+export const addRecordWithId = async (dbName, storeName, data) => {
+	const key = await addRecord(dbName, storeName, data);
+	return await updateRecord(dbName, storeName, { ...data, id: key });
+};
 export const updateRecord = async (dbName, storeName, data) => await promisify(getStore(dbName, storeName, 'readwrite').put(data));
 export const getRecord = async (dbName, storeName, key) => await promisify(getStore(dbName, storeName, 'readonly').get(key));
 export const getAllRecords = async (dbName, storeName) => await promisify(getStore(dbName, storeName, 'readonly').getAll());
 export const removeRecord = async (dbName, storeName, key) => await promisify(getStore(dbName, storeName, 'readwrite').delete(key));
 export const countRecords = async (dbName, storeName) => await promisify(getStore(dbName, storeName, 'readonly').count());
-export const getByIndex = async (dbName, storeName, indexName, value, limit) => {
+
+export const getByIndexCursor = async (dbName, storeName, indexName, direction = 'next', limit = Infinity) => {
 	const index = getStore(dbName, storeName).index(indexName);
-	if (limit) return await iterateCursor(index.openCursor(value ? IDBKeyRange.only(value) : null), () => true, limit);
+	return await iterateCursor(index.openCursor(null, direction), () => true, limit);
+};
+export const getByIndex = async (dbName, storeName, indexName, value) => {
+	const index = getStore(dbName, storeName).index(indexName);
 	return await promisify(index.getAll(value ? IDBKeyRange.only(value) : null));
 };
+
+// export const getByIndex = async (dbName, storeName, indexName, value, limit) => {
+// 	const index = getStore(dbName, storeName).index(indexName);
+// 	if (limit) return await iterateCursor(index.openCursor(value ? IDBKeyRange.only(value) : null), () => true, limit);
+// 	return await promisify(index.getAll(value ? IDBKeyRange.only(value) : null));
+// };
 // Utilities
 const getStore = (dbName, storeName, mode = 'readonly') => DBs.get(dbName).transaction([storeName], mode).objectStore(storeName);
 const promisify = (req) => new Promise((resolve, reject) => (req.onsuccess = () => resolve(req.result), req.onerror = () => reject(req.error)));

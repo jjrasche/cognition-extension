@@ -28,16 +28,14 @@ export const addInferenceNode = async (params) => {
 	const node = { query, prompt, response, model, context, timestamp: new Date().toISOString() };
 	return await nodesDB('addRecord', node);
 };
-export const addNode = async (params) => {
-	const { type = 'generic', ...nodeData } = params;
-
+export const addNode = async ({ type = 'generic', ...nodeData }) => {
 	const node = { type, timestamp: new Date().toISOString(), ...nodeData };
-	await nodesDB('addRecord', node);
+	return await nodesDB('addRecordWithId', node);
 };
 export const getNode = async (nodeId) => await nodesDB('getRecord', nodeId);
 export const removeNode = async (nodeId) => await nodesDB('removeRecord', nodeId);
 export const getNodesByType = async (type) => (await nodesDB('getAllRecords')).filter(node => node.type === type);
-export const getRecentNodes = async (limit) => await nodesDB('getByIndex', 'by-timestamp', 'prev', limit || 20);
+export const getRecentNodes = async (limit) => await nodesDB('getByIndexCursor', 'by-timestamp', 'prev', limit);
 // Search operations
 export const findSimilarNodes = async (nodeId, threshold = similiarityThreshold) => {
 	const sourceNode = await getNode(nodeId);
