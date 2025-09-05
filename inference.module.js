@@ -18,6 +18,11 @@ export const initialize = async (rt) => {
 
 const registerProviders = async () => (providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function')), runtime.log(`[Inference] Registered ${providers.length} providers`));
 
+export const addInferenceNode = async (query, prompt, response, model, context) => {
+	const node = { query, prompt, response, model, context, timestamp: new Date().toISOString() };
+	return runtime.call('graph-db.addNode', { type: 'inference', ...node });
+};
+
 const loadConfig = async () => {
 	const [savedProvider, savedModel] = await Promise.all([runtime.call('chrome-sync.get', "inference.provider"), runtime.call('chrome-sync.get', "inference.model")]);
 	provider = providers.find(p => p.manifest.name === savedProvider);
@@ -100,7 +105,7 @@ export const prompt = async (params) => {
 	!response.ok && (() => { throw new Error(`${provider.manifest.name} API error: ${response.status}`); })();
 
 	const content = await provider.getContent(response);
-	// runtime.call('graph-db.addInferenceNode', { query, prompt: messages, response: content, model: model.id, provider: provider.manifest.name }).catch(() => { });
+	// const node = await addInferenceNode(query, messages, content, model.id, provider.manifest.name);
 	return content;
 };
 

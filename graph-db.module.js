@@ -1,4 +1,4 @@
-import { calculateCosineSimilarity } from "./helpers.js";
+import { calculateCosineSimilarity, getId } from "./helpers.js";
 export const manifest = {
 	name: "graph-db",
 	context: ["service-worker"],
@@ -6,13 +6,13 @@ export const manifest = {
 	description: "Graph database for storing knowledge and relationships",
 	permissions: ["storage"],
 	dependencies: ["indexed-db"],
-	actions: ["addInferenceNode", "addNode", "getNode", "removeNode", "getNodesByType", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes", "findInteractionByIds", "updateNode", "checkGraphStructure", "getCount"],
+	actions: ["addNode", "getNode", "addEdge", "removeNode", "getNodesByType", "getRecentNodes", "findSimilarNodes", "searchByText", "getConnectedNodes", "findInteractionByIds", "updateNode", "checkGraphStructure", "getCount"],
 	indexeddb: {
 		name: 'CognitionGraph',
 		version: 1,
 		storeConfigs: [
-			{ name: 'nodes', options: { autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
-			{ name: 'edges', options: { keyPath: ['from', 'to', 'type'] }, indexes: [{ name: 'by-from', keyPath: 'from' }, { name: 'by-to', keyPath: 'to' }] },
+			{ name: 'nodes', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] },
+			{ name: 'edges', options: { keyPath: 'id' }, indexes: [{ name: 'by-from', keyPath: 'from' }, { name: 'by-to', keyPath: 'to' }, { name: 'by-type', keyPath: 'type' }] }
 		]
 	},
 };
@@ -23,14 +23,9 @@ export const initialize = async (rt) => (runtime = rt);
 let nodesDB = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, 'nodes', ...args);
 let edgesDB = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, 'edges', ...args);
 // Main node operations
-export const addInferenceNode = async (params) => {
-	const { query, prompt, response, model, context } = params;
-	const node = { query, prompt, response, model, context, timestamp: new Date().toISOString() };
+export const addNode = async ({ type = 'generic', id, ...nodeData }) => {
+	const node = { id: id || getId(`${type}-`), type, timestamp: new Date().toISOString(), ...nodeData };
 	return await nodesDB('addRecord', node);
-};
-export const addNode = async ({ type = 'generic', ...nodeData }) => {
-	const node = { type, timestamp: new Date().toISOString(), ...nodeData };
-	return await nodesDB('addRecordWithId', node);
 };
 export const getNode = async (nodeId) => await nodesDB('getRecord', nodeId);
 export const removeNode = async (nodeId) => await nodesDB('removeRecord', nodeId);
@@ -69,6 +64,10 @@ export const getConnectedNodes = async (params) => {
 };
 // Edge operations
 export const createEdge = async (from, to, type, weights) => await edgesDB('addRecord', { from, to, type, weights });
+export const addEdge = async ({ from, to, type = 'relates_to', weight = 1.0, metadata = {} }) => {
+	if (!from || !to || !type) throw new Error(`Edge requires from (${from}), to (${to}), and type (${type}) properties`);
+	return edgesDB('addRecord', { id: getId('edge-'), from, to, type, weight, metadata, timestamp: new Date().toISOString() });
+};
 // Utility functions
 const getAllNodesWithEmbeddings = async () => (await nodesDB('getAllRecords')).filter(node => node.embedding);
 export const updateNode = async (nodeId, updateData) => {

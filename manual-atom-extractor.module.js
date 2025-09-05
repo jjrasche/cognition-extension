@@ -20,10 +20,6 @@ let runtime, selectedSpans = [], atomicIdeas = [], currentSource = {
 };
 export const initialize = async (rt) => runtime = rt;
 
-/*
-	turn claude export into a list of inference interactions and load the next one in chronological order that isn't marked reviewed. format:
-	currentSource = { sourceId: `claude_conv_${recentChat.uri}`, type: "inference interaction", prompt:  response: url:  timestamp: reviewed: false };
-*/
 export const loadSource = async () => {
 	const claudeConversations = [];
 	// currentSource = claudeConversations.filter(c => !c.reviewed).sort((a, b) => a.timestamp - b.timestamp);
@@ -35,8 +31,9 @@ export const handleSelection = async ({ selection }) => {
 	await buildUI();
 };
 export const createAtomicIdea = async ({ formData }) => {
-	const ideaText = formData.ideaText || selectedSpans.map(s => s.text).join(' ');
-	atomicIdeas.push({ id: getId('idea-'), text: ideaText, sourceSpans: selectedSpans.map(s => s.text), createdAt: new Date().toISOString() });
+	const text = formData.ideaText || selectedSpans.map(s => s.text).join(' ');
+	const node = await runtime.call('graph-db.addNode', { type: 'atomic-idea', text, sourceSpans: selectedSpans.map(s => s.text), sourceId: currentSource?.sourceId });
+	atomicIdeas.push(node);
 	await clearSelections();
 };
 const clearSelections = async () => (selectedSpans = [], await buildUI());

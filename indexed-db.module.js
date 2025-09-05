@@ -30,10 +30,6 @@ const createStoreWithIndexes = (db, config) => {
 };
 // Record operations
 export const addRecord = async (dbName, storeName, data) => await promisify(getStore(dbName, storeName, 'readwrite').add(data));
-export const addRecordWithId = async (dbName, storeName, data) => {
-	const key = await addRecord(dbName, storeName, data);
-	return await updateRecord(dbName, storeName, { ...data, id: key });
-};
 export const updateRecord = async (dbName, storeName, data) => await promisify(getStore(dbName, storeName, 'readwrite').put(data));
 export const getRecord = async (dbName, storeName, key) => await promisify(getStore(dbName, storeName, 'readonly').get(key));
 export const getAllRecords = async (dbName, storeName) => await promisify(getStore(dbName, storeName, 'readonly').getAll());
