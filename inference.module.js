@@ -104,7 +104,7 @@ export const infer = async (query) => {
 }
 
 export const prompt = async (params) => {
-	const { query, systemPrompt, webSearch } = params;
+	const { query, systemPrompt, webSearch, loadSource = false } = params;
 	const targetProvider = params.provider ? providers.find(p => p.manifest.name === params.provider) : provider;
 	const targetModel = params.model ? targetProvider?.manifest.inferenceModels?.find(m => m.id === params.model) : model;
 	(!targetProvider || !targetModel) && (() => { throw new Error('No provider/model configured'); })();
@@ -114,9 +114,11 @@ export const prompt = async (params) => {
 	!response.ok && (() => { throw new Error(`${provider.manifest.name} API error: ${response.status}`); })();
 
 	const content = await provider.getContent(response);
-	const nodeId = await addInferenceNode(query, messages, content, model.id, provider.manifest.name);
-	const tree = inferenceSourceTree(query, content);
-	await runtime.call('manual-atom-extractor.loadSource', tree, { sourceId: nodeId, type: "inference interaction" });
+	if (loadSource) {
+		const nodeId = await addInferenceNode(query, messages, content, model.id, provider.manifest.name);
+		const tree = inferenceSourceTree(query, content);
+		await runtime.call('manual-atom-extractor.loadSource', tree, { sourceId: nodeId, type: "inference interaction" });
+	}
 	return content;
 };
 const inferenceSourceTree = (query, content) => ({
