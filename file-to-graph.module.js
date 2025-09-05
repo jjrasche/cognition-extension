@@ -117,7 +117,7 @@ export const renderEvaluationDashboard = async (threshold = .3) => {
 	};
 	runtime.log('renderEvaluationDashboard', ret);
 	await runtime.call('ui.hidePageSpinner');
-	return ret;
+	await runtime.call('ui.renderTree', ret);
 };
 
 const buildResultsTable = (results) => {

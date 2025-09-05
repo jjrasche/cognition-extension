@@ -17,12 +17,14 @@ export const initialize = async (rt) => {
 };
 const registerSearchActions = () => {
 	searchActions = runtime.getModulesWithProperty('searchActions').flatMap(m =>
-		m.manifest.searchActions.map(a => ({
-			...a,
-			func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input),
-			condition: a.keyword ? (input) => input.toLowerCase() === a.keyword.toLowerCase() : a.condition,
-			priority: a.keyword ? 1 : 2
-		}))
+		m.manifest.searchActions.map(a => {
+			return {
+				...a,
+				func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input),
+				condition: a.keyword ? (input) => input.toLowerCase() === a.keyword.toLowerCase() : a.condition,
+				priority: a.keyword ? 1 : a.condition && a.condition.toString().includes("startsWith") ? 2 : 3
+			};
+		})
 	).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
 	runtime.log(`Registered ${searchActions.length} search actions:\n${searchActions.map(a => `- ${a.name} (priority ${a.priority})`).join('\n')}`);
 }
@@ -50,7 +52,7 @@ export const handleSearchKeydown = async (event) => {
 	showState('Searching...', 'loading');
 	const action = await getAction(input);
 	try {
-		if (action) await renderTree(await action.func(input));
+		if (action) await action.func(input);
 		else showState('No valid action found', 'error');
 	} catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
 };
@@ -114,7 +116,10 @@ export const clearPrompt = async () => {
 	const input = getSearchInput();
 	if (input) input["value"] = '';
 };
-export const closeModal = async () => document.querySelector('.cognition-overlay')?.remove();
+export const closeModal = async () => {
+	document.querySelector('.cognition-overlay')?.remove();
+	await initializeLayout();
+}
 export const showPageSpinner = async (message = "Processing...") => {
 	const spinnerTree = {
 		"page-spinner-overlay": {

@@ -4,7 +4,11 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Manages LLM inference across multiple providers with streaming support",
 	dependencies: ["chrome-sync", "graph-db", "ui"],
-	actions: ["prompt", "showProviderModule", "uiPicker", "updateForm", "saveForm"],
+	actions: ["prompt", "infer", "showProviderModule", "uiPicker", "updateForm", "saveForm"],
+	searchActions: [
+		{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" },
+		{ name: "select inference model", keyword: "pick model", method: "uiPicker" }
+	]
 };
 
 let runtime, model, provider, providers = [];
@@ -13,15 +17,16 @@ export const initialize = async (rt) => {
 	runtime = rt;
 	await registerProviders();
 	await loadConfig();
-	// (!provider || !model) && await showProviderSelection();
+	(!provider || !model) && await showProviderSelection();
 };
 
 const registerProviders = async () => (providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function')), runtime.log(`[Inference] Registered ${providers.length} providers`));
 
-export const addInferenceNode = async (query, prompt, response, model, context) => {
+const addInferenceNode = async (query, prompt, response, model, context) => {
 	const node = { query, prompt, response, model, context, timestamp: new Date().toISOString() };
 	return runtime.call('graph-db.addNode', { type: 'inference', ...node });
 };
+const getInferenceNode = async (id) => runtime.call('graph-db.getNode', id);
 
 const loadConfig = async () => {
 	const [savedProvider, savedModel] = await Promise.all([runtime.call('chrome-sync.get', "inference.provider"), runtime.call('chrome-sync.get', "inference.model")]);
@@ -94,6 +99,10 @@ export const saveForm = async (eventData) => {
 	runtime.log(`[Inference] ✅ Configured: ${provider.manifest.name} - ${model.name}`);
 };
 
+export const infer = async (query) => {
+	await prompt({ query });
+}
+
 export const prompt = async (params) => {
 	const { query, systemPrompt, webSearch } = params;
 	const targetProvider = params.provider ? providers.find(p => p.manifest.name === params.provider) : provider;
@@ -105,8 +114,27 @@ export const prompt = async (params) => {
 	!response.ok && (() => { throw new Error(`${provider.manifest.name} API error: ${response.status}`); })();
 
 	const content = await provider.getContent(response);
-	// const node = await addInferenceNode(query, messages, content, model.id, provider.manifest.name);
+	const nodeId = await addInferenceNode(query, messages, content, model.id, provider.manifest.name);
+	const tree = inferenceSourceTree(query, content);
+	await runtime.call('manual-atom-extractor.loadSource', tree, { sourceId: nodeId, type: "inference interaction" });
 	return content;
 };
+const inferenceSourceTree = (query, content) => ({
+	tag: "div",
+	style: "flex: 1; padding: 15px; overflow-y: auto; line-height: 1.6;",
+	data: { textSelectionHandler: "manual-atom-extractor.handleSelection" },
+	"prompt-section": {
+		tag: "div",
+		style: "margin-bottom: 20px; padding: 15px; background: var(--bg-tertiary); border-radius: 8px; border-left: 4px solid #4CAF50;",
+		"prompt-label": { tag: "h4", text: "User Prompt", style: "margin: 0 0 10px 0; color: #4CAF50;" },
+		"prompt-text": { tag: "div", text: query, style: "white-space: pre-wrap;" }
+	},
+	"response-section": {
+		tag: "div",
+		style: "padding: 15px; background: var(--bg-tertiary); border-radius: 8px; border-left: 4px solid #2196F3;",
+		"response-label": { tag: "h4", text: "AI Response", style: "margin: 0 0 10px 0; color: #2196F3;" },
+		"response-text": { tag: "div", text: content, style: "white-space: pre-wrap;" }
+	}
+});
 
 export const showProviderModule = () => provider && model ? runtime.log(`[Inference] ${provider.manifest.name} - ${model.name}`) : runtime.log('[Inference] Not configured');

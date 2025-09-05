@@ -75,43 +75,43 @@ const parseExtractionResponse = (responseText, originalParagraph) => {
 export const extractAndDisplay = async (eventData) => {
 	const { paragraph } = eventData.formData;
 	if (!paragraph?.trim()) return;
-
-	await runtime.call('ui.renderTree', buildAtomicExtractorUI(paragraph, null)); // Loading state
-
+	await buildAtomicExtractorUI(paragraph, null);
 	try {
 		const result = await extractFromParagraph(paragraph.trim());
-		await runtime.call('ui.renderTree', buildAtomicExtractorUI(paragraph, result));
+		await buildAtomicExtractorUI(paragraph, result);
 	} catch (error) {
 		runtime.logError('[Atomic Ideas] Display error:', error);
-		await runtime.call('ui.renderTree', buildAtomicExtractorUI(paragraph, { success: false, error: error.message }));
+		await buildAtomicExtractorUI(paragraph, { success: false, error: error.message });
 	}
 };
-export const buildAtomicExtractorUI = (inputText = '', result) => ({
-	"atomic-extractor": {
-		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
-		"back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", style: "margin-bottom: 20px; align-self: flex-start;", events: { click: "ui.initializeLayout" } },
-		"main-content": {
-			tag: "div", style: "flex: 1; display: flex; gap: 20px;",
-			"input-panel": {
-				tag: "div", style: "flex: 1; display: flex; flex-direction: column;",
-				"input-header": { tag: "h3", text: "Input Paragraph", style: "margin-bottom: 10px;" },
-				"paragraph-form": {
-					tag: "form", style: "flex: 1; display: flex; flex-direction: column;", events: { submit: "atomic-idea.extractAndDisplay" },
-					"paragraph-input": { tag: "textarea", name: "paragraph", value: inputText, placeholder: "Paste a paragraph here and click Extract to see atomic ideas...", style: "flex: 1; padding: 15px; font-size: 14px; line-height: 1.6; resize: none; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); color: var(--text-primary);" },
-					"extract-button": { tag: "button", type: "submit", text: "Extract Atomic Ideas", class: "cognition-button-primary", style: "margin-top: 15px; padding: 12px;" }
-				}
-			},
-			"output-panel": {
-				tag: "div", style: "flex: 1; display: flex; flex-direction: column;",
-				"output-header": { tag: "h3", text: "Atomic Ideas", style: "margin-bottom: 10px;" },
-				"ideas-container": {
-					tag: "div", id: "atomic-idea-display", style: "flex: 1; border: 1px solid var(--border-primary); border-radius: 8px; padding: 15px; overflow-y: auto; background: var(--bg-secondary);",
-					innerHTML: result ? buildIdeasDisplay(result) : (inputText ? '<div class="cognition-loading" style="justify-content: center; margin-top: 50px;"><div class="cognition-spinner"></div><div class="cognition-loading-message">Extracting atomic ideas...</div></div>' : '<div style="color: var(--text-muted); text-align: center; margin-top: 50px;">Click "Extract" to see atomic ideas...</div>')
+export const buildAtomicExtractorUI = async (inputText = '', result) => {
+	await runtime.call("ui.renderTree", {
+		"atomic-extractor": {
+			tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
+			"back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", style: "margin-bottom: 20px; align-self: flex-start;", events: { click: "ui.initializeLayout" } },
+			"main-content": {
+				tag: "div", style: "flex: 1; display: flex; gap: 20px;",
+				"input-panel": {
+					tag: "div", style: "flex: 1; display: flex; flex-direction: column;",
+					"input-header": { tag: "h3", text: "Input Paragraph", style: "margin-bottom: 10px;" },
+					"paragraph-form": {
+						tag: "form", style: "flex: 1; display: flex; flex-direction: column;", events: { submit: "atomic-idea.extractAndDisplay" },
+						"paragraph-input": { tag: "textarea", name: "paragraph", value: inputText, placeholder: "Paste a paragraph here and click Extract to see atomic ideas...", style: "flex: 1; padding: 15px; font-size: 14px; line-height: 1.6; resize: none; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); color: var(--text-primary);" },
+						"extract-button": { tag: "button", type: "submit", text: "Extract Atomic Ideas", class: "cognition-button-primary", style: "margin-top: 15px; padding: 12px;" }
+					}
+				},
+				"output-panel": {
+					tag: "div", style: "flex: 1; display: flex; flex-direction: column;",
+					"output-header": { tag: "h3", text: "Atomic Ideas", style: "margin-bottom: 10px;" },
+					"ideas-container": {
+						tag: "div", id: "atomic-idea-display", style: "flex: 1; border: 1px solid var(--border-primary); border-radius: 8px; padding: 15px; overflow-y: auto; background: var(--bg-secondary);",
+						innerHTML: result ? buildIdeasDisplay(result) : (inputText ? '<div class="cognition-loading" style="justify-content: center; margin-top: 50px;"><div class="cognition-spinner"></div><div class="cognition-loading-message">Extracting atomic ideas...</div></div>' : '<div style="color: var(--text-muted); text-align: center; margin-top: 50px;">Click "Extract" to see atomic ideas...</div>')
+					}
 				}
 			}
 		}
-	}
-});
+	});
+};
 const buildIdeasDisplay = (result) => {
 	if (!result.success) {
 		return `<div style="color: var(--danger); text-align: center; margin-top: 50px;">Error: ${escapeHtml(result.error || 'Unknown error')}</div>`;

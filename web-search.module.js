@@ -4,9 +4,9 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Web search via DuckDuckGo tab scraping",
 	permissions: ["tabs", "scripting"],
-	actions: ["getSearchResults", "getSearchTree"],
+	actions: ["getSearchResults", "buildUI"],
 	searchActions: [
-		{ name: "search web", condition: input => input.length < 20, method: "getSearchTree" },
+		{ name: "search web", condition: input => input.length < 20, method: "buildUI" },
 	]
 };
 
@@ -17,16 +17,17 @@ export const getSearchResults = async (query, maxResults = 5) => {
 	const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
 	return runtime.call("tab.executeTemp", url, scrapeResultsInTab, [maxResults]);
 };
-export const getSearchTree = async (query, maxResults = 5) => {
+export const buildUI = async (query, maxResults = 5) => {
 	const results = await getSearchResults(query, maxResults);
-	return {
-		"search-container": {
-			tag: "div", class: "search-results",
-			"results-header": { tag: "h2", text: `Results for "${query}"` },
-			...createResultNodes(results)
-		},
-	};
+	await runtime.call('ui.renderTree', buildSearchTree(results, query));
 };
+const buildSearchTree = (results, query) => ({
+	"search-container": {
+		tag: "div", class: "search-results",
+		"results-header": { tag: "h2", text: `Results for "${query}"` },
+		...createResultNodes(results)
+	}
+});
 const createResultNodes = (results) => Object.fromEntries(
 	results.flatMap((result, i) => {
 		const resultId = `result-${i}`;

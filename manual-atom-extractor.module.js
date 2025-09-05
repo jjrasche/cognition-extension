@@ -5,24 +5,17 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Extract and curate atomic ideas from conversation sources to test flow enhancement hypothesis",
 	dependencies: ["ui"],
-	actions: ["buildUI", "buildTree", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
+	actions: ["buildUI", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
 	searchActions: [
-		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildTree" }
+		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildUI" }
 	]
 };
 
-let runtime, selectedSpans = [], atomicIdeas = [], currentSource = {
-	type: "inference interaction",
-	id: "id",
-	content: "a long long time ago, I can still remember... how that music made me smile",
-	timestamp: Date.now(),
-	reviewed: false
-};
+let runtime, selectedSpans = [], atomicIdeas = [], currentSource = null;
 export const initialize = async (rt) => runtime = rt;
 
-export const loadSource = async () => {
-	const claudeConversations = [];
-	// currentSource = claudeConversations.filter(c => !c.reviewed).sort((a, b) => a.timestamp - b.timestamp);
+export const loadSource = async (tree, params = {}) => {
+	currentSource = { tree, ...params };
 	await buildUI();
 };
 // dynamic form behavior
@@ -47,18 +40,15 @@ export const saveCollection = async () => {
 	console.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
 };
 // UI
-export const buildUI = async () => {
-	const tree = buildTree();
-	await runtime.call('ui.renderTree', tree);
-};
-export const buildTree = () => ({ "manual-atom-extractor": { tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;", ...header(), ...mainContent() } });
+export const buildUI = async () => await runtime.call('ui.renderTree', buildTree());
+const buildTree = () => ({ "manual-atom-extractor": { tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;", ...header(), ...mainContent() } });
 const header = () => ({ "header": { tag: "div", style: "margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;", ...backButton(), "title": { tag: "h2", text: "Knowledge Forge", style: "margin: 0; color: var(--text-primary);" }, ...saveButton() } });
 const backButton = () => ({ "back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", events: { click: "ui.initializeLayout" } } });
 const saveButton = () => ({ "save-button": { tag: "button", text: "Save Collection", class: "cognition-button-primary", events: { click: "manual-atom-extractor.saveCollection" } } });
 const mainContent = () => ({ "main-content": { tag: "div", style: "flex: 1; display: flex; gap: 20px; min-height: 0;", ...sourcePanel(), ...ideaPanel() } });
 const sourcePanel = () => ({ "source-panel": { tag: "div", style: panelStyle, ...sourceHeader(), ...sourceContent() } });
 const sourceHeader = () => ({ "source-header": { tag: "div", style: headerStyle, "next-sources-btn": { tag: "button", text: "Load Next Source", class: "cognition-button-secondary", events: { click: "manual-atom-extractor.loadSource" } } } });
-const sourceContent = () => ({ "source-content": { tag: "div", id: "source-content", style: "flex: 1; padding: 15px; overflow-y: auto; line-height: 1.6; cursor: text;", data: { textSelectionHandler: "manual-atom-extractor.handleSelection" }, innerHTML: currentSource ? formatSourceContent(currentSource) : '<p style="color: var(--text-muted); text-align: center; margin-top: 50px;">Load a conversation to begin extracting atomic ideas</p>' } });
+const sourceContent = () => ({ "source-content": { tag: "div", id: "source-content", style: "flex: 1; padding: 15px; overflow-y: auto; line-height: 1.6; cursor: text;", data: { textSelectionHandler: "manual-atom-extractor.handleSelection" }, innerHTML: currentSource ? currentSource.tree : '<p style="color: var(--text-muted); text-align: center; margin-top: 50px;">Load a conversation to begin extracting atomic ideas</p>' } });
 const ideaPanel = () => ({ "idea-panel": { tag: "div", style: "flex: 1; display: flex; flex-direction: column; gap: 20px;", ...ideaCreator(), ...ideaCollection() } });
 const ideaCreator = () => ({
 	"idea-creator": {
@@ -76,15 +66,6 @@ const ideaCollection = () => ({ "idea-collection": { tag: "div", style: panelSty
 const ideaCollectionHeader = () => ({ "collection-header": { tag: "div", style: headerStyle, "collection-title": { tag: "h3", text: `Atomic Ideas (${atomicIdeas.length})`, style: "margin: 0; font-size: 16px;" } } });
 const panelStyle = "flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-secondary);";
 const headerStyle = "padding: 15px; border-bottom: 1px solid var(--border-primary);";
-// have each source define this eg. claude-api, web-read
-const formatSourceContent = (source) => `
-  <div style="margin-bottom: 20px; padding: 15px; background: var(--bg-tertiary); border-radius: 8px; border-left: 4px solid var(--accent-primary);">
-    <div style="font-weight: 500; margin-bottom: 8px;">Source: ${source.type}</div>
-    <div style="font-size: 12px; color: var(--text-muted);">ID: ${source.sourceId}</div>
-    <div style="font-size: 12px; color: var(--text-muted);">Timestamp: ${new Date(source.timestamp).toLocaleString()}</div>
-  </div>
-  <div style="white-space: pre-wrap; font-family: 'SF Mono', Consolas, monospace; font-size: 13px;">${source.content}</div>
-`;
 const noIdeas = () => ({ "empty-state": { tag: "div", style: "color: var(--text-muted); text-align: center; margin-top: 50px;", text: "No atomic ideas yet. Select text and create your first idea!" } });
 const ideaList = () => {
 	if (atomicIdeas.length === 0) return noIdeas();
