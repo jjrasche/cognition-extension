@@ -13,6 +13,7 @@ export const manifest = {
 let runtime, gameState = null, gameInterval = null, isRunning = false;
 export const initialize = async (rt) => (runtime = rt, setupKeyboardControls())
 
+// controls
 const setupKeyboardControls = () => {
 	document.addEventListener('keydown', (event) => {
 		if (!isRunning || !gameState) return;
@@ -27,6 +28,7 @@ const setupKeyboardControls = () => {
 		}
 	});
 };
+// game logic
 export const startGame = async () => {
 	initializeGame();
 	isRunning = true;
@@ -133,6 +135,7 @@ const gameOver = () => {
 	clearInterval(gameInterval);
 	runtime.log('[Tetris] Game Over! Score:', gameState.score);
 };
+// AI
 export const toggleAI = async () => {
 	gameState.aiMode = !gameState.aiMode;
 	gameState.aiStatus = gameState.aiMode ? "AI Mode" : "Human Control";
@@ -233,6 +236,24 @@ const executeAIMoves = async () => {
 	gameState.aiStatus = gameState.aiMode ? "AI Mode" : "Human Control";
 };
 export const getGameState = async () => ({ ...gameState });
+// game mechanics
+// Tetris pieces (tetrominoes) with their rotations
+const PIECES = {
+	I: [[[1, 1, 1, 1]], [[1], [1], [1], [1]]],
+	O: [[[1, 1], [1, 1]]],
+	T: [[[0, 1, 0], [1, 1, 1]], [[1, 0], [1, 1], [1, 0]], [[1, 1, 1], [0, 1, 0]], [[0, 1], [1, 1], [0, 1]]],
+	S: [[[0, 1, 1], [1, 1, 0]], [[1, 0], [1, 1], [0, 1]]],
+	Z: [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]],
+	J: [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]],
+	L: [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]]
+};
+const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
+const actions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', Space: 'rotate', KeyP: 'pause' };
+const types = Object.keys(PIECES);
+const validMoves = ['left', 'right', 'down', 'rotate'];
+const boardWidth = 10, boardHeight = 20;
+let interval = 800; // milliseconds per automatic down move
+// rendering 
 const renderGame = async () => {
 	const tree = {
 		"tetris-game": {
@@ -370,19 +391,3 @@ const createNextPieceElement = () => {
 		...cells
 	};
 };
-// Tetris pieces (tetrominoes) with their rotations
-const PIECES = {
-	I: [[[1, 1, 1, 1]], [[1], [1], [1], [1]]],
-	O: [[[1, 1], [1, 1]]],
-	T: [[[0, 1, 0], [1, 1, 1]], [[1, 0], [1, 1], [1, 0]], [[1, 1, 1], [0, 1, 0]], [[0, 1], [1, 1], [0, 1]]],
-	S: [[[0, 1, 1], [1, 1, 0]], [[1, 0], [1, 1], [0, 1]]],
-	Z: [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]],
-	J: [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]],
-	L: [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]]
-};
-const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
-const actions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', Space: 'rotate', KeyP: 'pause' };
-const types = Object.keys(PIECES);
-const validMoves = ['left', 'right', 'down', 'rotate'];
-const boardWidth = 10, boardHeight = 20;
-let interval = 800; // milliseconds per automatic down move
