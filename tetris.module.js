@@ -12,20 +12,20 @@ export const manifest = {
 	]
 };
 
-let runtime, gameState = null, runner = null
+let runtime, gameState = null, runner = null, aiRunner = null;
 export const initialize = async (rt) => (runtime = rt, setupKeyboardControls())
 
 // game logic
 const run = () => {
 	if (runner) return;
-	runner = setInterval(() => !makeMove('down') || stopRunning, interval);
+	runner = setInterval(() => !makeMove('down') || stopRunning(), interval);
 };
 const stopRunning = () => { clearInterval(runner); runner = null };
 export const startGame = () => { initializeGame(); run(); renderGame(); };
 export const pauseGame = () => { runner ? stopRunning() : run(); renderGame(); };
 export const resetGame = () => { stopRunning(); startGame(); };
 const initializeGame = () => (initializeGameState(), spawnPiece());
-const initializeGameState = () => (gameState = { board: Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, aiMode: false, moves: [] });
+const initializeGameState = () => (gameState = { board: Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, moves: [] });
 const makeMove = (move) => {
 	if (!gameState) return false;
 	const newPos = getNewPosition(move), newRot = getNewRotation(move);
@@ -38,6 +38,7 @@ const getNewPosition = (move) => {
 	if (move === 'left') return { x: pos.x - 1, y: pos.y };
 	if (move === 'right') return { x: pos.x + 1, y: pos.y };
 	if (move === 'down') return { x: pos.x, y: pos.y + 1 };
+	return pos;
 };
 const getNewRotation = (move) => move === 'rotate' ? (gameState.currentPiece.rotation + 1) % 4 : gameState.currentPiece.rotation;
 const lockAndSpawn = () => { lockPiece(); clearLines(); spawnPiece(); renderGame(); return !gameState.gameOver; };
@@ -83,25 +84,40 @@ const removeRow = (rowIndex) => gameState.board.splice(rowIndex, 1);
 const addRowAtTop = () => gameState.board.unshift(blankRow);
 const gameOver = () => { gameState.gameOver = true; stopRunning(); };
 // AI
+const aiPromptDelay = 500; // milliseconds
+const aiMoveDelay = 200; // milliseconds between AI moves
+const runAI = () => {
+	if (aiRunner) return;
+	aiRunner = setInterval(() => processAIMove(), aiMoveDelay);
+};
+const stopAIRunning = () => { clearInterval(aiRunner); aiRunner = null };
+export const toggleAI = async () => {
+	if (aiRunner) { stopAIRunning(); }
+	else { stopRunning(); runAI(); }
+};
+const processAIMove = async () => {
+	if (gameState.gameOver) { return stopAIRunning(); }
+	if (gameState.aiThinking) return;
+	if (gameState.moves.length === 0) await inferMoves();
+	makeMove(gameState.moves.shift());
+};
 const systemPrompt = "You are a Tetris AI. Analyze the board and return optimal moves as a JSON array. Consider line clearing opportunities, stack height, and piece placement strategy.";
 const query = () => `Board: ${gameState.board.map(row => row.join('')).join('\n')}
 Current: ${gameState.currentPiece.type}
 Valid Moves: ${validMoves.join(', ')}
 Return JSON array of moves: ["left", "rotate", "down"]
 `;
-export const getAIMoves = async () => {
+const inferMoves = async () => {
+	gameState.aiThinking = true;
 	const aiMoves = parseAIResponse(await runtime.call('inference.prompt', { query: query(), systemPrompt }));
-	return !aiMoves || aiMoves.length === 0 ? (await wait(500), await getAIMoves()) : aiMoves;
+	if (!aiMoves || aiMoves.length === 0) { await wait(aiPromptDelay); return inferMoves(); }
+	gameState.aiThinking = false;
+	gameState.moves = aiMoves;
 }
 const parseAIResponse = (response) => {
 	const jsonMatch = response.match(/\[[\s\S]*?\]/);
 	return jsonMatch ? JSON.parse(jsonMatch[0]).filter(move => validMoves.includes(move)) : null;
 };
-const aiTurn = async () => {
-	gameState.moves = await getAIMoves();
-	for (const move of gameState.moves) { await wait(200); if (!makeMove(move)) break; }
-};
-
 // rendering 
 const renderGame = async () => await runtime.call('ui.renderTree', buildGameTree());
 const buildGameTree = () => ({ "tetris-game": { tag: "div", style: "display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: monospace; background: #000; color: #fff; min-height: 100vh;", ...gameHeader(), ...mainGameArea(), ...(gameState?.gameOver && gameOverOverlay()) } });
@@ -110,8 +126,8 @@ const mainGameArea = () => ({ "game-container": { tag: "div", style: "display: f
 const infoPanel = () => ({ "info-panel": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; color: #fff;", ...scoreSection(), ...nextPieceSection(), ...aiStatusSection(), ...gameControls() } });
 const scoreSection = () => ({ "score-info": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "score": { tag: "div", text: `Score: ${gameState?.score || 0}` }, "lines": { tag: "div", text: `Lines: ${gameState?.lines || 0}` }, "level": { tag: "div", text: `Level: ${gameState?.level || 1}` } } });
 const nextPieceSection = () => ({ "next-piece": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "next-label": { tag: "div", text: "Next:", style: "font-weight: bold; margin-bottom: 5px;" }, "next-display": createNextPieceElement() } });
-const aiStatusSection = () => ({ "ai-status": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "ai-label": { tag: "div", text: "AI Status:", style: "font-weight: bold; margin-bottom: 5px;" }, "ai-info": { tag: "div", text: gameState?.aiStatus || "Human Control", style: `color: ${gameState?.aiMode ? '#00ff00' : '#ffffff'};` } } });
-const gameControls = () => ({ "game-controls": { tag: "div", style: "display: flex; flex-direction: column; gap: 10px;", "pause-btn": { tag: "button", text: runner ? "Pause (P)" : "Resume (P)", class: "cognition-button-secondary", events: { click: "tetris.pauseGame" } }, "ai-toggle": { tag: "button", text: gameState?.aiMode ? "Disable AI" : "Enable AI", class: gameState?.aiMode ? "cognition-button-primary" : "cognition-button-secondary", events: { click: "tetris.toggleAI" } }, "reset-btn": { tag: "button", text: "Reset Game", class: "cognition-button-primary", events: { click: "tetris.resetGame" } } } });
+const aiStatusSection = () => ({ "ai-status": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "ai-label": { tag: "div", text: "AI Status:", style: "font-weight: bold; margin-bottom: 5px;" }, "ai-info": { tag: "div", text: gameState?.aiStatus || "Human Control", style: `color: ${aiRunner ? '#00ff00' : '#ffffff'};` } } });
+const gameControls = () => ({ "game-controls": { tag: "div", style: "display: flex; flex-direction: column; gap: 10px;", "pause-btn": { tag: "button", text: runner ? "Pause (P)" : "Resume (P)", class: "cognition-button-secondary", events: { click: "tetris.pauseGame" } }, "ai-toggle": { tag: "button", text: aiRunner ? "Disable AI" : "Enable AI", class: aiRunner ? "cognition-button-primary" : "cognition-button-secondary", events: { click: "tetris.toggleAI" } }, "reset-btn": { tag: "button", text: "Reset Game", class: "cognition-button-primary", events: { click: "tetris.resetGame" } } } });
 const gameOverOverlay = () => ({ "game-over": { tag: "div", style: "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,0,0,0.9); color: white; padding: 20px; border-radius: 10px; text-align: center; font-size: 1.5em;", "game-over-text": { tag: "div", text: "GAME OVER", style: "font-weight: bold; margin-bottom: 10px;" }, "final-score": { tag: "div", text: `Final Score: ${gameState.score}` } } });
 const createBoardElement = () => !gameState ? { tag: "div" } : (() => {
 	const visualBoard = gameState.board.map(row => [...row]);
@@ -172,7 +188,7 @@ let interval = 800; // milliseconds per automatic down move
 const blankRow = Array(10).fill(0);
 const testScenarios = [
 	{
-		name: "Tetris 4 line clear opportunity", currentPiece: { type: 'I', rotation: 0 },
+		name: "Tetris 4 line clear opportunity", currentPiece: { type: 'T', rotation: 0 },
 		board: [
 			Array(15).fill(blankRow),
 			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -181,10 +197,8 @@ const testScenarios = [
 			[I, T, 0, O, O, L, J, O, O, L],
 			[T, T, T, O, O, L, J, O, O, L],
 		],
-		score: 2,
-		lines: 2,
-		level: 1,
-		gameOver: false
+		maxLinesCleared: 2,
+		minSpaces: 0,
 	}
 ];
 export const runModelTest = async (model, iterations = 3) => {
@@ -199,14 +213,7 @@ const runSingleTest = async (modelId, scenario, iteration) => {
 	gameState = testState;
 
 	try {
-		getAIMoves()
-		// Get AI moves using specified model
-		const aiMoves = await runtime.call('inference.prompt', {
-			query: buildAIPrompt(),
-			systemPrompt,
-			model: modelId
-		});
-
+		const moves = await getAIMoves()
 		const endTime = performance.now();
 
 
