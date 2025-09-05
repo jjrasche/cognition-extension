@@ -16,14 +16,14 @@ let runtime, gameState = null, runner = null, aiRunner = null;
 export const initialize = async (rt) => (runtime = rt, setupKeyboardControls())
 
 // game logic
-const run = () => {
+const manualRun = () => {
 	if (runner) return;
-	runner = setInterval(() => !makeMove('down') || stopRunning(), interval);
+	runner = setInterval(() => !makeMove('down') && stopManualRunning(), interval);
 };
-const stopRunning = () => { clearInterval(runner); runner = null };
-export const startGame = () => { initializeGame(); run(); renderGame(); };
-export const pauseGame = () => { runner ? stopRunning() : run(); renderGame(); };
-export const resetGame = () => { stopRunning(); startGame(); };
+const stopManualRunning = () => { clearInterval(runner); runner = null };
+export const startGame = () => { initializeGame(); manualRun(); renderGame(); };
+export const pauseGame = () => { runner ? stopManualRunning() : manualRun(); renderGame(); };
+export const resetGame = () => { stopManualRunning(); startGame(); };
 const initializeGame = () => (initializeGameState(), spawnPiece());
 const initializeGameState = () => (gameState = { board: Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, moves: [] });
 const makeMove = (move) => {
@@ -40,7 +40,7 @@ const getNewPosition = (move) => {
 	if (move === 'down') return { x: pos.x, y: pos.y + 1 };
 	return pos;
 };
-const getNewRotation = (move) => move === 'rotate' ? (gameState.currentPiece.rotation + 1) % 4 : gameState.currentPiece.rotation;
+const getNewRotation = (move) => move === 'rotate' ? (gameState.currentPiece.rotation + 1) % PIECES[gameState.currentPiece.type].length : gameState.currentPiece.rotation;
 const lockAndSpawn = () => { lockPiece(); clearLines(); spawnPiece(); renderGame(); return !gameState.gameOver; };
 const movePiece = (position, rotation) => { gameState.currentPosition = position; gameState.currentPiece.rotation = rotation; renderGame(); return true; };
 const getRandomPiece = () => ({ type: types[Math.floor(Math.random() * types.length)], rotation: 0 });
@@ -82,7 +82,7 @@ const clearLines = () => gameState.board.forEach((row, y) => row.every(cell => c
 const clearLine = (y) => (removeRow(y), addRowAtTop(), gameState.lines++);
 const removeRow = (rowIndex) => gameState.board.splice(rowIndex, 1);
 const addRowAtTop = () => gameState.board.unshift(blankRow);
-const gameOver = () => { gameState.gameOver = true; stopRunning(); };
+const gameOver = () => { gameState.gameOver = true; stopManualRunning(); };
 // AI
 const aiPromptDelay = 500;
 const aiMoveDelay = 200;
@@ -93,8 +93,8 @@ const runAI = () => {
 };
 const stopAIRunning = () => { clearInterval(aiRunner); aiRunner = null };
 export const toggleAI = async () => {
-	if (aiRunner) { stopAIRunning(); }
-	else { stopRunning(); runAI(); }
+	if (aiRunner) { stopAIRunning(); runManual() }
+	else { stopManualRunning(); runAI(); }
 };
 const processAIMove = async () => {
 	if (gameState.gameOver) { return stopAIRunning(); }
