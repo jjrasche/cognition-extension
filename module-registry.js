@@ -34,8 +34,10 @@ import * as fileToGraphModule from './file-to-graph.module.js'
 import * as atomicIdeaModule from './atomic-idea.module.js';
 import * as siteIndexModule from './site-index.module.js';
 import * as manualAtomExtractor from './manual-atom-extractor.module.js';
+import * as tetrisModule from './tetris.module.js';
 
 export const modules = [
+	tetrisModule,
 	manualAtomExtractor,
 	siteIndexModule,
 	apiKeysModule,
