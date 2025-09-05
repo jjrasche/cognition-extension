@@ -16,24 +16,21 @@ let runtime, gameState = null, runner = null
 export const initialize = async (rt) => (runtime = rt, setupKeyboardControls())
 
 // game logic
-const run = () => runner = setInterval(() => makeMove('down'), interval);
+const run = () => {
+	if (runner) return;
+	runner = setInterval(() => !makeMove('down') || stopRunning, interval);
+};
 const stopRunning = () => { clearInterval(runner); runner = null };
 export const startGame = () => { initializeGame(); run(); renderGame(); };
 export const pauseGame = () => { runner ? stopRunning() : run(); renderGame(); };
 export const resetGame = () => { stopRunning(); startGame(); };
+const initializeGame = () => (initializeGameState(), spawnPiece());
+const initializeGameState = () => (gameState = { board: Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, aiMode: false, moves: [] });
 const makeMove = (move) => {
 	if (!gameState) return false;
-	const newPos = getNewPosition(move);
-	const newRot = move === 'rotate' ? (gameState.currentPiece.rotation + 1) % 4 : gameState.currentPiece.rotation;
-	if (isValidPosition(gameState.currentPiece.type, newRot, newPos)) {
-		gameState.currentPosition = newPos;
-		gameState.currentPiece.rotation = newRot;
-		return true;
-	}
-	if (move === 'down') {
-		lockAndSpawn();
-		return !gameState.gameOver;
-	}
+	const newPos = getNewPosition(move), newRot = getNewRotation(move);
+	if (isValidPosition(gameState.currentPiece.type, newRot, newPos)) return movePiece(newPos, newRot);
+	if (move === 'down') return lockAndSpawn();
 	return false;
 };
 const getNewPosition = (move) => {
@@ -42,18 +39,15 @@ const getNewPosition = (move) => {
 	if (move === 'right') return { x: pos.x + 1, y: pos.y };
 	if (move === 'down') return { x: pos.x, y: pos.y + 1 };
 };
-const lockAndSpawn = () => {
-	lockPiece();
-	clearLines();
-	spawnNewPiece();
-};
-const initializeGame = () => (initializeGameState(), spawnNewPiece());
-const initializeGameState = () => (gameState = { board: Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, aiMode: false, moves: [] });
+const getNewRotation = (move) => move === 'rotate' ? (gameState.currentPiece.rotation + 1) % 4 : gameState.currentPiece.rotation;
+const lockAndSpawn = () => { lockPiece(); clearLines(); spawnPiece(); renderGame(); return !gameState.gameOver; };
+const movePiece = (position, rotation) => { gameState.currentPosition = position; gameState.currentPiece.rotation = rotation; renderGame(); return true; };
 const getRandomPiece = () => ({ type: types[Math.floor(Math.random() * types.length)], rotation: 0 });
-const spawnNewPiece = () => {
+const spawnPiece = () => {
 	gameState.currentPiece = gameState.nextPiece || getRandomPiece();
 	gameState.nextPiece = getRandomPiece();
 	gameState.currentPosition = { x: 4, y: 0 };
+	const t = isValidPosition(gameState.currentPiece.type, 0, gameState.currentPosition);
 	if (!isValidPosition(gameState.currentPiece.type, 0, gameState.currentPosition)) gameOver();
 };
 const isValidPosition = (pieceType, rotation, position) => {
@@ -87,7 +81,7 @@ const clearLines = () => gameState.board.forEach((row, y) => row.every(cell => c
 const clearLine = (y) => (removeRow(y), addRowAtTop(), gameState.lines++);
 const removeRow = (rowIndex) => gameState.board.splice(rowIndex, 1);
 const addRowAtTop = () => gameState.board.unshift(blankRow);
-const gameOver = () => gameState.gameOver = true; stopRunning();
+const gameOver = () => { gameState.gameOver = true; stopRunning(); };
 // AI
 const systemPrompt = "You are a Tetris AI. Analyze the board and return optimal moves as a JSON array. Consider line clearing opportunities, stack height, and piece placement strategy.";
 const query = () => `Board: ${gameState.board.map(row => row.join('')).join('\n')}
