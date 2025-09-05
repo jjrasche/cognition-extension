@@ -1,3 +1,5 @@
+import { test } from "api-keys.module";
+
 export const manifest = {
 	name: "tetris",
 	context: ["extension-page"],
@@ -124,7 +126,7 @@ const clearLines = () => {
 	}
 	if (linesCleared > 0) {
 		gameState.lines += linesCleared;
-		gameState.score += getLineScore(linesCleared) * gameState.level;
+		gameState.score += linesCleared;
 		gameState.level = Math.floor(gameState.lines / 10) + 1;
 	}
 };
@@ -148,7 +150,7 @@ export const toggleAI = async () => {
 	}
 	await renderGame();
 };
-export const getAIMove = async () => {
+export const getAIMoves = async () => {
 	let aiMoves = []
 	while (!aiMoves || aiMoves.length === 0) {
 		aiMoves = parseAIResponse(await runtime.call('inference.prompt', { query: buildAIPrompt(), systemPrompt }));
@@ -200,7 +202,7 @@ const triggerAI = async () => {
 	isRunning = false;
 	await renderGame();
 	try {
-		const moves = await getAIMove();
+		const moves = await getAIMoves();
 		gameState.currentMoveSequence = moves;
 		gameState.aiStatus = "AI Playing";
 		isRunning = true;
@@ -236,23 +238,6 @@ const executeAIMoves = async () => {
 	gameState.aiStatus = gameState.aiMode ? "AI Mode" : "Human Control";
 };
 export const getGameState = async () => ({ ...gameState });
-// game mechanics
-// Tetris pieces (tetrominoes) with their rotations
-const PIECES = {
-	I: [[[1, 1, 1, 1]], [[1], [1], [1], [1]]],
-	O: [[[1, 1], [1, 1]]],
-	T: [[[0, 1, 0], [1, 1, 1]], [[1, 0], [1, 1], [1, 0]], [[1, 1, 1], [0, 1, 0]], [[0, 1], [1, 1], [0, 1]]],
-	S: [[[0, 1, 1], [1, 1, 0]], [[1, 0], [1, 1], [0, 1]]],
-	Z: [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]],
-	J: [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]],
-	L: [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]]
-};
-const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
-const actions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', Space: 'rotate', KeyP: 'pause' };
-const types = Object.keys(PIECES);
-const validMoves = ['left', 'right', 'down', 'rotate'];
-const boardWidth = 10, boardHeight = 20;
-let interval = 800; // milliseconds per automatic down move
 // rendering 
 const renderGame = async () => {
 	const tree = {
@@ -391,3 +376,101 @@ const createNextPieceElement = () => {
 		...cells
 	};
 };
+// game mechanics
+// Tetris pieces (tetrominoes) with their rotations
+const I = [[[1, 1, 1, 1]], [[1], [1], [1], [1]]];
+const O = [[[1, 1], [1, 1]]];
+const T = [[[0, 1, 0], [1, 1, 1]], [[1, 0], [1, 1], [1, 0]], [[1, 1, 1], [0, 1, 0]], [[0, 1], [1, 1], [0, 1]]];
+const S = [[[0, 1, 1], [1, 1, 0]], [[1, 0], [1, 1], [0, 1]]];
+const Z = [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]];
+const J = [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]];
+const L = [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]];
+const PIECES = { I, O, T, S, Z, J, L };
+const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
+const actions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', Space: 'rotate', KeyP: 'pause' };
+const types = Object.keys(PIECES);
+const validMoves = ['left', 'right', 'down', 'rotate'];
+const boardWidth = 10, boardHeight = 20;
+let interval = 800; // milliseconds per automatic down move
+// ai testing
+const blankRow = Array(10).fill(0);
+const testScenarios = [
+	{
+		name: "Tetris 4 line clear opportunity", currentPiece: { type: 'I', rotation: 0 },
+		board: [
+			Array(15).fill(blankRow),
+			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[I, 0, 0, 0, L, L, J, J, L, L],
+			[I, T, 0, O, O, L, J, O, O, L],
+			[T, T, T, O, O, L, J, O, O, L],
+		],
+		score: 2,
+		lines: 2,
+		level: 1,
+		gameOver: false
+	}
+];
+export const runModelTest = async (model, iterations = 3) => {
+	const results = await Promise.all(testScenarios.map((t, i) => Array(iterations).map(() => runSingleTest(model, t, i + 1))));
+	runtime.log(JSON.stringify(results, null, 2));
+};
+
+const runSingleTest = async (modelId, scenario, iteration) => {
+	const startTime = performance.now();
+	const testState = createTestGameState(scenario);
+	const originalGameState = gameState;
+	gameState = testState;
+
+	try {
+		getAIMoves()
+		// Get AI moves using specified model
+		const aiMoves = await runtime.call('inference.prompt', {
+			query: buildAIPrompt(),
+			systemPrompt,
+			model: modelId
+		});
+
+		const endTime = performance.now();
+
+
+		return {
+			model: modelId,
+			scenario: scenario.name,
+			iteration,
+			moves,
+			valid: validation.allValid,
+			validityScore: validation.validityPercentage,
+			optimalityScore: optimality.score,
+			responseTime: endTime - startTime,
+			errors: validation.errors,
+			reasoning: optimality.reasoning
+		};
+
+	} catch (error) {
+		return {
+			model: modelId,
+			scenario: scenario.name,
+			iteration,
+			moves: [],
+			valid: false,
+			validityScore: 0,
+			optimalityScore: 0,
+			responseTime: 0,
+			errors: [error.message]
+		};
+	} finally {
+		gameState = originalGameState;
+	}
+};
+
+const createTestGameState = (scenario) => ({
+	board: scenario.board.map(row => [...row]),
+	currentPiece: { ...scenario.currentPiece },
+	currentPosition: { ...scenario.currentPosition },
+	nextPiece: { type: 'I', rotation: 0 },
+	score: 0,
+	lines: 0,
+	level: 1,
+	gameOver: false
+});
