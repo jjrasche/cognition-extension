@@ -84,8 +84,9 @@ const removeRow = (rowIndex) => gameState.board.splice(rowIndex, 1);
 const addRowAtTop = () => gameState.board.unshift(blankRow);
 const gameOver = () => { gameState.gameOver = true; stopRunning(); };
 // AI
-const aiPromptDelay = 500; // milliseconds
-const aiMoveDelay = 200; // milliseconds between AI moves
+const aiPromptDelay = 500;
+const aiMoveDelay = 200;
+const aiMaxIterations = 3;
 const runAI = () => {
 	if (aiRunner) return;
 	aiRunner = setInterval(() => processAIMove(), aiMoveDelay);
@@ -107,10 +108,11 @@ Current: ${gameState.currentPiece.type}
 Valid Moves: ${validMoves.join(', ')}
 Return JSON array of moves: ["left", "rotate", "down"]
 `;
-const inferMoves = async () => {
+const inferMoves = async (iterations = 0) => {
+	if (iterations >= aiMaxIterations) return gameState.moves = [];
 	gameState.aiThinking = true;
 	const aiMoves = parseAIResponse(await runtime.call('inference.prompt', { query: query(), systemPrompt }));
-	if (!aiMoves || aiMoves.length === 0) { await wait(aiPromptDelay); return inferMoves(); }
+	if (!aiMoves || aiMoves.length === 0) { await wait(aiPromptDelay); return inferMoves(++iterations); }
 	gameState.aiThinking = false;
 	gameState.moves = aiMoves;
 }
@@ -124,7 +126,7 @@ const buildGameTree = () => ({ "tetris-game": { tag: "div", style: "display: fle
 const gameHeader = () => ({ "game-header": { tag: "div", style: "margin-bottom: 20px; text-align: center;", "title": { tag: "h1", text: "TETRIS", style: "margin: 0; color: #00ff00; font-size: 2em;" }, "controls": { tag: "div", text: "← → ↓ SPACE (rotate) | P (pause)", style: "font-size: 12px; color: #888; margin-top: 5px;" } } });
 const mainGameArea = () => ({ "game-container": { tag: "div", style: "display: flex; gap: 20px; align-items: flex-start;", "board-container": { tag: "div", style: "border: 2px solid #444; background: #111;", "game-board": createBoardElement() }, ...infoPanel() } });
 const infoPanel = () => ({ "info-panel": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; color: #fff;", ...scoreSection(), ...nextPieceSection(), ...aiStatusSection(), ...gameControls() } });
-const scoreSection = () => ({ "score-info": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "score": { tag: "div", text: `Score: ${gameState?.score || 0}` }, "lines": { tag: "div", text: `Lines: ${gameState?.lines || 0}` }, "level": { tag: "div", text: `Level: ${gameState?.level || 1}` } } });
+const scoreSection = () => ({ "score-info": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "lines": { tag: "div", text: `Lines: ${gameState?.lines || 0}` } } });
 const nextPieceSection = () => ({ "next-piece": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "next-label": { tag: "div", text: "Next:", style: "font-weight: bold; margin-bottom: 5px;" }, "next-display": createNextPieceElement() } });
 const aiStatusSection = () => ({ "ai-status": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "ai-label": { tag: "div", text: "AI Status:", style: "font-weight: bold; margin-bottom: 5px;" }, "ai-info": { tag: "div", text: gameState?.aiStatus || "Human Control", style: `color: ${aiRunner ? '#00ff00' : '#ffffff'};` } } });
 const gameControls = () => ({ "game-controls": { tag: "div", style: "display: flex; flex-direction: column; gap: 10px;", "pause-btn": { tag: "button", text: runner ? "Pause (P)" : "Resume (P)", class: "cognition-button-secondary", events: { click: "tetris.pauseGame" } }, "ai-toggle": { tag: "button", text: aiRunner ? "Disable AI" : "Enable AI", class: aiRunner ? "cognition-button-primary" : "cognition-button-secondary", events: { click: "tetris.toggleAI" } }, "reset-btn": { tag: "button", text: "Reset Game", class: "cognition-button-primary", events: { click: "tetris.resetGame" } } } });
@@ -179,81 +181,81 @@ const Z = [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]];
 const J = [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]];
 const L = [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]];
 const PIECES = { I, O, T, S, Z, J, L };
+const blankRow = Array(10).fill(0);
 const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
 const types = Object.keys(PIECES);
 const validMoves = ['left', 'right', 'down', 'rotate'];
 const boardWidth = 10, boardHeight = 20;
 let interval = 800; // milliseconds per automatic down move
-// ai testing
-const blankRow = Array(10).fill(0);
-const testScenarios = [
-	{
-		name: "Tetris 4 line clear opportunity", currentPiece: { type: 'T', rotation: 0 },
-		board: [
-			Array(15).fill(blankRow),
-			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-			[I, 0, 0, 0, L, L, J, J, L, L],
-			[I, T, 0, O, O, L, J, O, O, L],
-			[T, T, T, O, O, L, J, O, O, L],
-		],
-		maxLinesCleared: 2,
-		minSpaces: 0,
-	}
-];
-export const runModelTest = async (model, iterations = 3) => {
-	const results = await Promise.all(testScenarios.map((t, i) => Array(iterations).map(() => runSingleTest(model, t, i + 1))));
-	runtime.log(JSON.stringify(results, null, 2));
-};
+// // ai testing
+// const testScenarios = [
+// 	{
+// 		name: "Tetris 4 line clear opportunity", currentPiece: { type: 'T', rotation: 0 },
+// 		board: [
+// 			Array(15).fill(blankRow),
+// 			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+// 			[I, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+// 			[I, 0, 0, 0, L, L, J, J, L, L],
+// 			[I, T, 0, O, O, L, J, O, O, L],
+// 			[T, T, T, O, O, L, J, O, O, L],
+// 		],
+// 		maxLinesCleared: 2,
+// 		minSpaces: 0,
+// 	}
+// ];
+// export const runModelTest = async (model, iterations = 3) => {
+// 	const results = await Promise.all(testScenarios.map((t, i) => Array(iterations).map(() => runSingleTest(model, t, i + 1))));
+// 	runtime.log(JSON.stringify(results, null, 2));
+// };
 
-const runSingleTest = async (modelId, scenario, iteration) => {
-	const startTime = performance.now();
-	const testState = createTestGameState(scenario);
-	const originalGameState = gameState;
-	gameState = testState;
+// const runSingleTest = async (modelId, scenario, iteration) => {
+// 	const startTime = performance.now();
+// 	const testState = createTestGameState(scenario);
+// 	const originalGameState = gameState;
+// 	gameState = testState;
 
-	try {
-		const moves = await getAIMoves()
-		const endTime = performance.now();
+// 	try {
+// 		const moves = await getAIMoves()
+// 		const endTime = performance.now();
 
 
-		return {
-			model: modelId,
-			scenario: scenario.name,
-			iteration,
-			moves,
-			valid: validation.allValid,
-			validityScore: validation.validityPercentage,
-			optimalityScore: optimality.score,
-			responseTime: endTime - startTime,
-			errors: validation.errors,
-			reasoning: optimality.reasoning
-		};
+// 		return {
+// 			model: modelId,
+// 			scenario: scenario.name,
+// 			iteration,
+// 			moves,
+// 			valid: validation.allValid,
+// 			validityScore: validation.validityPercentage,
+// 			optimalityScore: optimality.score,
+// 			responseTime: endTime - startTime,
+// 			errors: validation.errors,
+// 			reasoning: optimality.reasoning
+// 		};
 
-	} catch (error) {
-		return {
-			model: modelId,
-			scenario: scenario.name,
-			iteration,
-			moves: [],
-			valid: false,
-			validityScore: 0,
-			optimalityScore: 0,
-			responseTime: 0,
-			errors: [error.message]
-		};
-	} finally {
-		gameState = originalGameState;
-	}
-};
+// 	} catch (error) {
+// 		return {
+// 			model: modelId,
+// 			scenario: scenario.name,
+// 			iteration,
+// 			moves: [],
+// 			valid: false,
+// 			validityScore: 0,
+// 			optimalityScore: 0,
+// 			responseTime: 0,
+// 			errors: [error.message]
+// 		};
+// 	} finally {
+// 		gameState = originalGameState;
+// 	}
+// };
 
-const createTestGameState = (scenario) => ({
-	board: scenario.board.map(row => [...row]),
-	currentPiece: { ...scenario.currentPiece },
-	currentPosition: { ...scenario.currentPosition },
-	nextPiece: { type: 'I', rotation: 0 },
-	score: 0,
-	lines: 0,
-	level: 1,
-	gameOver: false
-});
+// const createTestGameState = (scenario) => ({
+// 	board: scenario.board.map(row => [...row]),
+// 	currentPiece: { ...scenario.currentPiece },
+// 	currentPosition: { ...scenario.currentPosition },
+// 	nextPiece: { type: 'I', rotation: 0 },
+// 	score: 0,
+// 	lines: 0,
+// 	level: 1,
+// 	gameOver: false
+// });
