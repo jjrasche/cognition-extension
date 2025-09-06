@@ -28,7 +28,6 @@ import * as uiModule from './ui.module.js';
 import * as webSearchModule from './web-search.module.js';
 import * as superIntendentModule from './superintendent.module.js';
 import * as chromeLocalModule from './chrome-local.module.js'
-import * as liveChunkingModule from './live-chunker.module.js';
 import * as summaryModule from './summary.module.js';
 import * as fileToGraphModule from './file-to-graph.module.js'
 import * as atomicIdeaModule from './atomic-idea.module.js';
@@ -48,7 +47,6 @@ export const modules = [
 	// contentScriptHandlerModule,
 	contextModule,
 	// debugModule,
-	liveChunkingModule,
 	developmentModule,
 	// emailModule,
 	embeddingModule,

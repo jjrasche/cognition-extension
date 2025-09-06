@@ -50,6 +50,8 @@ const spawnPiece = () => {
 	gameState.currentPosition = { x: 4, y: 0 };
 	const t = isValidPosition(gameState.currentPiece.type, 0, gameState.currentPosition);
 	if (!isValidPosition(gameState.currentPiece.type, 0, gameState.currentPosition)) gameOver();
+	gameState.moves = [];
+	if (!gameState.aiThinking) inferMoves();
 };
 const isValidPosition = (pieceType, rotation, position) => {
 	const piece = PIECES[pieceType][rotation];
@@ -103,16 +105,30 @@ const processAIMove = async () => {
 	makeMove(gameState.moves.shift());
 };
 // const systemPrompt = "You are a Tetris AI. Analyze the board and return optimal moves as a JSON array. Consider line clearing opportunities, stack height, and piece placement strategy.";
-const query = () => `Board (${boardRows} rows x ${boardColumns} cols, 0=empty, 1=filled):\n${gameState.board
-	.map(row => row.map(cell => (cell === 0 ? 0 : 1)).join(""))
-	.join("\n")}
-  Current piece: ${gameState.currentPiece.type}
-  Position: ${gameState.currentPosition.x}, ${gameState.currentPosition.y}
-  Valid moves: ["${validMoves.join('", "')}"]
-  
-  Task: Return ONLY a JSON array of move strings (e.g., ["left","down","down"]). 
-  Moves may repeat, and the piece must end at rest on the board.`;
+// const query = () => `Board (${boardRows} rows x ${boardColumns} cols, 0=empty, 1=filled):\n${gameState.board
+// 	.map(row => row.map(cell => (cell === 0 ? 0 : 1)).join(""))
+// 	.join("\n")}
+//   Current piece: ${gameState.currentPiece.type}
+//   Position: ${gameState.currentPosition.x}, ${gameState.currentPosition.y}
+//   Valid moves: ["${validMoves.join('", "')}"]
 
+//   Task: Return ONLY a JSON array of move strings (e.g., ["left","down","down"]). 
+//   Moves may repeat, and the piece must end at rest on the board.`;
+const query = () => {
+	const currentShape = PIECES[gameState.currentPiece.type][gameState.currentPiece.rotation];
+	const shapeStr = currentShape.map(row => row.join('')).join('\n');
+
+	return `Board (empty=0, filled=1):
+${gameState.board.map(row => row.map(cell => cell === 0 ? '.' : '#').join('')).join('\n')}
+
+Current piece: ${gameState.currentPiece.type}
+Shape:
+${shapeStr}
+Position: x=${gameState.currentPosition.x}, y=${gameState.currentPosition.y}
+
+Return JSON array of moves to optimally place this piece: ["left","rotate","down","down"]
+Consider: line clears, avoiding high stacks, creating flat surfaces.`;
+};
 const systemPrompt = `You are a Tetris AI. Based on the board and current piece, 
   output only the optimal sequence of moves as a JSON array. 
   Do not include explanations or extra text. Consider line clears, stack height, and placement strategy.`;
@@ -130,6 +146,7 @@ export const inferMoves = async (iterations = 0) => {
 	if (!aiMoves || aiMoves.length === 0) { await wait(aiPromptDelay); return inferMoves(++iterations); }
 	gameState.aiThinking = false;
 	gameState.moves = aiMoves;
+	await renderGame();
 	return aiMoves;
 }
 const parseAIResponse = (response) => {

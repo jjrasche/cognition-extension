@@ -1,10 +1,10 @@
-import { getId, calculateCosineSimilarity } from "./helpers.js";
+import { getId, calculateCosineSimilarity } from "../helpers.js";
 
 export const manifest = {
 	name: "live-chunker",
 	context: ["extension-page"],
 	version: "2.0.0",
-	description: "Real-time hierarchical thought clustering with dynamic re-clustering",
+	description: "Real-time hierarchical thought clustering with dynamic re-clustering based on speech thoughts",
 	dependencies: ["web-speech-stt", "ui", "embedding", "summary"],
 	actions: ["startDemo", "stopDemo", "processThought", "getClusters", "setThreshold", "setMode", "handleClusterClick", "handleSynthesize"],
 };
