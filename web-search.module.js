@@ -5,7 +5,7 @@ export const manifest = {
 	description: "Web search via DuckDuckGo tab scraping",
 	permissions: ["tabs", "scripting"],
 	actions: ["getSearchResults", "buildUI"],
-	searchActions: [
+	commands: [
 		{ name: "search web", condition: input => input.length < 20, method: "buildUI" },
 	]
 };

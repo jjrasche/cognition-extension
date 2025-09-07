@@ -7,7 +7,7 @@ export const manifest = {
 	description: "Extracts atomic ideas with exact source text spans",
 	dependencies: ["inference"],
 	actions: ["extractFromParagraph", "buildAtomicExtractorUI", "extractAndDisplay"],
-	searchActions: [
+	commands: [
 		{ name: "atomic ideas extractor", keyword: "atomic", method: "buildAtomicExtractorUI" }
 	]
 };

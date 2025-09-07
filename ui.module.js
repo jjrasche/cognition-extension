@@ -8,27 +8,13 @@ export const manifest = {
 	dependencies: ['tree-to-dom'],
 	actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt', "showPageSpinner", "hidePageSpinner"],
 };
-let runtime, searchActions;
+let runtime
 export const initialize = async (rt) => {
 	runtime = rt;
 	await initializeLayout();
 	await wait(2000);
-	registerSearchActions();
 };
-const registerSearchActions = () => {
-	searchActions = runtime.getModulesWithProperty('searchActions').flatMap(m =>
-		m.manifest.searchActions.map(a => {
-			return {
-				...a,
-				func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input),
-				condition: a.keyword ? (input) => input.toLowerCase() === a.keyword.toLowerCase() : a.condition,
-				priority: a.keyword ? 1 : a.condition && a.condition.toString().includes("startsWith") ? 2 : 3
-			};
-		})
-	).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
-	runtime.log(`Registered ${searchActions.length} search actions:\n${searchActions.map(a => `- ${a.name} (priority ${a.priority})`).join('\n')}`);
-}
-export const initializeLayout = async () => {
+const initializeLayout = async () => {
 	getMainLayout()?.remove();
 	const layoutTree = {
 		"main-layout": {
@@ -46,25 +32,6 @@ export const initializeLayout = async () => {
 	await runtime.call('tree-to-dom.transform', layoutTree, document.body);
 	getSearchInput()?.["focus"]();
 };
-export const handleSearchKeydown = async (event) => {
-	if (event.key !== 'Enter' || !event.target.value.trim()) return;
-	const input = event.target.value.trim();
-	showState('Searching...', 'loading');
-	const action = await getAction(input);
-	try {
-		if (action) await action.func(input);
-		else showState('No valid action found', 'error');
-	} catch (error) { showState(`Search failed: ${error.message}`, 'error'); }
-};
-const getAction = async (input) => {
-	const actions = searchActions.filter(a => a.condition(input));
-	if (actions.length > 0) {
-		runtime.log(`matched ${actions.length} actions for input ${input.substring(0, 20)}:\n${actions.map(a => `- ${a.name}`).join('\n')}`);
-	}
-	const action = actions[0];
-	runtime.log(`selected action ${action.name} for input ${input.substring(0, 20)}`);
-	return actions[0];
-}
 export const renderTree = async (tree, container) => {
 	const target = container || document.querySelector(`#${MAIN_CONTENT_ID}`);
 	if (!target) {

@@ -6,7 +6,7 @@ export const manifest = {
 	dependencies: ["file", "chunk", "graph-db"],
 	requiredDirectories: ["SelectedNotes"],
 	actions: ["ingestFolder", "ingestFile", "renderEvaluationDashboard", "handleThresholdChange"],
-	searchActions: [
+	commands: [
 		{ name: "chunking evaluation", keyword: "eval", method: "renderEvaluationDashboard" }
 	]
 };

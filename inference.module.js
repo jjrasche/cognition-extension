@@ -5,7 +5,7 @@ export const manifest = {
 	description: "Manages LLM inference across multiple providers with streaming support",
 	dependencies: ["chrome-sync", "graph-db", "ui"],
 	actions: ["prompt", "infer", "showProviderModule", "uiPicker", "updateForm", "saveForm"],
-	searchActions: [
+	commands: [
 		{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" },
 		{ name: "select inference model", keyword: "pick model", method: "uiPicker" }
 	]

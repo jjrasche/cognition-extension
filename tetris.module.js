@@ -7,7 +7,7 @@ export const manifest = {
 	description: "Tetris game engine with AI integration capability",
 	dependencies: ["ui", "tree-to-dom", "inference"],
 	actions: ["startGame", "pauseGame", "resetGame", "toggleAI", "inferMoves"],
-	searchActions: [
+	commands: [
 		{ name: "play tetris", keyword: "tetris", method: "startGame" }
 	]
 };

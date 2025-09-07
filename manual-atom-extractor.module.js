@@ -6,7 +6,7 @@ export const manifest = {
 	description: "Extract and curate atomic ideas from conversation sources to test flow enhancement hypothesis",
 	dependencies: ["ui"],
 	actions: ["buildUI", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
-	searchActions: [
+	commands: [
 		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildUI" }
 	]
 };
