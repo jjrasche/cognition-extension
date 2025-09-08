@@ -11,6 +11,9 @@ let runtime, expandedCards = new Set();
 export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
 
 const initializeConfigs = async () => await Promise.all(getModules().map(module => applyConfig(module, validateConfig(module, loadConfig(module)))));
+export const configProxy = (manifest) => new Proxy(manifest.config, {
+	get: (target, prop) => target[prop]?.value
+});
 const updateAndSaveConfig = async (moduleName, updates) => {
 	const module = getModule(moduleName)
 	validateConfig(module, updates);

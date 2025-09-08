@@ -1,4 +1,5 @@
 import { wait } from "./helpers.js";
+import { configProxy } from './config.module.js';
 
 export const manifest = {
 	name: "tetris",
@@ -11,26 +12,30 @@ export const manifest = {
 		{ name: "play tetris", keyword: "tetris", method: "startGame" }
 	],
 	config: {
-		difficulty: { type: 'select', options: ['Easy', 'Medium', 'Hard'], default: 'Medium', label: 'Difficulty' },
-		speed: { type: 'number', min: 100, max: 2000, default: 800, label: 'Drop Speed (ms)' },
-		aiEnabled: { type: 'checkbox', default: false, label: 'Enable AI by Default' }
-	},
+		speed: { type: 'number', min: 100, max: 2000, value: 800, label: 'Drop Speed (ms)' },
+		aiMoveDelay: { type: 'number', min: 50, max: 5000, value: 200, label: 'AI Move Delay (ms)' },
+		aiMaxPromptAttempts: { type: 'number', min: 1, max: 5, value: 3, label: 'Max Prompt Sent to Inference per Move' },
+		aiPromptDelay: { type: 'number', min: 100, max: 5000, value: 300, label: 'AI Prompt Delay (ms)' },
+		columns: { type: 'number', min: 5, max: 20, value: 10, label: 'Board Columns' },
+		rows: { type: 'number', min: 10, max: 50, value: 20, label: 'Board Rows' },
+	}
 };
 
-let runtime, gameState = {}, runner = null, aiRunner = null;
+let runtime, gameState = {}, runner = null, aiRunner = null
+const config = configProxy(manifest);
 export const initialize = async (rt) => (runtime = rt, setupKeyboardControls())
 
 // game logic
 const runManual = () => {
 	if (runner) return;
-	runner = setInterval(() => !makeMove('down') && stopManualRunning(), interval);
+	runner = setInterval(() => !makeMove('down') && stopManualRunning(), config.speed);
 };
 const stopManualRunning = () => { clearInterval(runner); runner = null };
 export const startGame = () => { initializeGame(); runManual(); renderGame(); };
 export const pauseGame = () => { runner ? stopManualRunning() : runManual(); renderGame(); };
 export const resetGame = () => { stopManualRunning(); startGame(); };
 const initializeGame = () => (initializeGameState(), spawnPiece());
-const initializeGameState = () => (gameState = { board: Array(boardRows).fill(0).map(() => Array(boardColumns).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, moves: [] });
+const initializeGameState = () => (gameState = { board: Array(config.rows).fill(0).map(() => Array(config.columns).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, moves: [] });
 const makeMove = (move) => {
 	if (!gameState) return false;
 	const newPos = getNewPosition(move), newRot = getNewRotation(move);
@@ -91,12 +96,9 @@ const removeRow = (rowIndex) => gameState.board.splice(rowIndex, 1);
 const addRowAtTop = () => gameState.board.unshift(blankRow);
 const gameOver = () => { gameState.gameOver = true; stopManualRunning(); };
 // AI
-const aiPromptDelay = 500;
-const aiMoveDelay = 200;
-const aiMaxIterations = 3;
 const runAI = () => { }
 // 	if (aiRunner) return;
-// 	aiRunner = setInterval(() => processAIMove(), aiMoveDelay);
+// 	aiRunner = setInterval(() => processAIMove(), config.aiMoveDelay);
 // };
 const stopAIRunning = () => { } //{ clearInterval(aiRunner); aiRunner = null };
 export const toggleAI = async () => {
@@ -145,10 +147,10 @@ const systemPrompt = `You are a Tetris AI. Based on the board and current piece,
 // `;
 
 export const inferMoves = async (iterations = 0) => {
-	if (iterations >= aiMaxIterations) return gameState.moves = [];
+	if (iterations >= config.aiMaxPromptAttempts) return gameState.moves = [];
 	gameState.aiThinking = true;
 	const aiMoves = parseAIResponse(await runtime.call('inference.prompt', { query: query(), systemPrompt }));
-	if (!aiMoves || aiMoves.length === 0) { await wait(aiPromptDelay); return inferMoves(++iterations); }
+	if (!aiMoves || aiMoves.length === 0) { await wait(config.aiPromptDelay); return inferMoves(++iterations); }
 	gameState.aiThinking = false;
 	gameState.moves = aiMoves;
 	await renderGame();
@@ -222,12 +224,10 @@ const Z = [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]];
 const J = [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]];
 const L = [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]];
 const PIECES = { I, O, T, S, Z, J, L };
-const blankRow = Array(10).fill(0);
+const blankRow = Array(config.boardColumns).fill(0);
 const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
 const types = Object.keys(PIECES);
 const validMoves = ['left', 'right', 'down', 'rotate'];
-const boardColumns = 10, boardRows = 20;
-let interval = 800; // milliseconds per automatic down move
 // // ai testing
 // const testScenarios = [
 // 	{
