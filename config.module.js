@@ -3,7 +3,7 @@ export const manifest = {
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "Auto-generates configuration UIs from module manifests with validation and persistence",
-	dependencies: ["chrome-sync", "ui"],
+	dependencies: ["chrome-sync"],
 	actions: ["showConfig", "saveModuleConfig", "toggleCard", "resetToDefaults"],
 	commands: [{ name: "configure modules", keyword: "config", method: "showConfig" }]
 };

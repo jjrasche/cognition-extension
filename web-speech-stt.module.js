@@ -5,7 +5,6 @@ export const manifest = {
   context: ["extension-page"],
   version: "1.0.0", 
   description: "Web speech recognition streaming to UI",
-  dependencies: ["ui"],
   actions: ["startListening", "stopListening", "getStatus"],
 };
                 // "mic-button": { tag: "button", id: "mic-button", text: "🎤", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.toggleListening" } }

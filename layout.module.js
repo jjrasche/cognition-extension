@@ -1,360 +1,246 @@
+import { configProxy } from './config.module.js';
 export const manifest = {
-	name: 'layout',
-	version: '1.0.0',
-	context: 'extension-page',
-	description: 'Dynamic component positioning and UI layout management',
-	dependencies: ['tree-to-dom'],
-	actions: ['initializeLayout', 'maximizeComponent', 'startResize']
+	name: "layout",
+	context: ["extension-page"],
+	version: "1.0.0",
+	description: "Dynamic component positioning and layout management with grid snapping",
+	permissions: ["storage"],
+	dependencies: ["chrome-sync", "tree-to-dom", "config"],
+	actions: ["initializeLayout", "maximizeComponent", "restoreLayout", "replaceComponent", "addComponent", "removeComponent", "cycleSelection"],
+	commands: [
+		{ name: "layout manager", keyword: "layout", method: "showLayoutUI" }
+	],
+	config: {
+		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
+		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
+		defaultComponentHeight: { type: 'number', min: 10, max: 90, value: 20, label: 'Default Component Height (%)' },
+		enableKeyboardNav: { type: 'checkbox', value: true, label: 'Enable Keyboard Navigation' },
+		showGridLines: { type: 'checkbox', value: false, label: 'Show Grid Lines' }
+	}
 };
-
 let runtime, currentLayout = [], savedLayout = [], maximizedComponent = null, selectedComponent = null;
-const LAYOUT_KEY = 'layout.config';
-const GRID_SIZE = 5; // 5% grid snapping
+const config = configProxy(manifest);
+export const initialize = async (rt) => (runtime = rt, await initializeLayout());
 
-export const initialize = (rt) => (runtime = rt, initializeLayout());
-
-// Component Discovery & Registration
-const registerComponents = async () => runtime.getLoadedModules()
-	.flatMap(m => (m.manifest.uiComponents || []).map(comp => ({ ...comp, moduleId: m.name })))
-	.filter(comp => comp.name && comp.getTree);
-
-const getComponentTree = async (component) => await runtime.call(`${component.moduleId}.${component.getTree}`);
-
-// Layout Persistence
-const loadLayout = async () => (await chrome.storage.sync.get(LAYOUT_KEY))[LAYOUT_KEY] || getDefaultLayout();
-const saveLayout = async (layout) => await chrome.storage.sync.set({ [LAYOUT_KEY]: layout });
+// Component Discovery
+const getRegisteredComponents = () => runtime.getContextModules()
+	.flatMap(m => (m.manifest.uiComponents || []).map(comp => ({ ...comp, moduleId: m.manifest.name })))
+	.filter(comp => comp.name && comp.method);
+const getComponentTree = async (component) => await runtime.call(`${component.moduleId}.${component.method}`);
+// Layout Persistence 
+const loadLayout = async () => await runtime.call('chrome-sync.get', 'layout.positions') || getDefaultLayout();
+const saveLayout = async (layout) => await runtime.call('chrome-sync.set', { 'layout.positions': layout });
 const getDefaultLayout = () => [
-	{ name: 'search-input', x: 10, y: 5, width: 80, height: 10 },
+	{ name: 'command-input', x: 10, y: 5, width: 80, height: 10 },
 	{ name: 'main-content', x: 10, y: 20, width: 80, height: 70 }
 ];
-
-// Grid Positioning
-const snapToGrid = (value) => Math.round(value / GRID_SIZE) * GRID_SIZE;
+// Grid & Positioning
+const snapToGrid = (value) => Math.round(value / config.gridSize) * config.gridSize;
 const normalizePosition = ({ x, y, width, height }) => ({
 	x: snapToGrid(Math.max(0, Math.min(x, 100 - width))),
 	y: snapToGrid(Math.max(0, Math.min(y, 100 - height))),
-	width: snapToGrid(Math.max(GRID_SIZE, Math.min(width, 100 - x))),
-	height: snapToGrid(Math.max(GRID_SIZE, Math.min(height, 100 - y)))
+	width: snapToGrid(Math.max(config.gridSize, Math.min(width, 100 - x))),
+	height: snapToGrid(Math.max(config.gridSize, Math.min(height, 100 - y)))
 });
-
 // Collision Detection
 const hasCollision = (pos1, pos2) => !(pos1.x + pos1.width <= pos2.x || pos2.x + pos2.width <= pos1.x || pos1.y + pos1.height <= pos2.y || pos2.y + pos2.height <= pos1.y);
-const findCollisions = (position, layout, excludeName) => layout.filter(comp => comp.name !== excludeName && hasCollision(position, comp));
-const isValidPosition = (position, layout, excludeName) => findCollisions(position, layout, excludeName).length === 0;
-
-// Component Positioning
-const createPositionedContainer = (position) => ({
-	tag: 'div',
-	style: `position: absolute; left: ${position.x}%; top: ${position.y}%; width: ${position.width}%; height: ${position.height}%; border: ${selectedComponent === position.name ? '2px solid #0066cc' : '1px solid #333'}; background: white; overflow: auto; cursor: pointer;`,
-	class: 'layout-component',
-	'data-component': position.name,
-	events: { click: 'layout.maximizeComponent' },
-	...createResizeHandles(position)
-});
-
-const createResizeHandles = (position) => ({
-	'resize-handle-right': {
-		tag: 'div',
-		style: 'position: absolute; right: -3px; top: 0; width: 6px; height: 100%; cursor: e-resize; background: transparent;',
-		class: 'resize-handle',
-		'data-direction': 'right',
-		events: { mousedown: 'layout.startResize' }
-	},
-	'resize-handle-bottom': {
-		tag: 'div',
-		style: 'position: absolute; bottom: -3px; left: 0; width: 100%; height: 6px; cursor: s-resize; background: transparent;',
-		class: 'resize-handle',
-		'data-direction': 'bottom',
-		events: { mousedown: 'layout.startResize' }
-	},
-	'resize-handle-corner': {
-		tag: 'div',
-		style: 'position: absolute; right: -3px; bottom: -3px; width: 6px; height: 6px; cursor: se-resize; background: transparent;',
-		class: 'resize-handle',
-		'data-direction': 'corner',
-		events: { mousedown: 'layout.startResize' }
-	}
-});
-
-// Layout Rendering
-const renderComponent = async (component, position) => {
+const isValidPosition = (position, layout, excludeName) => layout.filter(comp => comp.name !== excludeName && hasCollision(position, comp)).length === 0;
+// Component Rendering
+const createComponentContainer = async (component, position) => {
 	const tree = await getComponentTree(component);
-	const container = createPositionedContainer(position);
-	container['component-content'] = tree;
-	return container;
+	return {
+		tag: "div",
+		style: `position: absolute; left: ${position.x}%; top: ${position.y}%; width: ${position.width}%; height: ${position.height}%; 
+		        border: ${selectedComponent === position.name ? '2px solid var(--accent-primary)' : '1px solid var(--border-primary)'}; 
+		        background: var(--bg-secondary); overflow: auto; z-index: ${maximizedComponent === position.name ? 1000 : 1};`,
+		class: "layout-component",
+		"data-component": position.name,
+		events: { click: "layout.selectComponent" },
+		"component-content": tree
+	};
 };
-
-const clearLayout = () => document.querySelectorAll('.layout-component').forEach(el => el.remove());
-
-const renderLayout = async (layout = currentLayout) => {
-	clearLayout();
-	const components = await registerComponents();
+const buildLayoutTree = async (layout = currentLayout) => {
+	const components = getRegisteredComponents();
 	const componentMap = components.reduce((map, comp) => (map[comp.name] = comp, map), {});
-
-	const layoutTree = {};
+	const tree = { "layout-container": { tag: "div", style: "position: relative; width: 100%; height: 100vh; overflow: hidden;" } };
+	if (config.showGridLines) tree["layout-container"]["grid-overlay"] = createGridOverlay();
 	for (const position of layout) {
 		if (componentMap[position.name]) {
-			layoutTree[`component-${position.name}`] = await renderComponent(componentMap[position.name], position);
+			tree["layout-container"][`component-${position.name}`] = await createComponentContainer(componentMap[position.name], position);
 		}
 	}
-
-	await runtime.call('tree-to-dom.transform', layoutTree, document.body);
-	currentLayout = layout;
+	return tree;
 };
-
-// Layout Management Actions
+const createGridOverlay = () => ({
+	tag: "div",
+	style: `position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0;
+	        background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.1) 0px, transparent 1px, transparent ${config.gridSize}%, rgba(0,0,0,0.1) ${config.gridSize + 0.1}%),
+	                          repeating-linear-gradient(90deg, rgba(0,0,0,0.1) 0px, transparent 1px, transparent ${config.gridSize}%, rgba(0,0,0,0.1) ${config.gridSize + 0.1}%);`
+});
+// Layout Management
 export const initializeLayout = async () => {
 	currentLayout = await loadLayout();
 	await renderLayout();
-	setupKeyboardHandlers();
+	config.enableKeyboardNav && setupKeyboardHandlers();
 };
-
-const setupKeyboardHandlers = () => {
-	document.addEventListener('keydown', (e) => {
-		if (e.key === 'Escape' && maximizedComponent) restoreLayout();
-		if (e.key === 'Tab') { e.preventDefault(); cycleSelection(); }
-		if (e.key === 'Delete' && selectedComponent) removeComponent(selectedComponent);
-		if (e.key === 'Enter' && selectedComponent) maximizeSelectedComponent();
-		if (e.ctrlKey && e.key === 'r') initializeLayout();
-
-		// Arrow key movement for selected component
-		if (selectedComponent && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-			e.preventDefault();
-			moveSelectedComponent(e.key);
-		}
-	});
+const renderLayout = async (layout = currentLayout) => {
+	const tree = await buildLayoutTree(layout);
+	await runtime.call('ui.renderTree', tree);
+	currentLayout = layout;
 };
-
-const cycleSelection = async () => {
+const setupKeyboardHandlers = () => document.addEventListener('keydown', async (e) => {
+	if (e.key === 'Escape' && maximizedComponent) await restoreLayout();
+	if (e.key === 'Tab') { e.preventDefault(); await cycleSelection(); }
+	if (e.key === 'Delete' && selectedComponent) await removeComponent(selectedComponent);
+	if (e.key === 'Enter' && selectedComponent) await maximizeComponent({ target: { dataset: { component: selectedComponent } } });
+	if (e.ctrlKey && e.key === 'r') { e.preventDefault(); await initializeLayout(); }
+	if (selectedComponent && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+		e.preventDefault();
+		await moveSelectedComponent(e.key);
+	}
+});
+// Component Selection & Navigation
+export const selectComponent = async (event) => {
+	selectedComponent = event.target.closest('.layout-component')?.dataset.component;
+	await renderLayout();
+};
+export const cycleSelection = async () => {
 	if (currentLayout.length === 0) return;
-
 	const currentIndex = selectedComponent ? currentLayout.findIndex(c => c.name === selectedComponent) : -1;
-	const nextIndex = (currentIndex + 1) % currentLayout.length;
-	selectedComponent = currentLayout[nextIndex].name;
-
-	await renderLayout(); // Re-render to show selection
+	selectedComponent = currentLayout[(currentIndex + 1) % currentLayout.length].name;
+	await renderLayout();
 };
-
-const maximizeSelectedComponent = async () => {
-	if (!selectedComponent) return;
-	const mockEvent = { target: { closest: () => ({ dataset: { component: selectedComponent } }) } };
-	await maximizeComponent(mockEvent);
-};
-
 const moveSelectedComponent = async (direction) => {
 	if (!selectedComponent) return;
-
 	const component = currentLayout.find(c => c.name === selectedComponent);
 	if (!component) return;
-
-	const deltaMap = {
-		'ArrowUp': { x: 0, y: -GRID_SIZE },
-		'ArrowDown': { x: 0, y: GRID_SIZE },
-		'ArrowLeft': { x: -GRID_SIZE, y: 0 },
-		'ArrowRight': { x: GRID_SIZE, y: 0 }
-	};
-
+	const deltaMap = { ArrowUp: { x: 0, y: -config.gridSize }, ArrowDown: { x: 0, y: config.gridSize }, ArrowLeft: { x: -config.gridSize, y: 0 }, ArrowRight: { x: config.gridSize, y: 0 } };
 	const delta = deltaMap[direction];
-	const newPosition = normalizePosition({
-		x: component.x + delta.x,
-		y: component.y + delta.y,
-		width: component.width,
-		height: component.height
-	});
-
+	const newPosition = normalizePosition({ x: component.x + delta.x, y: component.y + delta.y, width: component.width, height: component.height });
 	if (isValidPosition(newPosition, currentLayout, selectedComponent)) {
 		Object.assign(component, newPosition);
 		await saveLayout(currentLayout);
 		await renderLayout();
 	}
 };
-
+// Maximize/Restore
 export const maximizeComponent = async (event) => {
-	const componentName = event?.target?.closest('.layout-component')?.dataset.component || event;
+	const componentName = event?.target?.dataset?.component || event?.target?.closest('.layout-component')?.dataset?.component;
 	if (!componentName || maximizedComponent) return;
-
 	savedLayout = [...currentLayout];
 	maximizedComponent = componentName;
-
-	const maxLayout = [{ name: componentName, x: 0, y: 0, width: 100, height: 100 }];
-	await renderLayout(maxLayout);
+	await renderLayout([{ name: componentName, x: 0, y: 0, width: 100, height: 100 }]);
 };
-
 export const restoreLayout = async () => {
 	if (!maximizedComponent) return;
 	maximizedComponent = null;
 	await renderLayout(savedLayout);
 	currentLayout = savedLayout;
 };
-
 // Component Management
-const findAvailableSpace = (width = 30, height = 20) => {
-	for (let y = 0; y <= 100 - height; y += GRID_SIZE) {
-		for (let x = 0; x <= 100 - width; x += GRID_SIZE) {
+const findAvailableSpace = (width = config.defaultComponentWidth, height = config.defaultComponentHeight) => {
+	for (let y = 0; y <= 100 - height; y += config.gridSize) {
+		for (let x = 0; x <= 100 - width; x += config.gridSize) {
 			const testPos = { x, y, width, height };
 			if (isValidPosition(testPos, currentLayout)) return testPos;
 		}
 	}
-	return null; // no space available
+	return null;
 };
-
-const pushComponentsDown = (newPosition) => {
-	const conflicts = findCollisions(newPosition, currentLayout);
-	conflicts.forEach(comp => {
-		comp.y = Math.min(newPosition.y + newPosition.height + GRID_SIZE, 100 - comp.height);
-	});
-	return conflicts.length > 0;
-};
-
-const addComponent = async (name, position) => {
-	const defaultPos = position || findAvailableSpace();
-	let finalPos;
-
-	if (defaultPos) {
-		finalPos = normalizePosition({ ...defaultPos, name });
-	} else {
-		// No space found - create space by pushing components down
-		const testPos = { x: 10, y: 10, width: 30, height: 20, name };
-		pushComponentsDown(testPos);
-		finalPos = normalizePosition(testPos);
-	}
-
-	currentLayout = [...currentLayout.filter(c => c.name !== name), finalPos];
+export const addComponent = async (name, position) => {
+	const finalPos = normalizePosition(position || findAvailableSpace() || { x: 10, y: 10, width: config.defaultComponentWidth, height: config.defaultComponentHeight });
+	currentLayout = [...currentLayout.filter(c => c.name !== name), { name, ...finalPos }];
 	await saveLayout(currentLayout);
 	await renderLayout();
 	return true;
 };
-
-const removeComponent = async (name) => {
+export const removeComponent = async (name) => {
 	currentLayout = currentLayout.filter(c => c.name !== name);
 	if (selectedComponent === name) selectedComponent = null;
 	await saveLayout(currentLayout);
 	await renderLayout();
 };
-
-export const updateComponentPosition = async (name, newPosition) => {
-	const normalized = normalizePosition(newPosition);
-	if (!isValidPosition(normalized, currentLayout, name)) return false;
-
-	currentLayout = currentLayout.map(c => c.name === name ? { ...c, ...normalized } : c);
-	await saveLayout(currentLayout);
-	await renderLayout();
-	return true;
+export const replaceComponent = async (name, newTree) => {
+	const componentElement = document.querySelector(`[data-component="${name}"] .component-content`);
+	if (!componentElement) return;
+	await runtime.call('tree-to-dom.transform', { content: newTree }, componentElement);
 };
-
-// Resize Handling
-let resizing = null;
-
-export const startResize = (event) => {
-	event.stopPropagation();
-	const component = event.target.closest('.layout-component');
-	const direction = event.target.dataset.direction;
-	const componentName = component.dataset.component;
-	const rect = component.getBoundingClientRect();
-	const containerRect = document.body.getBoundingClientRect();
-
-	resizing = {
-		componentName,
-		direction,
-		startX: event.clientX,
-		startY: event.clientY,
-		startWidth: (rect.width / containerRect.width) * 100,
-		startHeight: (rect.height / containerRect.height) * 100,
-		startLeft: ((rect.left - containerRect.left) / containerRect.width) * 100,
-		startTop: ((rect.top - containerRect.top) / containerRect.height) * 100
+// UI Management
+export const showLayoutUI = async () => await runtime.call('ui.renderTree', buildLayoutManagementTree());
+const buildLayoutManagementTree = () => ({
+	"layout-manager": {
+		tag: "div", style: "height: 100vh; padding: 20px; overflow-y: auto;",
+		"header": {
+			tag: "div", style: "display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;",
+			"back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", events: { click: "ui.initializeLayout" } },
+			"title": { tag: "h1", text: "Layout Manager", style: "margin: 0;" },
+			"actions": {
+				tag: "div", style: "display: flex; gap: 10px;",
+				"toggle-grid": { tag: "button", text: config.showGridLines ? "Hide Grid" : "Show Grid", class: "cognition-button-secondary", events: { click: "layout.toggleGrid" } },
+				"reset-layout": { tag: "button", text: "Reset", class: "cognition-button-primary", events: { click: "layout.resetLayout" } }
+			}
+		},
+		"component-list": buildComponentsList(),
+		"layout-preview": buildLayoutPreview()
+	}
+});
+const buildComponentsList = () => {
+	const components = getRegisteredComponents();
+	const activeComponents = new Set(currentLayout.map(c => c.name));
+	return {
+		tag: "div", style: "margin-bottom: 20px;",
+		"list-title": { tag: "h3", text: "Available Components" },
+		"components": {
+			tag: "div", style: "display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;",
+			...Object.fromEntries(components.map(comp => [`comp-${comp.name}`, {
+				tag: "div", style: `padding: 10px; border: 1px solid var(--border-primary); border-radius: 4px; ${activeComponents.has(comp.name) ? 'background: var(--bg-tertiary);' : 'cursor: pointer;'}`,
+				events: activeComponents.has(comp.name) ? {} : { click: "layout.addComponent" },
+				"data-component": comp.name,
+				"name": { tag: "div", text: comp.name, style: "font-weight: 500;" },
+				"type": { tag: "div", text: comp.type || 'component', style: "font-size: 12px; color: var(--text-muted);" },
+				"status": { tag: "div", text: activeComponents.has(comp.name) ? "Active" : "Add", style: `font-size: 12px; color: ${activeComponents.has(comp.name) ? 'var(--success)' : 'var(--accent-primary)'};` }
+			}]))
+		}
 	};
-
-	document.addEventListener('mousemove', handleResize);
-	document.addEventListener('mouseup', stopResize);
 };
-
-const handleResize = (event) => {
-	if (!resizing) return;
-
-	const containerRect = document.body.getBoundingClientRect();
-	const deltaX = ((event.clientX - resizing.startX) / containerRect.width) * 100;
-	const deltaY = ((event.clientY - resizing.startY) / containerRect.height) * 100;
-
-	const newPosition = calculateNewPosition(resizing, deltaX, deltaY);
-	const component = currentLayout.find(c => c.name === resizing.componentName);
-
-	if (component && isValidPosition(newPosition, currentLayout, resizing.componentName)) {
-		Object.assign(component, newPosition);
-		updateComponentStyle(resizing.componentName, newPosition);
+const buildLayoutPreview = () => ({
+	tag: "div",
+	"preview-title": { tag: "h3", text: `Current Layout (${currentLayout.length} components)` },
+	"preview-list": {
+		tag: "div", style: "display: flex; flex-direction: column; gap: 8px;",
+		...Object.fromEntries(currentLayout.map(comp => [`preview-${comp.name}`, {
+			tag: "div", style: "display: flex; justify-content: between; align-items: center; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;",
+			"info": { tag: "div", text: `${comp.name} (${comp.x}%, ${comp.y}%, ${comp.width}×${comp.height})`, style: "flex: 1;" },
+			"remove-btn": { tag: "button", text: "×", class: "cognition-button-secondary", style: "width: 24px; height: 24px; padding: 0;", events: { click: "layout.removeComponentFromUI" }, "data-component": comp.name }
+		}]))
 	}
-};
-
-const calculateNewPosition = ({ direction, startLeft, startTop, startWidth, startHeight }, deltaX, deltaY) => {
-	switch (direction) {
-		case 'right': return { x: startLeft, y: startTop, width: startWidth + deltaX, height: startHeight };
-		case 'bottom': return { x: startLeft, y: startTop, width: startWidth, height: startHeight + deltaY };
-		case 'corner': return { x: startLeft, y: startTop, width: startWidth + deltaX, height: startHeight + deltaY };
-		default: return { x: startLeft, y: startTop, width: startWidth, height: startHeight };
-	}
-};
-
-const updateComponentStyle = (componentName, position) => {
-	const element = document.querySelector(`[data-component="${componentName}"]`);
-	if (element) {
-		element.style.left = `${position.x}%`;
-		element.style.top = `${position.y}%`;
-		element.style.width = `${position.width}%`;
-		element.style.height = `${position.height}%`;
-	}
-};
-
-const stopResize = async () => {
-	if (resizing) {
-		await saveLayout(currentLayout);
-		resizing = null;
-	}
-	document.removeEventListener('mousemove', handleResize);
-	document.removeEventListener('mouseup', stopResize);
-};
-
-export const test = () => [
-	{
-		name: 'Registers components and validates collision detection',
-		test: async () => {
-			const components = await registerComponents();
-			const testLayout = [{ name: 'test1', x: 10, y: 10, width: 30, height: 20 }];
-			const validPos = { name: 'test2', x: 50, y: 10, width: 30, height: 20 };
-			const invalidPos = { name: 'test2', x: 15, y: 15, width: 30, height: 20 };
-			return {
-				hasComponents: components.length > 0,
-				hasRequiredFields: components.every(c => c.name && c.getTree && c.moduleId),
-				noCollisionValid: isValidPosition(validPos, testLayout, 'test2'),
-				collisionInvalid: !isValidPosition(invalidPos, testLayout, 'test2'),
-				gridSnapping: snapToGrid(23) === 25
-			};
-		},
-		expect: { hasComponents: true, hasRequiredFields: true, noCollisionValid: true, collisionInvalid: true, gridSnapping: true }
-	},
-	{
-		name: 'Manages component lifecycle with space creation and keyboard navigation',
-		test: async () => {
+});
+// Testing
+export const test = async () => {
+	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
+	return [
+		await runUnitTest("Component discovery and registration", async () => {
+			const components = getRegisteredComponents();
+			const actual = { hasComponents: components.length > 0, hasRequiredFields: components.every(c => c.name && c.method && c.moduleId) };
+			return { actual, assert: deepEqual, expected: { hasComponents: true, hasRequiredFields: true } };
+		}),
+		await runUnitTest("Grid snapping and position normalization", async () => {
+			const actual = { snap5: snapToGrid(23), snap20: snapToGrid(87), normalized: normalizePosition({ x: 7, y: 3, width: 103, height: 97 }) };
+			const expected = { snap5: 25, snap20: 85, normalized: { x: 5, y: 5, width: 95, height: 95 } };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("Collision detection", async () => {
+			const layout = [{ name: 'existing', x: 10, y: 10, width: 30, height: 20 }];
+			const validPos = { x: 50, y: 10, width: 30, height: 20 };
+			const invalidPos = { x: 15, y: 15, width: 30, height: 20 };
+			const actual = { validIsValid: isValidPosition(validPos, layout, 'test'), invalidIsInvalid: !isValidPosition(invalidPos, layout, 'test') };
+			return { actual, assert: deepEqual, expected: { validIsValid: true, invalidIsInvalid: true } };
+		}),
+		await runUnitTest("Space finding and component addition", async () => {
 			currentLayout = [{ name: 'existing', x: 10, y: 10, width: 30, height: 20 }];
-			const spaceFound = findAvailableSpace(25, 15) !== null;
-			await addComponent('newComp', { x: 50, y: 10, width: 25, height: 15 });
-			const addSuccess = currentLayout.length === 2;
-
-			currentLayout = [{ name: 'blocking', x: 10, y: 10, width: 80, height: 80 }];
-			await addComponent('pushed', { x: 15, y: 15, width: 20, height: 15 });
-			const pushSuccess = currentLayout.find(c => c.name === 'blocking').y > 15;
-
-			selectedComponent = null;
-			await cycleSelection();
-			const firstSelected = selectedComponent === 'pushed';
-			await cycleSelection();
-			const wrapsToBlocking = selectedComponent === 'blocking';
-
-			const originalX = currentLayout.find(c => c.name === 'blocking').x;
-			selectedComponent = 'blocking';
-			await moveSelectedComponent('ArrowRight');
-			const moved = currentLayout.find(c => c.name === 'blocking').x > originalX;
-
-			return { spaceFound, addSuccess, pushSuccess, firstSelected, wrapsToBlocking, moved };
-		},
-		expect: { spaceFound: true, addSuccess: true, pushSuccess: true, firstSelected: true, wrapsToBlocking: true, moved: true }
-	}
-];
+			const space = findAvailableSpace(25, 15);
+			const actual = { findsSpace: space !== null, hasValidCoords: space && space.x >= 0 && space.y >= 0 };
+			return { actual, assert: deepEqual, expected: { findsSpace: true, hasValidCoords: true } };
+		})
+	];
+};

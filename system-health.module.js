@@ -3,7 +3,7 @@ export const manifest = {
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "Monitors module health metrics with configurable thresholds and real-time updates",
-	dependencies: ["ui", "chrome-sync"],
+	dependencies: ["chrome-sync"],
 	actions: ["getSystemHealth", "getModuleHealth", "recalculateMetrics", "showHealthUI", "showModuleDetail", "updateThreshold"],
 	commands: [{ name: "system health dashboard", keyword: "health", method: "showHealthUI" }]
 };

@@ -4,7 +4,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "User-controlled file operations with directory handles and persistent permissions",
 	permissions: ["storage"],
-	dependencies: ["indexed-db", "tab", "ui"],
+	dependencies: ["indexed-db", "tab"],
 	actions: ["write", "read", "append", "remove", "listFiles", "listDirs", "hasDir", "getFileHistory", "getAllHandles", "deleteAllHandles", "deleteHandle", "requestRequiredDirectoryAccess"],
 	indexeddb: {
 		name: 'FileHandlers',

@@ -3,7 +3,7 @@ export const manifest = {
 	context: ["service-worker"],
 	version: "1.0.0",
 	description: "Manages LLM inference across multiple providers with streaming support",
-	dependencies: ["chrome-sync", "graph-db", "ui"],
+	dependencies: ["chrome-sync", "graph-db"],
 	actions: ["prompt", "infer", "showProviderModule", "uiPicker", "updateForm", "saveForm"],
 	commands: [
 		{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" },

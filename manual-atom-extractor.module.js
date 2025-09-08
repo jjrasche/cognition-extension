@@ -4,7 +4,6 @@ export const manifest = {
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "Extract and curate atomic ideas from conversation sources to test flow enhancement hypothesis",
-	dependencies: ["ui"],
 	actions: ["buildUI", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
 	commands: [
 		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildUI" }

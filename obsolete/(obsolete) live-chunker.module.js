@@ -5,7 +5,7 @@ export const manifest = {
 	context: ["extension-page"],
 	version: "2.0.0",
 	description: "Real-time hierarchical thought clustering with dynamic re-clustering based on speech thoughts",
-	dependencies: ["web-speech-stt", "ui", "embedding", "summary"],
+	dependencies: ["web-speech-stt", "embedding", "summary"],
 	actions: ["startDemo", "stopDemo", "processThought", "getClusters", "setThreshold", "setMode", "handleClusterClick", "handleSynthesize"],
 };
 
