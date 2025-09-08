@@ -1,4 +1,4 @@
-import { calculateCosineSimilarity, calculateVariance } from "./helpers.js";
+import { calculateCosineSimilarity, calculateVariance } from "../helpers.js";
 export const manifest = {
 	name: "chunk",
 	context: ["service-worker"],

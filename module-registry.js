@@ -1,6 +1,6 @@
 import './helpers.js';
 import * as apiKeysModule from './api-keys.module.js';
-import * as chunkModule from './chunk.module.js';
+import * as chunkModule from './obsolete/chunk.module.js/index.js';
 import * as claudeApiModule from './claude-api.module.js';
 // import * as contentScriptHandlerModule from './content-script-handler.module.js';
 import * as contextModule from './context.module.js';
@@ -24,12 +24,12 @@ import * as transformerModule from './transformer.module.js';
 import * as chromeSyncModule from './chrome-sync.module.js';
 import * as webReadModule from './web-read.module.js';
 import * as treeToDomModule from './tree-to-dom.module.js';
-import * as uiModule from './ui.module.js';
+import * as uiModule from './obsolete/ui.module.js/index.js';
 import * as webSearchModule from './web-search.module.js';
 import * as superIntendentModule from './superintendent.module.js';
 import * as chromeLocalModule from './chrome-local.module.js'
 import * as summaryModule from './summary.module.js';
-import * as fileToGraphModule from './file-to-graph.module.js'
+import * as fileToGraphModule from './obsolete/file-to-graph.module.js/index.js'
 import * as atomicIdeaModule from './atomic-idea.module.js';
 import * as siteIndexModule from './site-index.module.js';
 import * as manualAtomExtractor from './manual-atom-extractor.module.js';
