@@ -34,8 +34,12 @@ import * as atomicIdeaModule from './atomic-idea.module.js';
 import * as siteIndexModule from './site-index.module.js';
 import * as manualAtomExtractor from './manual-atom-extractor.module.js';
 import * as tetrisModule from './tetris.module.js';
+import * as configModule from './config.module.js';
+import * as commandModule from './command.module.js';
 
 export const modules = [
+	commandModule,
+	configModule,
 	tetrisModule,
 	manualAtomExtractor,
 	siteIndexModule,

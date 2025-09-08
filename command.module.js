@@ -3,13 +3,11 @@ export const manifest = {
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "Universal command interface - single input that routes to inference, web search, graph search, and app actions",
-	dependencies: ["ui"],
+	// dependencies: ["ui"],
 	actions: ["handleCommandInput", "executeCommand", "getRegisteredActions"],
-	uiComponents: [{
-		name: "command-input",
-		type: "header-center",
-		method: "commandTree"
-	}]
+	uiComponents: [
+		{ name: "command-input", type: "header-center", method: "commandTree" }
+	]
 };
 
 let runtime, commands = [], isExecuting = false;
@@ -54,4 +52,22 @@ const commandSpinner = () => ({ ...(isExecuting ? { "command-spinner": { tag: "d
 const updateCommandUI = async (executing) => {
 	isExecuting = executing;
 	await runtime.call('layout.replaceComponent', 'command-input', commandTree());
+};
+
+// testing
+export const test = async () => {
+	const { runUnitTest } = runtime.testUtils;
+	return [
+		await runUnitTest("Search input triggers search on Enter key", async () => {
+			let searchQuery = null;
+			const originalCall = runtime.call;
+			runtime.call = async (action, ...args) => action === 'web-search.getSearchTree' && (searchQuery = args[0]);
+			const testQuery = "test search";
+			await handleCommandInput({ key: 'Enter', target: { value: testQuery } });
+			runtime.call = originalCall;
+			const actual = { searchTriggered: !!searchQuery, query: searchQuery };
+			const expected = { searchTriggered: true, query: testQuery };
+			return { actual, assert: runtime.testUtils.deepEqual, expected };
+		})
+	];
 };

@@ -1,0 +1,142 @@
+export const manifest = {
+	name: "config",
+	context: ["extension-page"],
+	version: "1.0.0",
+	description: "Auto-generates configuration UIs from module manifests with validation and persistence",
+	dependencies: ["chrome-sync", "ui"],
+	actions: ["showConfig", "saveModuleConfig", "toggleCard"],
+	commands: [{ name: "configure modules", keyword: "config", method: "showConfig" }]
+};
+let runtime, expandedCards = new Set();
+export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
+
+const initializeConfigs = async () => await Promise.all(getModules().map(module => applyConfig(module, validateConfig(module, loadConfig(module)))));
+const updateAndSaveConfig = async (moduleName, updates) => {
+	const module = getModule(moduleName)
+	validateConfig(module, updates);
+	applyConfig(module, updates); // makes immediately available changes to the running module
+	await saveConfig(module, updates); // persists changes
+	return updates;
+};
+const validateConfig = (module, updates) => {
+	const validationErrors = Object.entries(updates).map(([field, value]) => ({ field, ...validateField(value, module.manifest.config[field]) })).filter(v => !v.valid);
+	if (validationErrors.length > 0) throw new Error(`Validation failed: ${validationErrors.map(e => `${e.field}: ${e.error}`).join(', ')}`);
+};
+const getModules = () => runtime.getModulesWithProperty('config');
+const getModule = (name) => getModules().find(m => m.manifest.name === name) || (() => { throw new Error(`Module ${name} not found`); })();
+const loadConfig = async (module) => await runtime.call('chrome-sync.get', `config.${module.manifest.name}`)
+const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => module.manifest.config[field] && (module.manifest.config[field].value = value));
+const saveConfig = async (module, updates) => await runtime.call('chrome-sync.set', { [`config.${module.manifest.name}`]: updates });
+// validation todo: break out into form module
+const validateField = (value, schema = {}) => {
+	if (schema.required && (value === undefined || value === null || value === '')) return { valid: false, error: 'Required field' };
+	if (value === undefined || value === null || value === '') return { valid: true };
+	switch (schema.type) {
+		case 'number':
+			const num = Number(value);
+			if (isNaN(num)) return { valid: false, error: 'Must be a number' };
+			if (schema.min !== undefined && num < schema.min) return { valid: false, error: `Min: ${schema.min}` };
+			if (schema.max !== undefined && num > schema.max) return { valid: false, error: `Max: ${schema.max}` };
+			break;
+		case 'string':
+		case 'password':
+			if (typeof value !== 'string') return { valid: false, error: 'Must be text' };
+			if (schema.minLength && value.length < schema.minLength) return { valid: false, error: `Min length: ${schema.minLength}` };
+			if (schema.maxLength && value.length > schema.maxLength) return { valid: false, error: `Max length: ${schema.maxLength}` };
+			break;
+		case 'select':
+			const options = schema.options || [];
+			const validValues = options.map(opt => typeof opt === 'string' ? opt : opt.value);
+			if (!validValues.includes(value)) return { valid: false, error: 'Invalid selection' };
+			break;
+		case 'checkbox':
+			if (typeof value !== 'boolean') return { valid: false, error: 'Must be true/false' };
+			break;
+	}
+	return { valid: true };
+};
+// === UI GENERATION ===
+export const showConfig = async () => await runtime.call('ui.renderTree', buildConfigTree());
+const buildConfigTree = () => ({
+	"config-page": {
+		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
+		"back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", style: "margin-bottom: 20px; align-self: flex-start;", events: { click: "ui.initializeLayout" } },
+		"title": { tag: "h2", text: "Module Configuration", style: "margin-bottom: 20px;" },
+		"config-cards": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; max-width: 800px;", ...buildModuleCards() }
+	}
+});
+const buildModuleCards = () => Object.fromEntries(getModules().map(module => [`card-${module.manifest.name}`, buildModuleCard(module)]));
+const buildModuleCard = (module) => {
+	const name = module.manifest.name, isExpanded = expandedCards.has(name), schema = module.manifest.config;
+	return {
+		tag: "div", class: "cognition-card", style: "border: 1px solid var(--border-primary);",
+		[`header-${name}`]: { tag: "div", style: "display: flex; justify-content: space-between; align-items: center; cursor: pointer;", events: { click: "config.toggleCard" }, "data-module-name": name, "title": { tag: "h3", text: name, style: "margin: 0;" }, "expand-icon": { tag: "span", text: isExpanded ? "▼" : "▶", style: "color: var(--text-muted);" } },
+		"description": { tag: "p", text: module.manifest.description, style: "margin: 8px 0 0 0; color: var(--text-muted); font-size: 14px;" },
+		...(isExpanded && { [`form-${name}`]: buildModuleForm(name, schema) })
+	};
+};
+// todo: break out into form module
+const buildModuleForm = (name, schema) => ({
+	tag: "form", style: "margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-primary);", events: { submit: "config.saveModuleConfig" }, "hidden-module": { tag: "input", type: "hidden", name: "moduleName", value: name },
+	...buildFormFields(name, schema),
+	"save-button": { tag: "button", type: "submit", text: "Save Configuration", class: "cognition-button-primary", style: "margin-top: 15px;" }
+});
+const buildFormFields = (moduleName, schema) => Object.fromEntries(Object.entries(schema).map(([fieldName, fieldSchema]) => [`field-${moduleName}-${fieldName}`, buildFormField(fieldName, fieldSchema)]));
+const buildFormField = (fieldName, schema) => ({
+	tag: "div", style: "margin-bottom: 15px;", "label": { tag: "label", text: schema.label || fieldName, style: "display: block; margin-bottom: 6px; font-weight: 500;" },
+	"input": buildInputElement(fieldName, schema),
+	...(schema.description && { "desc": { tag: "div", text: schema.description, style: "font-size: 12px; color: var(--text-muted); margin-top: 4px;" } }),
+	"error": { tag: "div", style: "color: var(--danger); font-size: 12px; margin-top: 4px; min-height: 16px;" }
+});
+const buildInputElement = (fieldName, schema) => {
+	const baseProps = { name: fieldName, class: getInputClass(schema.type), value: schema.value || schema.default || '', required: schema.required || false };
+	switch (schema.type) {
+		case 'select': return { tag: "select", ...baseProps, class: "cognition-select", options: (schema.options || []).map(opt => typeof opt === 'string' ? { value: opt, text: opt } : opt) };
+		case 'number': return { tag: "input", type: "number", ...baseProps, ...(schema.min !== undefined && { min: schema.min }), ...(schema.max !== undefined && { max: schema.max }) };
+		case 'password': return { tag: "input", type: "password", ...baseProps };
+		case 'checkbox': return { tag: "input", type: "checkbox", ...baseProps, checked: schema.value || schema.default || false, value: undefined };
+		case 'textarea': return { tag: "textarea", ...baseProps, rows: schema.rows || 4 };
+		default: return { tag: "input", type: "text", ...baseProps, ...(schema.placeholder && { placeholder: schema.placeholder }) };
+	}
+};
+const getInputClass = (type) => type === 'select' ? "cognition-select" : "cognition-input";
+// === EVENT HANDLERS ===
+export const toggleCard = async (eventData) => {
+	const moduleName = eventData.target.closest('[data-module-name]')?.dataset.moduleName;
+	if (!moduleName) return;
+	expandedCards.has(moduleName) ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
+	await showConfig();
+};
+export const saveModuleConfig = async (eventData) => {
+	eventData.preventDefault?.();
+	const { moduleName, ...fieldValues } = eventData.formData;
+	if (!moduleName) return;
+	try {
+		await updateAndSaveConfig(moduleName, fieldValues);
+		runtime.log(`[Config] ✅ Saved ${moduleName} configuration`);
+		await showConfig(); // Refresh to show saved state
+	} catch (error) {
+		runtime.logError(`[Config] Save failed:`, error);
+	}
+};
+// === TESTING ===
+export const test = async () => {
+	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
+	return [
+		await runUnitTest("Validate required field", async () => {
+			const validation = validateField('', { type: 'string', required: true });
+			return { actual: validation.valid, assert: strictEqual, expected: false };
+		}),
+		await runUnitTest("Validate number constraints", async () => {
+			const validation = validateField(15, { type: 'number', min: 1, max: 10 });
+			return { actual: validation.valid, assert: strictEqual, expected: false };
+		}),
+		await runUnitTest("Schema value embedding", async () => {
+			const mockSchema = { apiKey: { type: 'password', default: 'default-key' } };
+			// Simulate loading config
+			mockSchema.apiKey.value = 'loaded-key';
+			const actual = mockSchema.apiKey.value;
+			return { actual, assert: strictEqual, expected: 'loaded-key' };
+		})
+	];
+};

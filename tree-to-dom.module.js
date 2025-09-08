@@ -268,7 +268,7 @@ export const test = async () => {
 	results.push(await runUnitTest("Event Binding: Nested element events work (UI search input bug)", async () => {
 		const layoutObj = { tag: "div", id: "main-layout" };
 		const searchBarObj = { tag: "div", id: "search-bar" };
-		const searchInputObj = { tag: "input", id: "search-input", type: "text", placeholder: "Search...", events: { keydown: "ui.handleSearchKeydown" } };
+		const searchInputObj = { tag: "input", id: "search-input", type: "text", placeholder: "Search...", events: { keydown: "testHandler" } };
 		const tree = { [layoutObj.id]: { ...layoutObj, [searchBarObj.id]: { ...searchBarObj, [searchInputObj.id]: searchInputObj } } };
 		runtimeCalls = [];
 		await initiateEventOnTestDom(tree, [[`#${searchInputObj.id}`, new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })]]);

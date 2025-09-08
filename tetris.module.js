@@ -9,7 +9,12 @@ export const manifest = {
 	actions: ["startGame", "pauseGame", "resetGame", "toggleAI", "inferMoves"],
 	commands: [
 		{ name: "play tetris", keyword: "tetris", method: "startGame" }
-	]
+	],
+	config: {
+		difficulty: { type: 'select', options: ['Easy', 'Medium', 'Hard'], default: 'Medium', label: 'Difficulty' },
+		speed: { type: 'number', min: 100, max: 2000, default: 800, label: 'Drop Speed (ms)' },
+		aiEnabled: { type: 'checkbox', default: false, label: 'Enable AI by Default' }
+	},
 };
 
 let runtime, gameState = {}, runner = null, aiRunner = null;

@@ -1,18 +1,15 @@
-import { wait } from "./helpers.js";
-
 export const manifest = {
 	name: 'ui',
 	version: '1.0.0',
 	context: ['extension-page'],
 	description: 'Extension page layout and tree orchestration',
-	dependencies: ['tree-to-dom'],
-	actions: ['initializeLayout', 'renderTree', 'handleSearchKeydown', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt', "showPageSpinner", "hidePageSpinner"],
+	dependencies: ['tree-to-dom', 'command'],
+	actions: ['initializeLayout', 'renderTree', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt', "showPageSpinner", "hidePageSpinner"],
 };
 let runtime
 export const initialize = async (rt) => {
 	runtime = rt;
 	await initializeLayout();
-	await wait(2000);
 };
 const initializeLayout = async () => {
 	getMainLayout()?.remove();
@@ -22,7 +19,7 @@ const initializeLayout = async () => {
 			"main-content": { tag: "div", id: MAIN_CONTENT_ID, innerHTML: loadingHTML("Enter a search query to begin") },
 			"search-bar": {
 				tag: "div", id: "cognition-search-bar", style: "position: relative; display: flex; align-items: center; gap: 10px;",
-				"search-input": { tag: "input", id: SEARCH_INPUT_ID, type: "text", placeholder: "Search the web...", events: { keydown: "ui.handleSearchKeydown" }, style: "flex: 1;" },
+				"search-input": { tag: "input", id: SEARCH_INPUT_ID, type: "text", placeholder: "Search the web...", events: { keydown: "command.handleCommandInput" }, style: "flex: 1;" },
 				"button-group": {
 					tag: "div", style: "display: flex; gap: 8px;",
 				}
@@ -130,17 +127,6 @@ export const test = async () => {
 		return { actual, assert: runtime.testUtils.deepEqual, expected };
 	});
 	return [
-		await runUnitTest("Search input triggers search on Enter key", async () => {
-			let searchQuery = null;
-			const originalCall = runtime.call;
-			runtime.call = async (action, ...args) => action === 'web-search.getSearchTree' && (searchQuery = args[0]);
-			const testQuery = "test search";
-			await handleSearchKeydown({ key: 'Enter', target: { value: testQuery } });
-			runtime.call = originalCall;
-			const actual = { searchTriggered: !!searchQuery, query: searchQuery };
-			const expected = { searchTriggered: true, query: testQuery };
-			return { actual, assert: runtime.testUtils.deepEqual, expected };
-		}),
 		await runUnitTest("Staged replacement: First modal creation", async () => {
 			// Ensure clean state
 			document.querySelectorAll('.cognition-overlay').forEach(el => el.remove());
