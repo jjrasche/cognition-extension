@@ -4,16 +4,14 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Auto-generates configuration UIs from module manifests with validation and persistence",
 	dependencies: ["chrome-sync", "ui"],
-	actions: ["showConfig", "saveModuleConfig", "toggleCard"],
+	actions: ["showConfig", "saveModuleConfig", "toggleCard", "resetToDefaults"],
 	commands: [{ name: "configure modules", keyword: "config", method: "showConfig" }]
 };
 let runtime, expandedCards = new Set();
 export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
 
-const initializeConfigs = async () => await Promise.all(getModules().map(module => applyConfig(module, validateConfig(module, loadConfig(module)))));
-export const configProxy = (manifest) => new Proxy(manifest.config, {
-	get: (target, prop) => target[prop]?.value
-});
+const initializeConfigs = async () => await Promise.all(getModules().map(async module => applyConfig(module, validateConfig(module, await loadConfig(module)))));
+export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value }); // syntactic sugar for module config access
 const updateAndSaveConfig = async (moduleName, updates) => {
 	const module = getModule(moduleName)
 	validateConfig(module, updates);
@@ -27,9 +25,17 @@ const validateConfig = (module, updates) => {
 };
 const getModules = () => runtime.getModulesWithProperty('config');
 const getModule = (name) => getModules().find(m => m.manifest.name === name) || (() => { throw new Error(`Module ${name} not found`); })();
-const loadConfig = async (module) => await runtime.call('chrome-sync.get', `config.${module.manifest.name}`)
+const loadConfig = async (module) => await runtime.call('chrome-sync.get', `config.${module.manifest.name}`) || moduleDefaults(module);
 const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => module.manifest.config[field] && (module.manifest.config[field].value = value));
 const saveConfig = async (module, updates) => await runtime.call('chrome-sync.set', { [`config.${module.manifest.name}`]: updates });
+const removeConfig = async (module) => await runtime.call('chrome-sync.remove', `config.${module.manifest.name}`);
+export const resetToDefaults = async (moduleName) => {
+	const module = getModule(moduleName);
+	removeConfig(module);
+	applyConfig(module, moduleDefaults(module));
+	await showConfig(); // Refresh UI
+};
+const moduleDefaults = (module) => Object.fromEntries(Object.entries(module.manifest.config).map(([key, schema]) => [key, schema.value]));
 // validation todo: break out into form module
 const validateField = (value, schema = {}) => {
 	if (schema.required && (value === undefined || value === null || value === '')) return { valid: false, error: 'Required field' };
@@ -73,7 +79,15 @@ const buildModuleCard = (module) => {
 	const name = module.manifest.name, isExpanded = expandedCards.has(name), schema = module.manifest.config;
 	return {
 		tag: "div", class: "cognition-card", style: "border: 1px solid var(--border-primary);",
-		[`header-${name}`]: { tag: "div", style: "display: flex; justify-content: space-between; align-items: center; cursor: pointer;", events: { click: "config.toggleCard" }, "data-module-name": name, "title": { tag: "h3", text: name, style: "margin: 0;" }, "expand-icon": { tag: "span", text: isExpanded ? "▼" : "▶", style: "color: var(--text-muted);" } },
+		[`header-${name}`]: {
+			tag: "div", style: "display: flex; justify-content: space-between; align-items: center;",
+			"title-area": {
+				tag: "div", style: "display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;", events: { click: "config.toggleCard" }, "data-module-name": name,
+				"title": { tag: "h3", text: name, style: "margin: 0;" },
+				"expand-icon": { tag: "span", text: isExpanded ? "▼" : "▶", style: "color: var(--text-muted);" }
+			},
+			"reset-button": { tag: "button", text: "Reset", class: "cognition-button-secondary", style: "padding: 4px 8px; font-size: 12px;", events: { click: "config.resetToDefaults" }, "data-module-name": name, title: "Reset to default values" }
+		},
 		"description": { tag: "p", text: module.manifest.description, style: "margin: 8px 0 0 0; color: var(--text-muted); font-size: 14px;" },
 		...(isExpanded && { [`form-${name}`]: buildModuleForm(name, schema) })
 	};

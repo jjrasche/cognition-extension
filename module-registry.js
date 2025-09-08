@@ -36,8 +36,10 @@ import * as manualAtomExtractor from './manual-atom-extractor.module.js';
 import * as tetrisModule from './tetris.module.js';
 import * as configModule from './config.module.js';
 import * as commandModule from './command.module.js';
+import * as systemHealthModule from './system-health.module.js';
 
 export const modules = [
+	systemHealthModule,
 	commandModule,
 	configModule,
 	tetrisModule,

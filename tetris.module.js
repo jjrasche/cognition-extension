@@ -35,7 +35,7 @@ export const startGame = () => { initializeGame(); runManual(); renderGame(); };
 export const pauseGame = () => { runner ? stopManualRunning() : runManual(); renderGame(); };
 export const resetGame = () => { stopManualRunning(); startGame(); };
 const initializeGame = () => (initializeGameState(), spawnPiece());
-const initializeGameState = () => (gameState = { board: Array(config.rows).fill(0).map(() => Array(config.columns).fill(0)), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, moves: [] });
+const initializeGameState = () => (gameState = { board: blankBoard(), currentPiece: null, currentPosition: { x: 4, y: 0 }, nextPiece: null, lines: 0, gameOver: false, moves: [] });
 const makeMove = (move) => {
 	if (!gameState) return false;
 	const newPos = getNewPosition(move), newRot = getNewRotation(move);
@@ -70,7 +70,7 @@ const isValidPosition = (pieceType, rotation, position) => {
 			if (piece[y][x]) {
 				const boardX = position.x + x;
 				const boardY = position.y + y;
-				if (boardX < 0 || boardX >= boardColumns || boardY >= boardRows) return false;
+				if (boardX < 0 || boardX >= config.columns || boardY >= config.rows) return false;
 				if (boardY >= 0 && gameState.board[boardY][boardX]) return false;
 			}
 		}
@@ -95,6 +95,9 @@ const clearLine = (y) => (removeRow(y), addRowAtTop(), gameState.lines++);
 const removeRow = (rowIndex) => gameState.board.splice(rowIndex, 1);
 const addRowAtTop = () => gameState.board.unshift(blankRow);
 const gameOver = () => { gameState.gameOver = true; stopManualRunning(); };
+const blankRow = () => Array(config.rows).fill(0);
+const blankColumns = () => Array(config.columns).fill(0);
+const blankBoard = () => blankColumns().map(blankRow);
 // AI
 const runAI = () => { }
 // 	if (aiRunner) return;
@@ -111,16 +114,6 @@ const processAIMove = async () => {
 	if (gameState.moves.length === 0) await inferMoves();
 	makeMove(gameState.moves.shift());
 };
-// const systemPrompt = "You are a Tetris AI. Analyze the board and return optimal moves as a JSON array. Consider line clearing opportunities, stack height, and piece placement strategy.";
-// const query = () => `Board (${boardRows} rows x ${boardColumns} cols, 0=empty, 1=filled):\n${gameState.board
-// 	.map(row => row.map(cell => (cell === 0 ? 0 : 1)).join(""))
-// 	.join("\n")}
-//   Current piece: ${gameState.currentPiece.type}
-//   Position: ${gameState.currentPosition.x}, ${gameState.currentPosition.y}
-//   Valid moves: ["${validMoves.join('", "')}"]
-
-//   Task: Return ONLY a JSON array of move strings (e.g., ["left","down","down"]). 
-//   Moves may repeat, and the piece must end at rest on the board.`;
 const query = () => {
 	const currentShape = PIECES[gameState.currentPiece.type][gameState.currentPiece.rotation];
 	const shapeStr = currentShape.map(row => row.join('')).join('\n');
@@ -176,7 +169,7 @@ const createBoardElement = () => !gameState ? { tag: "div" } : (() => {
 	gameState.currentPiece && (() => {
 		const piece = PIECES[gameState.currentPiece.type][gameState.currentPiece.rotation];
 		const { x: px, y: py } = gameState.currentPosition;
-		piece.forEach((row, y) => row.forEach((cell, x) => cell && py + y >= 0 && py + y < boardRows && px + x >= 0 && px + x < boardColumns && (visualBoard[py + y][px + x] = `current_${gameState.currentPiece.type}`)));
+		piece.forEach((row, y) => row.forEach((cell, x) => cell && py + y >= 0 && py + y < config.rows && px + x >= 0 && px + x < config.columns && (visualBoard[py + y][px + x] = `current_${gameState.currentPiece.type}`)));
 	})();
 	return {
 		tag: "div", style: "display: grid; grid-template-columns: repeat(10, 25px); grid-template-rows: repeat(20, 25px); gap: 1px; background: #333;",
@@ -224,7 +217,6 @@ const Z = [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]];
 const J = [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]];
 const L = [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]];
 const PIECES = { I, O, T, S, Z, J, L };
-const blankRow = Array(config.boardColumns).fill(0);
 const PIECE_COLORS = { I: '#00f0f0', O: '#f0f000', T: '#a000f0', S: '#00f000', Z: '#f00000', J: '#0000f0', L: '#f0a000' };
 const types = Object.keys(PIECES);
 const validMoves = ['left', 'right', 'down', 'rotate'];
