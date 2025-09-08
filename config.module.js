@@ -10,7 +10,11 @@ export const manifest = {
 let runtime, expandedCards = new Set();
 export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
 
-const initializeConfigs = async () => await Promise.all(getModules().map(async module => applyConfig(module, validateConfig(module, await loadConfig(module)))));
+const initializeConfigs = async () => await Promise.all(getModules().map(async module => {
+	const loadedConfig = await loadConfig(module)
+	validateConfig(module, loadedConfig)
+	applyConfig(module, loadedConfig);
+}));
 export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value }); // syntactic sugar for module config access
 const updateAndSaveConfig = async (moduleName, updates) => {
 	const module = getModule(moduleName)
