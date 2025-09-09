@@ -6,10 +6,6 @@ export const manifest = {
 	description: "Dynamic component positioning and layout management with grid snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["initializeLayout", "maximizeComponent", "restoreLayout", "replaceComponent", "addComponent", "removeComponent", "cycleSelection"],
-	commands: [
-		{ name: "layout manager", keyword: "layout", method: "showLayoutUI" }
-	],
 	config: {
 		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
 		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
@@ -18,21 +14,25 @@ export const manifest = {
 		showGridLines: { type: 'checkbox', value: false, label: 'Show Grid Lines' }
 	}
 };
-let runtime, currentLayout = [], savedLayout = [], maximizedComponent = null, selectedComponent = null;
+let runtime, currentLayout = [], savedLayout = [], maximizedComponent = null, selectedComponent = null, registeredComponents = null;
 const config = configProxy(manifest);
 export const initialize = async (rt) => (runtime = rt, await initializeLayout());
 
 // Component Discovery
-const getRegisteredComponents = () => runtime.getContextModules()
-	.flatMap(m => (m.manifest.uiComponents || []).map(comp => ({ ...comp, moduleId: m.manifest.name })))
-	.filter(comp => comp.name && comp.method);
-const getComponentTree = async (component) => await runtime.call(`${component.moduleId}.${component.method}`);
+const getRegisteredComponents = () => registeredComponents ?? runtime.getModulesWithProperty('uiComponents')
+	.flatMap(m => (m.manifest.uiComponents || [])
+		.map(comp => {
+			runtime.registerAction(m, comp.getTree)
+			return { ...comp, moduleName: m.manifest.name };
+		}));
+
+const getComponentTree = async (component) => await runtime.call(`${component.moduleName}.${component.getTree}`);
 // Layout Persistence 
 const loadLayout = async () => await runtime.call('chrome-sync.get', 'layout.positions') || getDefaultLayout();
 const saveLayout = async (layout) => await runtime.call('chrome-sync.set', { 'layout.positions': layout });
 const getDefaultLayout = () => [
 	{ name: 'command-input', x: 10, y: 5, width: 80, height: 10 },
-	{ name: 'main-content', x: 10, y: 20, width: 80, height: 70 }
+	// { name: 'main-content', x: 10, y: 20, width: 80, height: 70 }
 ];
 // Grid & Positioning
 const snapToGrid = (value) => Math.round(value / config.gridSize) * config.gridSize;
@@ -221,7 +221,7 @@ export const test = async () => {
 	return [
 		await runUnitTest("Component discovery and registration", async () => {
 			const components = getRegisteredComponents();
-			const actual = { hasComponents: components.length > 0, hasRequiredFields: components.every(c => c.name && c.method && c.moduleId) };
+			const actual = { hasComponents: components.length > 0, hasRequiredFields: components.every(c => c.name && c.getTree && c.moduleName) };
 			return { actual, assert: deepEqual, expected: { hasComponents: true, hasRequiredFields: true } };
 		}),
 		await runUnitTest("Grid snapping and position normalization", async () => {

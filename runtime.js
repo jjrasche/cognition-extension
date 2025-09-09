@@ -45,13 +45,14 @@ class Runtime {
 			try {
 				this.getModuleActions(module)
 					.filter(action => typeof module[action] === 'function')
-					.forEach(action => this.actions.set(`${module.manifest.name}.${action}`, module[action]));
+					.forEach(action => this.registerAction(module, action));
 			}
 			catch (error) {
 				this.logError(` Failed to register [${module.manifest.name}] actions:`, { error: error.message });
 			}
 		});
 	}
+	registerAction = (module, action) => this.actions.set(`${module.manifest.name}.${action}`, module[action])
 
 	moduleInContext = (moduleName) => this.contextModules.find(m => m.manifest.name === moduleName);
 
