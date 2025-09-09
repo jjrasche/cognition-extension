@@ -161,7 +161,7 @@ export const removeComponent = async (name) => {
 	await renderLayout();
 };
 export const replaceComponent = async (name, newTree) => {
-	const componentElement = document.querySelector(`[data-component="${name}"] .component-content`);
+	const componentElement = document.querySelector(`[data-component="${name}"].component-content`);
 	if (!componentElement) return;
 	await runtime.call('tree-to-dom.transform', { content: newTree }, componentElement);
 };

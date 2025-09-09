@@ -6,7 +6,7 @@ class Runtime {
 		this.actions = new Map();
 		this.contextModules = [];
 		this.errors = [];
-		this.moduleState = new Map();
+		this.moduleState = new ObservableModuleState();
 		this.testUtils = { ...asserts, runUnitTest };
 		// this.testResults = [];
 		this.testResults = null;
@@ -355,4 +355,22 @@ export function initializeRuntime(runtimeName) {
 	const initializer = new Runtime(runtimeName);
 	initializer.initialize();
 	return initializer;
+}
+
+class ObservableModuleState extends Map {
+	constructor() {
+		super();
+		this.listeners = new Set();
+	}
+
+	set(moduleName, state) {
+		const oldState = this.get(moduleName);
+		super.set(moduleName, state);
+		this.listeners.forEach(listener => listener(moduleName, state, oldState));
+		return this;
+	}
+	addListener(callback) {
+		this.listeners.add(callback);
+		return () => this.listeners.delete(callback); // Return unsubscribe
+	}
 }

@@ -5,7 +5,7 @@ export const manifest = {
 	description: "Monitors module health metrics with configurable thresholds and real-time updates",
 	dependencies: ["chrome-sync"],
 	actions: ["getSystemHealth", "getModuleHealth", "recalculateMetrics", "showHealthUI", "showModuleDetail", "updateThreshold"],
-	commands: [{ name: "system health dashboard", keyword: "health", method: "showHealthUI" }]
+	uiComponents: [{ name: "health dashboard", getTree: "buildTree" }],
 };
 let runtime, moduleHealthData = new Map(), debounceTimers = new Map();
 const DEBOUNCE_DELAY = 1000;
@@ -83,22 +83,22 @@ export const updateThreshold = async (eventData) => {
 	if (metric) {
 		metric.thresholds[threshold] = parseFloat(value);
 		await recalculateModuleMetrics(moduleName);
-		await runtime.call('ui.closeModal');
-		await showHealthUI();
+		await refreshDashboard();
 	}
 };
 // === UI COMPONENTS ===
+export const refreshDashboard = () => runtime.call('layout.replaceComponent', 'health-dashboard', buildTree());
 const statusColors = { good: '#10b981', warning: '#f59e0b', critical: '#ef4444', unknown: '#6b7280' };
-export const showHealthUI = async () => {
+export const buildTree = async () => {
 	const health = await getSystemHealth();
-	await runtime.call('ui.renderTree', {
+	await {
 		"health-dashboard": {
 			tag: "div", style: "height: 100vh; padding: 20px; overflow-y: auto;",
 			...buildHeader(),
 			...buildOverallStatus(health),
 			...buildModulesGrid(health.modules)
 		}
-	});
+	};
 };
 const buildHeader = () => ({
 	"header": {

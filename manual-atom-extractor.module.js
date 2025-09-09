@@ -1,12 +1,11 @@
-import { getId } from './helpers.js';
 export const manifest = {
 	name: "manual-atom-extractor",
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "Extract and curate atomic ideas from conversation sources to test flow enhancement hypothesis",
-	actions: ["buildUI", "loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
-	commands: [
-		{ name: "extract atomic ideas from source", keyword: "atom", method: "buildUI" }
+	actions: ["loadSource", "handleSelection", "createAtomicIdea", "editIdea", "saveCollection"],
+	uiComponents: [
+		{ name: "main", getTree: "buildTree" }
 	]
 };
 
@@ -15,12 +14,12 @@ export const initialize = async (rt) => runtime = rt;
 
 export const loadSource = async (tree, params = {}) => {
 	currentSource = { tree, ...params };
-	await buildUI();
+	await refreshUI();
 };
 // dynamic form behavior
 export const handleSelection = async ({ selection }) => {
 	selectedSpans.push({ text: selection.text, elementId: selection.elementId, timestamp: Date.now() });
-	await buildUI();
+	await refreshUI();
 };
 export const createAtomicIdea = async ({ formData }) => {
 	const text = formData.ideaText || selectedSpans.map(s => s.text).join(' ');
@@ -28,7 +27,7 @@ export const createAtomicIdea = async ({ formData }) => {
 	atomicIdeas.push(node);
 	await clearSelections();
 };
-const clearSelections = async () => (selectedSpans = [], await buildUI());
+const clearSelections = async () => (selectedSpans = [], await refreshUI());
 export const editIdea = async (eventData) => {
 	const index = parseInt(eventData.target.dataset.ideaIndex), newText = eventData.target.value;
 	atomicIdeas[index] = { ...atomicIdeas[index], text: newText, lastEdited: new Date().toISOString() };
@@ -39,10 +38,9 @@ export const saveCollection = async () => {
 	console.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
 };
 // UI
-export const buildUI = async () => await runtime.call('ui.renderTree', buildTree());
+const refreshUI = () => runtime.call('layout.replaceComponent', 'main', buildTree());
 const buildTree = () => ({ "manual-atom-extractor": { tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;", ...header(), ...mainContent() } });
-const header = () => ({ "header": { tag: "div", style: "margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;", ...backButton(), "title": { tag: "h2", text: "Knowledge Forge", style: "margin: 0; color: var(--text-primary);" }, ...saveButton() } });
-const backButton = () => ({ "back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", events: { click: "ui.initializeLayout" } } });
+const header = () => ({ "header": { tag: "div", style: "margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;", "title": { tag: "h2", text: "Knowledge Forge", style: "margin: 0; color: var(--text-primary);" }, ...saveButton() } });
 const saveButton = () => ({ "save-button": { tag: "button", text: "Save Collection", class: "cognition-button-primary", events: { click: "manual-atom-extractor.saveCollection" } } });
 const mainContent = () => ({ "main-content": { tag: "div", style: "flex: 1; display: flex; gap: 20px; min-height: 0;", ...sourcePanel(), ...ideaPanel() } });
 const sourcePanel = () => ({ "source-panel": { tag: "div", style: panelStyle, ...sourceHeader(), ...sourceContent() } });

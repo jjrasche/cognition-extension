@@ -48,11 +48,7 @@ const getCommand = async (input) => {
 // UI
 export const commandTree = async () => ({ tag: "div", style: "display: flex; align-items: center; gap: 8px; flex: 1;", ...commandInput(), ...commandSpinner() });
 const commandInput = () => ({ "command-input": { tag: "input", id: "cognition-search-input", type: "text", placeholder: "Search the web, ask questions, or type commands...", events: { keydown: "command.handleCommandInput" }, style: "flex: 1;", disabled: isExecuting } })
-const commandSpinner = () => ({ ...(isExecuting ? { "command-spinner": { tag: "div", class: "cognition-spinner", style: "width: 20px; height: 20px;" } } : {}) })
-const updateCommandUI = async (executing) => {
-	isExecuting = executing;
-	await runtime.call('layout.replaceComponent', 'command-input', commandTree());
-};
+const refreshUI = async () => await runtime.call('layout.replaceComponent', 'command-input', commandTree())
 
 // testing
 export const test = async () => {

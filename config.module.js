@@ -5,7 +5,9 @@ export const manifest = {
 	description: "Auto-generates configuration UIs from module manifests with validation and persistence",
 	dependencies: ["chrome-sync"],
 	actions: ["showConfig", "saveModuleConfig", "toggleCard", "resetToDefaults"],
-	commands: [{ name: "configure modules", keyword: "config", method: "showConfig" }]
+	uiComponents: [
+		{ name: "module-config", getTree: "buildConfigTree" }
+	]
 };
 let runtime, expandedCards = new Set();
 export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
@@ -37,7 +39,7 @@ export const resetToDefaults = async (moduleName) => {
 	const module = getModule(moduleName);
 	removeConfig(module);
 	applyConfig(module, moduleDefaults(module));
-	await showConfig(); // Refresh UI
+	refreshUI();
 };
 const moduleDefaults = (module) => Object.fromEntries(Object.entries(module.manifest.config).map(([key, schema]) => [key, schema.value]));
 // validation todo: break out into form module
@@ -69,11 +71,10 @@ const validateField = (value, schema = {}) => {
 	return { valid: true };
 };
 // === UI GENERATION ===
-export const showConfig = async () => await runtime.call('ui.renderTree', buildConfigTree());
-const buildConfigTree = () => ({
+export const refreshUI = () => runtime.call('layout.replaceComponent', 'atom-extractor', buildConfigTree());
+export const buildConfigTree = () => ({
 	"config-page": {
 		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
-		"back-button": { tag: "button", text: "← Back", class: "cognition-button-secondary", style: "margin-bottom: 20px; align-self: flex-start;", events: { click: "ui.initializeLayout" } },
 		"title": { tag: "h2", text: "Module Configuration", style: "margin-bottom: 20px;" },
 		"config-cards": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; max-width: 800px;", ...buildModuleCards() }
 	}
@@ -126,7 +127,7 @@ export const toggleCard = async (eventData) => {
 	const moduleName = eventData.target.closest('[data-module-name]')?.dataset.moduleName;
 	if (!moduleName) return;
 	expandedCards.has(moduleName) ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
-	await showConfig();
+	refreshUI();
 };
 export const saveModuleConfig = async (eventData) => {
 	eventData.preventDefault?.();
@@ -135,7 +136,7 @@ export const saveModuleConfig = async (eventData) => {
 	try {
 		await updateAndSaveConfig(moduleName, fieldValues);
 		runtime.log(`[Config] ✅ Saved ${moduleName} configuration`);
-		await showConfig(); // Refresh to show saved state
+		refreshUI();
 	} catch (error) {
 		runtime.logError(`[Config] Save failed:`, error);
 	}
