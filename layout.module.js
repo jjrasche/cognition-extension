@@ -11,7 +11,6 @@ export const manifest = {
 		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
 		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
 		defaultComponentHeight: { type: 'number', min: 10, max: 90, value: 20, label: 'Default Component Height (%)' },
-		enableKeyboardNav: { type: 'checkbox', value: true, label: 'Enable Keyboard Navigation' },
 	}
 };
 let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set();
@@ -24,7 +23,7 @@ export const initialize = async (rt) => {
 	await loadComponentStates();
 	await initializeLayoutContainer();
 	await refreshUI('initialization');
-	config.enableKeyboardNav && setupKeyboardHandlers();
+	setupKeyboardHandlers();
 };
 
 // === DISCOVERY & REGISTRATION ===
@@ -42,6 +41,35 @@ const handleModuleStateChange = async (moduleName, newState) => {
 		.map(([name]) => name);
 
 	if (changedComponents.length > 0) await refreshUI('state-change', changedComponents);
+};
+// === KEYMAP HANDLER ===
+const setupKeyboardHandlers = () => document.addEventListener('keydown', handleKeyboard);
+const handleKeyboard = async (e) => {
+	const activeElement = document.activeElement;
+	if (activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) return; // Let the user type
+	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
+	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
+	if (selected && (await handleComponentKeys(selected.name, e))) return;
+	// Otherwise layout handles it
+	return handleLayoutKeys(e);
+};
+const handleComponentKeys = async (name, event) => {
+	const keyMap = registrations.get(name)?.keyMap;
+	const handler = keyMap?.[event.code] || keyMap?.[event.key];
+	if (handler) {
+		event.preventDefault();
+		const [action, param] = handler.split(':'); // Parse action:parameter format
+		await runtime.call(action, param);
+		return true;
+	}
+	return false;
+};
+const handleLayoutKeys = async (e) => {
+	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
+	if (e.key === 'Escape') return (e.preventDefault(), maximized ? await restoreMaximized() : selected && await clearSelections());
+	if (e.key === 'Tab') return (e.preventDefault(), await cycleSelection());
+	if (e.key === 'Enter' && selected && !maximized) return (e.preventDefault(), await maximizeSelected());
+	if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selected && !maximized) return (e.preventDefault(), await expandSelectedComponent(e.key));
 };
 // === LAYOUT CONTAINER ===
 const initializeLayoutContainer = async () => {
@@ -180,9 +208,10 @@ const clearSelections = async () => {
 	}
 };
 const expandSelectedComponent = async (direction) => {
-	const selected = getAllActiveComponents().find(comp => comp.isSelected);
+	const selected = getSelectedComponent();
 	selected && await updateComponent(selected.name, pushComponents(selected.name, direction, config.gridSize));
 };
+const getSelectedComponent = () => getAllActiveComponents().find(comp => comp.isSelected);
 // === MAXIMIZE/RESTORE ===
 const maximizeSelected = async () => {
 	const selected = getAllActiveComponents().find(comp => comp.isSelected);
@@ -192,18 +221,10 @@ const maximizeSelected = async () => {
 	await updateComponent(selected.name, { x: 0, y: 0, width: 100, height: 100, isMaximized: true });
 };
 const restoreMaximized = async () => {
-	const maximized = getAllActiveComponents().find(comp => comp.isMaximized);
+	const maximized = getMaximizedComponent();
 	maximized?.savedPosition && await updateComponent(maximized.name, { ...maximized.savedPosition, isMaximized: false, savedPosition: null });
 };
-// === KEYBOARD NAVIGATION ===
-const setupKeyboardHandlers = () => document.addEventListener('keydown', async (e) => {
-	const maximized = getAllActiveComponents().find(comp => comp.isMaximized);
-	const hasSelection = getAllActiveComponents().some(comp => comp.isSelected);
-	if (e.key === 'Escape') return (e.preventDefault(), maximized ? await restoreMaximized() : hasSelection && await clearSelections());
-	if (e.key === 'Tab') return (e.preventDefault(), await cycleSelection());
-	if (e.key === 'Enter' && hasSelection && !maximized) return (e.preventDefault(), await maximizeSelected());
-	if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && hasSelection && !maximized) return (e.preventDefault(), await expandSelectedComponent(e.key));
-});
+const getMaximizedComponent = () => getAllActiveComponents().find(comp => comp.isMaximized);
 // === TESTING ===
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;

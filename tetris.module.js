@@ -7,10 +7,20 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Tetris game engine with AI integration capability",
 	dependencies: ["tree-to-dom", "inference"],
-	actions: ["startGame", "pauseGame", "resetGame", "toggleAI", "inferMoves"],
-	commands: [
-		{ name: "play tetris", keyword: "tetris", method: "startGame" }
-	],
+	actions: ["startGame", "makeMove", "pauseGame", "resetGame", "toggleAI", "inferMoves"],
+	uiComponents: [{
+		name: "tetris-game",
+		getTree: "buildGameTree",
+		keyMap: {
+			'ArrowLeft': 'tetris.makeMove:left',
+			'ArrowRight': 'tetris.makeMove:right',
+			'ArrowDown': 'tetris.makeMove:down',
+			'Space': 'tetris.makeMove:rotate',
+			'KeyP': 'tetris.pauseGame',
+			'KeyA': 'tetris.toggleAI',
+			'KeyS': 'tetris.inferMoves'
+		}
+	}],
 	config: {
 		speed: { type: 'number', min: 100, max: 2000, value: 800, label: 'Drop Speed (ms)' },
 		aiMoveDelay: { type: 'number', min: 50, max: 5000, value: 200, label: 'AI Move Delay (ms)' },
@@ -23,7 +33,7 @@ export const manifest = {
 
 let runtime, gameState = {}, runner = null, aiRunner = null
 const config = configProxy(manifest);
-export const initialize = async (rt) => (runtime = rt, setupKeyboardControls())
+export const initialize = async (rt) => runtime = rt;
 
 // game logic
 const runManual = () => {
@@ -194,19 +204,6 @@ const createNextPieceElement = () => !gameState?.nextPiece ? { tag: "div" } : ((
 			}).reduce((acc, [key, val]) => (acc[key] = val, acc), {})
 	};
 })();
-// keyboard controls
-const actions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', Space: 'rotate', KeyP: 'pause', KeyA: 'aiNextMove', KeyS: 'inferMoves' };
-const setupKeyboardControls = () => document.addEventListener('keydown', (event) => {
-	if (!gameState) return;
-	const action = actions[event.code];
-	if (action) {
-		event.preventDefault();
-		if (action === 'aiNextMove') processAIMove();
-		if (action === 'inferMoves') inferMoves();
-		if (action === 'pause') pauseGame();
-		else makeMove(action);
-	}
-});
 // game mechanics
 // Tetris pieces (tetrominoes) with their rotations
 const I = [[[1, 1, 1, 1]], [[1], [1], [1], [1]]];
