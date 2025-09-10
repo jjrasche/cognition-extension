@@ -3,10 +3,10 @@ export const manifest = {
 	name: "layout",
 	context: ["extension-page"],
 	version: "1.0.0",
-	description: "Component layout system with keyboard navigation and expansion",
+	description: "Component layout system with keyboard navigation and expansion - DOM persistent",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["replaceComponent"],
+	actions: ["renderComponent"],
 	config: {
 		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
 		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
@@ -14,7 +14,7 @@ export const manifest = {
 		enableKeyboardNav: { type: 'checkbox', value: true, label: 'Enable Keyboard Navigation' },
 	}
 };
-let runtime, componentStates = new Map(), registrations = new Map();
+let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set();
 const config = configProxy(manifest);
 const defaultState = { x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isLoading: false, moduleName: null };
 export const initialize = async (rt) => {
@@ -22,35 +22,114 @@ export const initialize = async (rt) => {
 	runtime.moduleState.addListener(handleModuleStateChange);
 	await discoverComponents();
 	await loadComponentStates();
-	await refreshUI();
+	await initializeLayoutContainer();
+	await refreshUI('initialization');
 	config.enableKeyboardNav && setupKeyboardHandlers();
 };
-// discovery & registration
-const discoverComponents = async () => runtime.getModulesWithProperty('uiComponents').forEach(module =>
-	(module.manifest.uiComponents || []).forEach(comp => registrations.set(comp.name, { ...comp, moduleName: module.manifest.name })));
-const getComponentTree = async (componentName) => {
-	const reg = registrations.get(componentName);
-	if (!reg) return { tag: "div", text: `Component ${componentName} not found` };
-	try { return await runtime.call(`${reg.moduleName}.${reg.getTree}`); }
-	catch (error) { return { tag: "div", text: `Error loading ${componentName}: ${error.message}` }; }
-};
-// reactive state
+
+// === DISCOVERY & REGISTRATION ===
+const discoverComponents = async () => runtime.getModulesWithProperty('uiComponents').forEach(module => module.manifest.uiComponents.forEach(comp => {
+	registrations.set(comp.name, { ...comp, moduleName: module.manifest.name });
+	runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, module[comp.getTree]); // register action available from runtime.call
+}));
 const handleModuleStateChange = async (moduleName, newState) => {
-	let needsRerender = false;
-	for (const [name, state] of componentStates) {
-		if (state.moduleName === moduleName) {
+	const changedComponents = Array.from(componentStates)
+		.filter(([, state]) => {
 			const wasLoading = state.isLoading;
 			state.isLoading = (newState !== 'ready');
-			if (wasLoading !== state.isLoading) needsRerender = true;
-		}
-	}
-	needsRerender && await refreshUI();
+			return state.moduleName === moduleName && wasLoading !== state.isLoading;
+		})
+		.map(([name]) => name);
+
+	if (changedComponents.length > 0) await refreshUI('state-change', changedComponents);
 };
-// state management
+// === LAYOUT CONTAINER ===
+const initializeLayoutContainer = async () => {
+	layoutContainer = document.createElement('div');
+	layoutContainer.className = 'cognition-layout-container';
+	layoutContainer.style.cssText = 'position: relative; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg-primary, #000);';
+	document.body.appendChild(layoutContainer);
+};
+const cleanupRemovedComponents = async () => {
+	const activeNames = new Set([...componentStates.keys()]);
+	const elementsToRemove = [];
+	layoutContainer.querySelectorAll('[data-component]').forEach(element => {
+		const name = element.dataset.component;
+		if (!activeNames.has(name)) {
+			elementsToRemove.push(element);
+			renderedComponents.delete(name);
+		}
+	});
+	elementsToRemove.forEach(el => el.remove());
+};
+// === COMPONENT RENDERING ===
+export const renderComponent = async (name) => {
+	const element = getOrCreateComponentElementContainer(name);
+	let contentEl = getOrCreateComponentContentContainer(element);
+	try {
+		const tree = await getComponentTree(name);
+		await runtime.call('tree-to-dom.transform', tree, contentEl);
+		renderedComponents.add(name);
+	} catch (error) {
+		contentEl.innerHTML = `<div style="padding: 10px; color: var(--danger, #ff6b6b);">Error loading ${name}: ${error.message}</div>`;
+	}
+};
+const getComponentTree = async (name) => {
+	const reg = registrations.get(name);
+	if (!reg) return { tag: "div", text: `Component ${name} not found` };
+	try { return await runtime.call(`${reg.moduleName}.${reg.getTree}`); }
+	catch (error) { return { tag: "div", text: `Error loading ${name}: ${error.message}` }; }
+};
+const getComponentElementContainer = (name) => layoutContainer.querySelector(`[data-component="${name}"]`);
+const getOrCreateComponentElementContainer = (name) => {
+	const state = getComponentState(name);
+	let element = getComponentElementContainer(name);
+	if (!element) {
+		element = document.createElement('div');
+		element.dataset.component = name;
+		layoutContainer.appendChild(element);
+	}
+	element.className = `layout-component ${state.isSelected ? 'selected' : ''} ${state.isMaximized ? 'maximized' : ''}`;
+	setElementStyles(element, state), setElementClass(element, state);
+	return element;
+}
+const setElementStyles = (element, state) => element.style.cssText = `position: absolute; left: ${state.x}%; top: ${state.y}%; width: ${state.width}%; height: ${state.height}%; border: ${state.isSelected ? '2px solid var(--accent-primary, #007acc)' : '1px solid var(--border-primary, #333)'}; background: var(--bg-secondary, #1a1a1a); border-radius: 4px; overflow: hidden; ${state.isLoading ? 'opacity: 0.5;' : ''}box-sizing: border-box;`;
+const setElementClass = (element, state) => element.className = `layout-component ${state.isSelected ? 'selected' : ''} ${state.isMaximized ? 'maximized' : ''}`;
+const getOrCreateComponentContentContainer = (element) => {
+	let contentEl = element.querySelector('.component-content');
+	if (!contentEl) {
+		contentEl = document.createElement('div');
+		contentEl.className = 'component-content';
+		contentEl.style.cssText = 'width: 100%; height: 100%; overflow: auto;';
+		element.appendChild(contentEl);
+	}
+	return contentEl;
+}
+const renderAllComponents = async () => {
+	await cleanupRemovedComponents();
+	getAllActiveComponents().forEach(comp => renderComponent(comp.name));
+};
+const renderChangedComponents = (changedComponents) => getAllActiveComponents()
+	.filter(comp => changedComponents ? changedComponents.includes(comp.name) : true)
+	.forEach((comp) => {
+		const element = getComponentElementContainer(comp.name);
+		setElementStyles(element, comp), setElementClass(element, comp);
+	});
+const refreshUI = async (reason, changedComponents) => {
+	// await initializeLayoutContainer();  // why are we doing this? won't this wipe all DOM???
+	if (['initialization', 'component-added', 'component-removed'].includes(reason)) await renderAllComponents();
+	else if (['position-change', 'selection-change', 'state-change'].includes(reason)) await renderChangedComponents(changedComponents);
+	else await renderAllComponents();
+};
+// === STATE MANAGEMENT ===
 const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState, moduleName: registrations.get(name)?.moduleName || null }).get(name);
-const updateComponent = async (name, changes) => (Object.assign(getComponentState(name), changes), await saveComponentStates(), await refreshUI());
+const updateComponent = async (name, changes) => {
+	Object.assign(getComponentState(name), changes);
+	await saveComponentStates();
+	await refreshUI('position-change', [name])
+};
 const getAllActiveComponents = () => [...componentStates.entries()].map(([name, state]) => ({ name, ...state }));
-// persistence
+// === PERSISTENCE ===
 const loadComponentStates = async () => {
 	const saved = await runtime.call('chrome-sync.get', 'layout.componentStates');
 	saved ? Object.entries(saved).forEach(([name, state]) => componentStates.set(name, { ...defaultState, ...state })) : applyDefaultLayout();
@@ -58,12 +137,12 @@ const loadComponentStates = async () => {
 };
 const saveComponentStates = async () => await runtime.call('chrome-sync.set', { 'layout.componentStates': Object.fromEntries([...componentStates].map(([name, state]) => [name, state])) });
 const applyDefaultLayout = () => registrations.has('command-input') && componentStates.set('command-input', { ...defaultState, x: 10, y: 5, width: 80, height: 10, moduleName: registrations.get('command-input').moduleName });
-// grid & positioning
+// === GRID & POSITIONING ===
 const snapToGrid = (value) => Math.round(value / config.gridSize) * config.gridSize;
 const normalizePosition = ({ x, y, width, height }) => ({ x: snapToGrid(Math.max(0, Math.min(x, 100 - width))), y: snapToGrid(Math.max(0, Math.min(y, 100 - height))), width: snapToGrid(Math.max(config.gridSize, Math.min(width, 100 - x))), height: snapToGrid(Math.max(config.gridSize, Math.min(height, 100 - y))) });
 const hasCollision = (pos1, pos2) => !(pos1.x + pos1.width <= pos2.x || pos2.x + pos2.width <= pos1.x || pos1.y + pos1.height <= pos2.y || pos2.y + pos2.height <= pos1.y);
 const isValidPosition = (position, excludeName) => !getAllActiveComponents().filter(comp => comp.name !== excludeName).some(comp => hasCollision(position, comp));
-// push logic
+// === PUSH LOGIC ===
 const pushComponents = (expandingName, direction, expandAmount) => {
 	const expanding = getComponentState(expandingName);
 	let newPos = { ...expanding };
@@ -82,7 +161,7 @@ const pushComponents = (expandingName, direction, expandAmount) => {
 	});
 	return newPos;
 };
-// component selection
+// === COMPONENT SELECTION ===
 const cycleSelection = async () => {
 	const active = getAllActiveComponents();
 	if (active.length === 0) return;
@@ -90,18 +169,21 @@ const cycleSelection = async () => {
 	const nextName = active[(currentIndex + 1) % active.length].name;
 	for (const [name, state] of componentStates) state.isSelected = (name === nextName);
 	await saveComponentStates();
-	await refreshUI();
+	await refreshUI('selection-change');
 };
 const clearSelections = async () => {
 	let hasChanges = false;
-	for (const [name, state] of componentStates) state.isSelected && (state.isSelected = false, hasChanges = true);
-	hasChanges && (await saveComponentStates(), await refreshUI());
+	for (const [, state] of componentStates) state.isSelected && (state.isSelected = false, hasChanges = true);
+	if (hasChanges) {
+		await saveComponentStates();
+		await refreshUI('selection-change');
+	}
 };
 const expandSelectedComponent = async (direction) => {
 	const selected = getAllActiveComponents().find(comp => comp.isSelected);
 	selected && await updateComponent(selected.name, pushComponents(selected.name, direction, config.gridSize));
 };
-// maximize/restore
+// === MAXIMIZE/RESTORE ===
 const maximizeSelected = async () => {
 	const selected = getAllActiveComponents().find(comp => comp.isSelected);
 	if (!selected || selected.isMaximized) return;
@@ -113,23 +195,7 @@ const restoreMaximized = async () => {
 	const maximized = getAllActiveComponents().find(comp => comp.isMaximized);
 	maximized?.savedPosition && await updateComponent(maximized.name, { ...maximized.savedPosition, isMaximized: false, savedPosition: null });
 };
-// rendering
-const refreshUI = async () => await renderTree(await buildLayoutTree());
-const buildLayoutTree = async () => {
-	const active = getAllActiveComponents();
-	const componentNodes = {};
-	for (const comp of active) {
-		const tree = await getComponentTree(comp.name);
-		componentNodes[`component-${comp.name}`] = {
-			tag: "div", class: `layout-component ${comp.isSelected ? 'selected' : ''} ${comp.isMaximized ? 'maximized' : ''}`,
-			style: `position: absolute; left: ${comp.x}%; top: ${comp.y}%; width: ${comp.width}%; height: ${comp.height}%; border: ${comp.isSelected ? '2px solid var(--accent-primary)' : '1px solid var(--border-primary)'}; background: var(--bg-secondary); border-radius: 4px; overflow: hidden; ${comp.isLoading ? 'opacity: 0.5;' : ''}`,
-			"data-component": comp.name,
-			"component-content": { tag: "div", style: "width: 100%; height: 100%; overflow: auto;", ...tree }
-		};
-	}
-	return { "layout-container": { tag: "div", style: "position: relative; width: 100vw; height: 100vh; overflow: hidden;", ...componentNodes } };
-};
-// keyboard navigation
+// === KEYBOARD NAVIGATION ===
 const setupKeyboardHandlers = () => document.addEventListener('keydown', async (e) => {
 	const maximized = getAllActiveComponents().find(comp => comp.isMaximized);
 	const hasSelection = getAllActiveComponents().some(comp => comp.isSelected);
@@ -138,12 +204,7 @@ const setupKeyboardHandlers = () => document.addEventListener('keydown', async (
 	if (e.key === 'Enter' && hasSelection && !maximized) return (e.preventDefault(), await maximizeSelected());
 	if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && hasSelection && !maximized) return (e.preventDefault(), await expandSelectedComponent(e.key));
 });
-// public api
-export const replaceComponent = async (name, newTree) => {
-	const element = document.querySelector(`[data-component="${name}"] .component-content`);
-	element && await runtime.call('tree-to-dom.transform', getComponentTree(name), element);
-};
-// testing
+// === TESTING ===
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
 	return [
@@ -165,6 +226,11 @@ export const test = async () => {
 			const actual = { validIsValid: isValidPosition({ x: 50, y: 10, width: 30, height: 20 }, 'test'), invalidIsInvalid: !isValidPosition({ x: 15, y: 15, width: 30, height: 20 }, 'test') };
 			componentStates.delete('existing');
 			return { actual, assert: deepEqual, expected: { validIsValid: true, invalidIsInvalid: true } };
+		}),
+		await runUnitTest("Layout container persistence", async () => {
+			await initializeLayoutContainer();
+			const actual = { containerExists: !!layoutContainer, isInDOM: document.body.contains(layoutContainer), hasCorrectClass: layoutContainer?.className === 'cognition-layout-container' };
+			return { actual, assert: deepEqual, expected: { containerExists: true, isInDOM: true, hasCorrectClass: true } };
 		})
 	];
 };
