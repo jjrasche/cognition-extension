@@ -22,7 +22,7 @@ export const initialize = async (rt) => {
 	runtime.moduleState.addListener(handleModuleStateChange);
 	await discoverComponents();
 	await loadComponentStates();
-	await renderLayout();
+	await refreshUI();
 	config.enableKeyboardNav && setupKeyboardHandlers();
 };
 // discovery & registration
@@ -44,11 +44,11 @@ const handleModuleStateChange = async (moduleName, newState) => {
 			if (wasLoading !== state.isLoading) needsRerender = true;
 		}
 	}
-	needsRerender && await renderLayout();
+	needsRerender && await refreshUI();
 };
 // state management
 const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState, moduleName: registrations.get(name)?.moduleName || null }).get(name);
-const updateComponent = async (name, changes) => (Object.assign(getComponentState(name), changes), await saveComponentStates(), await renderLayout());
+const updateComponent = async (name, changes) => (Object.assign(getComponentState(name), changes), await saveComponentStates(), await refreshUI());
 const getAllActiveComponents = () => [...componentStates.entries()].map(([name, state]) => ({ name, ...state }));
 // persistence
 const loadComponentStates = async () => {
@@ -90,12 +90,12 @@ const cycleSelection = async () => {
 	const nextName = active[(currentIndex + 1) % active.length].name;
 	for (const [name, state] of componentStates) state.isSelected = (name === nextName);
 	await saveComponentStates();
-	await renderLayout();
+	await refreshUI();
 };
 const clearSelections = async () => {
 	let hasChanges = false;
 	for (const [name, state] of componentStates) state.isSelected && (state.isSelected = false, hasChanges = true);
-	hasChanges && (await saveComponentStates(), await renderLayout());
+	hasChanges && (await saveComponentStates(), await refreshUI());
 };
 const expandSelectedComponent = async (direction) => {
 	const selected = getAllActiveComponents().find(comp => comp.isSelected);
@@ -114,7 +114,7 @@ const restoreMaximized = async () => {
 	maximized?.savedPosition && await updateComponent(maximized.name, { ...maximized.savedPosition, isMaximized: false, savedPosition: null });
 };
 // rendering
-const renderLayout = async () => await runtime.call('ui.renderTree', await buildLayoutTree());
+const refreshUI = async () => await renderTree(await buildLayoutTree());
 const buildLayoutTree = async () => {
 	const active = getAllActiveComponents();
 	const componentNodes = {};
@@ -141,7 +141,7 @@ const setupKeyboardHandlers = () => document.addEventListener('keydown', async (
 // public api
 export const replaceComponent = async (name, newTree) => {
 	const element = document.querySelector(`[data-component="${name}"] .component-content`);
-	element && await runtime.call('tree-to-dom.transform', { content: newTree }, element);
+	element && await runtime.call('tree-to-dom.transform', getComponentTree(name), element);
 };
 // testing
 export const test = async () => {

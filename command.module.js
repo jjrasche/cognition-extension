@@ -28,14 +28,14 @@ export const handleCommandInput = async (event) => {
 	if (event.key !== 'Enter' || !event.target.value.trim()) return;
 	const input = event.target.value.trim();
 	try { await executeCommand(input); }
-	finally { await updateCommandUI(false); }
+	finally { await refreshUI(); }
 };
 export const getRegisteredActions = async () => commands;
 export const executeCommand = async (input) => {
 	const action = await getCommand(input);
 	if (!action) throw new Error(`No command found for: ${input}`);
 	runtime.log(`[Command] Executing: ${action.name} for "${input.substring(0, 30)}${input.length > 30 ? '...' : ''}"`);
-	await updateCommandUI(true);
+	await refreshUI();
 	return await action.func(input);
 };
 const getCommand = async (input) => {
@@ -46,9 +46,9 @@ const getCommand = async (input) => {
 	return matchingActions[0]; // Return highest priority match
 };
 // UI
-export const commandTree = async () => ({ tag: "div", style: "display: flex; align-items: center; gap: 8px; flex: 1;", ...commandInput(), ...commandSpinner() });
+export const commandTree = async () => ({ tag: "div", style: "display: flex; align-items: center; gap: 8px; flex: 1;", ...commandInput() });
 const commandInput = () => ({ "command-input": { tag: "input", id: "cognition-search-input", type: "text", placeholder: "Search the web, ask questions, or type commands...", events: { keydown: "command.handleCommandInput" }, style: "flex: 1;", disabled: isExecuting } })
-const refreshUI = async () => await runtime.call('layout.replaceComponent', 'command-input', commandTree())
+const refreshUI = async () => await runtime.call('layout.replaceComponent', 'command-input')
 
 // testing
 export const test = async () => {
