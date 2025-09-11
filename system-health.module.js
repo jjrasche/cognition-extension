@@ -91,7 +91,7 @@ export const refreshDashboard = () => runtime.call('layout.renderComponent', 'he
 const statusColors = { good: '#10b981', warning: '#f59e0b', critical: '#ef4444', unknown: '#6b7280' };
 export const buildTree = async () => {
 	const health = await getSystemHealth();
-	await {
+	return {
 		"health-dashboard": {
 			tag: "div", style: "height: 100vh; padding: 20px; overflow-y: auto;",
 			...buildHeader(),

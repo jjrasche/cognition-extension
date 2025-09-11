@@ -165,7 +165,7 @@ const parseAIResponse = (response) => {
 };
 // rendering 
 const renderGame = async () => await runtime.call('ui.renderTree', buildGameTree());
-const buildGameTree = () => ({ "tetris-game": { tag: "div", style: "display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: monospace; background: #000; color: #fff; min-height: 100vh;", ...gameHeader(), ...mainGameArea(), ...(gameState?.gameOver && gameOverOverlay()) } });
+export const buildGameTree = () => ({ "tetris-game": { tag: "div", style: "display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: monospace; background: #000; color: #fff; min-height: 100vh;", ...gameHeader(), ...mainGameArea(), ...(gameState?.gameOver && gameOverOverlay()) } });
 const gameHeader = () => ({ "game-header": { tag: "div", style: "margin-bottom: 20px; text-align: center;", "title": { tag: "h1", text: "TETRIS", style: "margin: 0; color: #00ff00; font-size: 2em;" }, "controls": { tag: "div", text: "← → ↓ SPACE (rotate) | P (pause)", style: "font-size: 12px; color: #888; margin-top: 5px;" } } });
 const mainGameArea = () => ({ "game-container": { tag: "div", style: "display: flex; gap: 20px; align-items: flex-start;", "board-container": { tag: "div", style: "border: 2px solid #444; background: #111;", "game-board": createBoardElement() }, ...infoPanel() } });
 const infoPanel = () => ({ "info-panel": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; color: #fff;", ...scoreSection(), ...nextPieceSection(), ...aiStatusSection(), ...gameControls() } });
@@ -174,7 +174,7 @@ const nextPieceSection = () => ({ "next-piece": { tag: "div", style: "background
 const aiStatusSection = () => ({ "ai-status": { tag: "div", style: "background: #222; padding: 10px; border-radius: 5px;", "ai-label": { tag: "div", text: "AI Status:", style: "font-weight: bold; margin-bottom: 5px;" }, "ai-info": { tag: "div", text: aiRunner ? "AI" : "Manual", style: `color: ${aiRunner ? '#00ff00' : '#ffffff'};` }, "ai-moves": { tag: "div", text: `Moves: [${gameState?.moves?.join(', ') || ''}]`, style: "font-size: 12px; color: #888; margin-top: 5px;" } } });
 const gameControls = () => ({ "game-controls": { tag: "div", style: "display: flex; flex-direction: column; gap: 10px;", "pause-btn": { tag: "button", text: runner ? "Pause (P)" : "Resume (P)", class: "cognition-button-secondary", events: { click: "tetris.pauseGame" } }, "ai-toggle": { tag: "button", text: aiRunner ? "Disable AI" : "Enable AI", class: aiRunner ? "cognition-button-primary" : "cognition-button-secondary", events: { click: "tetris.toggleAI" } }, "reset-btn": { tag: "button", text: "Reset Game", class: "cognition-button-primary", events: { click: "tetris.resetGame" } } } });
 const gameOverOverlay = () => ({ "game-over": { tag: "div", style: "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,0,0,0.9); color: white; padding: 20px; border-radius: 10px; text-align: center; font-size: 1.5em;", "game-over-text": { tag: "div", text: "GAME OVER", style: "font-weight: bold; margin-bottom: 10px;" }, "final-score": { tag: "div", text: `Final Score: ${gameState.score}` } } });
-const createBoardElement = () => !gameState ? { tag: "div" } : (() => {
+const createBoardElement = () => !gameState?.board ? { tag: "div" } : (() => {
 	const visualBoard = gameState.board.map(row => [...row]);
 	gameState.currentPiece && (() => {
 		const piece = PIECES[gameState.currentPiece.type][gameState.currentPiece.rotation];

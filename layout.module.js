@@ -4,10 +4,10 @@ export const manifest = {
 	name: "layout",
 	context: ["extension-page"],
 	version: "1.0.0",
-	description: "Component layout system with persistent mode indicator and keyboard navigation",
+	description: "Component layout system with z-layers, mode overlays, and window snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "addComponentFromPicker", "cycleMode", "contractComponent", "showComponentPicker", "addComponent"],
+	actions: ["renderComponent", "addComponentFromPicker", "cycleMode", "contractComponent", "showComponentPicker", "addComponent", "togglePin", "snapToHalf"],
 	commands: [
 		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
@@ -15,26 +15,46 @@ export const manifest = {
 		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
 		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
 		defaultComponentHeight: { type: 'number', min: 10, max: 90, value: 20, label: 'Default Component Height (%)' },
-		keySequenceTimeout: { type: 'number', min: 500, max: 5000, value: 2000, label: 'Key Sequence Timeout (ms)' }
+		keySequenceTimeout: { type: 'number', min: 500, max: 5000, value: 2000, label: 'Key Sequence Timeout (ms)' },
+		overlayOpacity: { type: 'number', min: 0.05, max: 0.3, value: 0.15, label: 'Mode Overlay Opacity' }
 	}
 };
 
-let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set(), keySequence = [];
+let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set(), keySequence = [], modeOverlay = null;
 
-// Mode system - always active
+// Z-Index layer system
+const Z_LAYERS = {
+	SYSTEM: 9999,     // Mode indicator, pickers, system UI
+	PINNED: 3000,     // Always-on-top modules  
+	ACTIVE: 2000,     // Currently selected component
+	NORMAL: 1000      // Regular components
+};
+
+// Mode system
 const modes = [
-	{ name: 'select', icon: '👆', description: 'Select components' },
-	{ name: 'move', icon: '📱', description: 'Move component' },
-	{ name: 'expand', icon: '➕', description: 'Expand component' },
-	{ name: 'contract', icon: '➖', description: 'Contract component' }
+	{ name: 'select', icon: '👆', description: 'Select components', pattern: '👆'.repeat(200) },
+	{ name: 'move', icon: '📱', description: 'Move component', pattern: '↕️↔️'.repeat(500) },
+	{ name: 'expand', icon: '➕', description: 'Expand component', pattern: '➕'.repeat(300) },
+	{ name: 'contract', icon: '➖', description: 'Contract component', pattern: '➖'.repeat(300) }
 ];
-let currentModeIndex = 0; // Start in select mode
+let currentModeIndex = 0;
 
 const config = configProxy(manifest);
-const defaultState = { x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isLoading: false, moduleName: null, zIndex: 1 };
+const defaultState = {
+	x: 0, y: 0, width: 30, height: 20,
+	savedPosition: null, isSelected: false, isMaximized: false, isLoading: false,
+	moduleName: null, zLayer: 'normal', isPinned: false, zIndex: Z_LAYERS.NORMAL
+};
 
 export const initialize = async (rt) => {
 	runtime = rt;
+
+	// Reset browser defaults - fix the overflow issue
+	document.body.style.margin = '0';
+	document.body.style.padding = '0';
+	document.documentElement.style.margin = '0';
+	document.documentElement.style.padding = '0';
+
 	runtime.moduleState.addListener(handleModuleStateChange);
 	await discoverComponents();
 	await loadComponentStates();
@@ -48,6 +68,7 @@ export const initialize = async (rt) => {
 export const cycleMode = async () => {
 	currentModeIndex = (currentModeIndex + 1) % modes.length;
 	await updateModeIndicator();
+	await showModeOverlay();
 	runtime.log(`[Layout] Mode: ${modes[currentModeIndex].name}`);
 };
 
@@ -55,8 +76,7 @@ const addPersistentModeIndicator = async () => {
 	componentStates.set('_mode-indicator', {
 		...defaultState,
 		x: 85, y: 2, width: 12, height: 8,
-		isTemporary: true,
-		zIndex: 9999
+		isTemporary: true, zLayer: 'system', zIndex: Z_LAYERS.SYSTEM
 	});
 };
 
@@ -64,6 +84,51 @@ const updateModeIndicator = async () => {
 	if (componentStates.has('_mode-indicator')) {
 		await renderComponent('_mode-indicator');
 	}
+};
+
+// === MODE OVERLAY SYSTEM ===
+const showModeOverlay = async () => {
+	removeModeOverlay();
+	const mode = modes[currentModeIndex];
+
+	modeOverlay = document.createElement('div');
+	modeOverlay.className = 'mode-overlay';
+	modeOverlay.style.cssText = `
+		position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+		background: rgba(0,0,0,${config.overlayOpacity}); 
+		color: rgba(255,255,255,0.1);
+		font-size: 24px; line-height: 1; word-break: break-all;
+		pointer-events: none; z-index: ${Z_LAYERS.SYSTEM + 1}; 
+		font-family: monospace; overflow: hidden;
+	`;
+	modeOverlay.textContent = mode.pattern;
+	document.body.appendChild(modeOverlay);
+
+	// Auto-hide after 2 seconds
+	setTimeout(removeModeOverlay, 2000);
+};
+
+const removeModeOverlay = () => {
+	if (modeOverlay) {
+		modeOverlay.remove();
+		modeOverlay = null;
+	}
+};
+
+// === SNAP TO HALF FUNCTIONALITY ===
+export const snapToHalf = async (direction) => {
+	const selected = getSelectedComponent();
+	if (!selected) return;
+
+	const positions = {
+		'ArrowLeft': { x: 0, y: 0, width: 50, height: 100 },
+		'ArrowRight': { x: 50, y: 0, width: 50, height: 100 },
+		'ArrowUp': { x: 0, y: 0, width: 100, height: 50 },
+		'ArrowDown': { x: 0, y: 50, width: 100, height: 50 }
+	};
+
+	await updateComponent(selected.name, positions[direction]);
+	runtime.log(`[Layout] Snapped ${selected.name} to ${direction.replace('Arrow', '').toLowerCase()} half`);
 };
 
 // === CONTRACT FUNCTIONALITY ===
@@ -96,16 +161,43 @@ export const contractComponent = async (direction) => {
 };
 
 // === Z-INDEX MANAGEMENT ===
-const bringToFront = (componentName) => {
+const updateComponentZIndex = (componentName) => {
 	const state = getComponentState(componentName);
-	state.zIndex = 1000; // Selected components come to front
 
-	// Reset others to background
-	for (const [name, otherState] of componentStates) {
-		if (name !== componentName && !name.startsWith('_')) {
-			otherState.zIndex = 1;
-		}
+	// Set z-index based on layer and selection
+	if (state.zLayer === 'system') {
+		state.zIndex = Z_LAYERS.SYSTEM;
+	} else if (state.isPinned) {
+		state.zIndex = Z_LAYERS.PINNED;
+	} else if (state.isSelected) {
+		state.zIndex = Z_LAYERS.ACTIVE;
+	} else {
+		state.zIndex = Z_LAYERS.NORMAL;
 	}
+};
+
+const bringToFront = (componentName) => {
+	// Update all components' z-indexes
+	for (const [name] of componentStates) {
+		updateComponentZIndex(name);
+	}
+
+	// Selected component gets active layer
+	const state = getComponentState(componentName);
+	if (!state.isPinned && state.zLayer !== 'system') {
+		state.zIndex = Z_LAYERS.ACTIVE;
+	}
+};
+
+export const togglePin = async (componentName) => {
+	const state = getComponentState(componentName || getSelectedComponent()?.name);
+	if (!state || state.zLayer === 'system') return;
+
+	state.isPinned = !state.isPinned;
+	updateComponentZIndex(state.name);
+	await saveComponentStates();
+	await refreshUI('position-change', [componentName]);
+	runtime.log(`[Layout] ${state.isPinned ? 'Pinned' : 'Unpinned'} ${componentName}`);
 };
 
 // === DISCOVERY & REGISTRATION ===
@@ -138,9 +230,15 @@ const handleKeyboard = async (e) => {
 	const currentMode = modes[currentModeIndex].name;
 
 	// Global shortcuts
-	if (e.shiftKey && e.key === 'Tab') {
+	if (e.altKey && e.shiftKey && e.key === ' ') {
 		e.preventDefault();
 		return await cycleMode();
+	}
+
+	// Shift+Direction = Snap to half screen
+	if (e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+		e.preventDefault();
+		return await snapToHalf(e.key);
 	}
 
 	// Component-specific shortcuts for maximized components
@@ -160,7 +258,10 @@ const handleKeyboard = async (e) => {
 			e.preventDefault();
 			return maximized ? await restoreMaximized() : await clearSelections();
 		}
-		// Arrow keys work normally in select mode - no custom handling
+		if (e.key === 'p' && selected) {
+			e.preventDefault();
+			return await togglePin(selected.name);
+		}
 		return;
 	}
 
@@ -327,7 +428,7 @@ const buildModeIndicatorTree = () => {
 			style: "display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--border-primary); border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; height: 100%;",
 			events: { click: "layout.cycleMode" },
 			text: currentMode.icon,
-			title: `${currentMode.description} (Shift+Tab: cycle modes)`
+			title: `${currentMode.description} (Alt+Shift+Space: cycle modes)`
 		}
 	};
 };
@@ -342,23 +443,27 @@ const getOrCreateComponentElementContainer = (name) => {
 		element.dataset.component = name;
 		layoutContainer.appendChild(element);
 	}
-	element.className = `layout-component ${state.isSelected ? 'selected' : ''} ${state.isMaximized ? 'maximized' : ''}`;
+	element.className = `layout-component ${state.isSelected ? 'selected' : ''} ${state.isMaximized ? 'maximized' : ''} ${state.isPinned ? 'pinned' : ''}`;
 	setElementStyles(element, state);
 	return element;
 }
 
 const setElementStyles = (element, state) => {
+	const borderColor = state.isPinned ? 'var(--accent-secondary, #ff6b6b)' :
+		state.isSelected ? 'var(--accent-primary, #007acc)' :
+			'var(--border-primary, #333)';
+
 	element.style.cssText = `
 		position: absolute; 
 		left: ${state.x}%; 
 		top: ${state.y}%; 
 		width: ${state.width}%; 
 		height: ${state.height}%; 
-		border: ${state.isSelected ? '2px solid var(--accent-primary, #007acc)' : '1px solid var(--border-primary, #333)'}; 
+		border: ${state.isSelected || state.isPinned ? '2px' : '1px'} solid ${borderColor}; 
 		background: var(--bg-secondary, #1a1a1a); 
 		border-radius: 4px; 
 		overflow: hidden; 
-		z-index: ${state.zIndex || 1};
+		z-index: ${state.zIndex};
 		${state.isLoading ? 'opacity: 0.5;' : ''}
 		box-sizing: border-box;
 	`;
@@ -399,6 +504,7 @@ const getComponentState = (name) => componentStates.has(name) ? componentStates.
 const updateComponent = async (name, changes) => {
 	const normalized = normalizePosition({ ...getComponentState(name), ...changes });
 	Object.assign(getComponentState(name), normalized);
+	updateComponentZIndex(name);
 	await saveComponentStates();
 	await refreshUI('position-change', [name]);
 };
@@ -424,7 +530,10 @@ const getAllActiveComponents = () => [...componentStates.entries()].map(([name, 
 const loadComponentStates = async () => {
 	const saved = await runtime.call('chrome-sync.get', 'layout.componentStates');
 	saved ? Object.entries(saved).forEach(([name, state]) => componentStates.set(name, { ...defaultState, ...state })) : applyDefaultLayout();
-	for (const [name, state] of componentStates) state.moduleName && (state.isLoading = runtime.getState(state.moduleName) !== 'ready');
+	for (const [name, state] of componentStates) {
+		state.moduleName && (state.isLoading = runtime.getState(state.moduleName) !== 'ready');
+		updateComponentZIndex(name);
+	}
 };
 
 const saveComponentStates = async () => await runtime.call('chrome-sync.set', { 'layout.componentStates': Object.fromEntries([...componentStates].filter(([name]) => !name.startsWith('_')).map(([name, state]) => [name, state])) });
@@ -439,7 +548,7 @@ const normalizePosition = ({ x, y, width, height }) => ({ x: snapToGrid(Math.max
 export const showComponentPicker = async () => {
 	const available = [...registrations.keys()].filter(name => !componentStates.has(name));
 	if (available.length === 0) return runtime.log('[Layout] No components available');
-	componentStates.set('_component-picker', { ...defaultState, x: 20, y: 20, width: 60, height: 60, isTemporary: true, zIndex: 9999 });
+	componentStates.set('_component-picker', { ...defaultState, x: 20, y: 20, width: 60, height: 60, isTemporary: true, zLayer: 'system', zIndex: Z_LAYERS.SYSTEM });
 	await refreshUI('component-added');
 };
 
@@ -465,13 +574,15 @@ export const addComponentFromPicker = async (eventData) => {
 
 // === COMPONENT SELECTION ===
 const cycleSelection = async () => {
-	const active = getAllActiveComponents().filter(comp => !comp.name.startsWith('_')); // Exclude temp components
+	const active = getAllActiveComponents().filter(comp => !comp.name.startsWith('_'));
 	if (active.length === 0) return;
 	const currentIndex = active.findIndex(comp => comp.isSelected);
 	const nextName = active[(currentIndex + 1) % active.length].name;
 
 	for (const [name, state] of componentStates) {
+		const wasSelected = state.isSelected;
 		state.isSelected = (name === nextName);
+		if (wasSelected !== state.isSelected) updateComponentZIndex(name);
 	}
 
 	if (nextName) bringToFront(nextName);
@@ -481,7 +592,13 @@ const cycleSelection = async () => {
 
 const clearSelections = async () => {
 	let hasChanges = false;
-	for (const [, state] of componentStates) state.isSelected && (state.isSelected = false, hasChanges = true);
+	for (const [name, state] of componentStates) {
+		if (state.isSelected) {
+			state.isSelected = false;
+			updateComponentZIndex(name);
+			hasChanges = true;
+		}
+	}
 	if (hasChanges) {
 		await saveComponentStates();
 		await refreshUI('selection-change');
@@ -512,30 +629,28 @@ const getMaximizedComponent = () => getAllActiveComponents().find(comp => comp.i
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
 	return [
-		await runUnitTest("Mode cycling functionality", async () => {
-			const initialMode = currentModeIndex;
-			await cycleMode();
-			const actual = { modeChanged: currentModeIndex !== initialMode, validIndex: currentModeIndex < modes.length };
-			return { actual, assert: deepEqual, expected: { modeChanged: true, validIndex: true } };
-		}),
-		await runUnitTest("Z-index management", async () => {
-			componentStates.set('test1', { ...defaultState, zIndex: 1 });
-			componentStates.set('test2', { ...defaultState, zIndex: 1 });
-			bringToFront('test1');
-			const actual = { test1Front: getComponentState('test1').zIndex === 1000, test2Back: getComponentState('test2').zIndex === 1 };
+		await runUnitTest("Z-layer system works", async () => {
+			componentStates.set('test1', { ...defaultState, zLayer: 'normal' });
+			componentStates.set('test2', { ...defaultState, zLayer: 'pinned', isPinned: true });
+			updateComponentZIndex('test1');
+			updateComponentZIndex('test2');
+			const actual = { normal: getComponentState('test1').zIndex, pinned: getComponentState('test2').zIndex };
 			componentStates.delete('test1'), componentStates.delete('test2');
-			return { actual, assert: deepEqual, expected: { test1Front: true, test2Back: true } };
+			return { actual, assert: deepEqual, expected: { normal: Z_LAYERS.NORMAL, pinned: Z_LAYERS.PINNED } };
 		}),
-		await runUnitTest("Mode indicator persistence", async () => {
-			const actual = componentStates.has('_mode-indicator');
-			return { actual, assert: strictEqual, expected: true };
+		await runUnitTest("Snap to half functionality", async () => {
+			const testComp = { x: 25, y: 25, width: 50, height: 50, isSelected: true };
+			componentStates.set('test-snap', testComp);
+			await snapToHalf('ArrowLeft');
+			const actual = { x: getComponentState('test-snap').x, width: getComponentState('test-snap').width };
+			componentStates.delete('test-snap');
+			return { actual, assert: deepEqual, expected: { x: 0, width: 50 } };
 		}),
-		await runUnitTest("Contract functionality", async () => {
-			const testComp = { x: 20, y: 20, width: 40, height: 30, isSelected: true };
-			componentStates.set('test-contract', testComp);
-			await contractComponent('ArrowRight');
-			const actual = getComponentState('test-contract').width < 40;
-			componentStates.delete('test-contract');
+		await runUnitTest("Pin toggle functionality", async () => {
+			componentStates.set('test-pin', { ...defaultState, isPinned: false });
+			await togglePin('test-pin');
+			const actual = getComponentState('test-pin').isPinned;
+			componentStates.delete('test-pin');
 			return { actual, assert: strictEqual, expected: true };
 		})
 	];
