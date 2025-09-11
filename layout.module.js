@@ -23,8 +23,8 @@ export const manifest = {
 let runtime, componentStates = new Map(), layoutContainer = null, modeOverlay = null, currentModeIndex = 0;
 
 const Z_LAYERS = {
-	SYSTEM: 9999,     // Mode indicator, pickers, system UI
-	PINNED: 3000,     // Always-on-top modules  
+	SYSTEM: 10000,     // Mode indicator, pickers, system UI
+	PINNED: 9999,     // Always-on-top modules  
 	ACTIVE: 2000,     // Currently selected component
 	NORMAL: 1000      // Regular components
 };

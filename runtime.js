@@ -3,6 +3,7 @@ import { retryAsync, asserts, truncateOrNA, runUnitTest } from './helpers.js';
 class Runtime {
 	constructor(runtimeName) {
 		this.runtimeName = runtimeName;
+		this.globalStartTime = (runtimeName == "service-worker" ? performance.now() : null); // set by service-worker
 		this.actions = new Map();
 		this.contextModules = [];
 		this.errors = [];
@@ -11,9 +12,9 @@ class Runtime {
 		// this.testResults = [];
 		this.testResults = null;
 		this.allContextTestResults = new Map();
-		this.runtimeInitStart = performance.now();
 	}
 	initialize = async () => {
+		if (this.runtimeName === 'service-worker') this.broadcastStartTime();
 		this.log('🚀 Runtime initialization started');
 		try {
 			this.log('[Runtime] Starting module initialization...');
@@ -58,11 +59,8 @@ class Runtime {
 
 	setupMessageListener = () => {
 		chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-			if (this.handleModuleStateMessage(message)) return;
-			if (this.handletTabStabilityMessage(message)) return;
-			if (this.handleTestResultsMessage(message)) return;
+			if (this.handleModuleStateMessage(message) || this.handletTabStabilityMessage(message) || this.handleTestResultsMessage(message) || this.handleStartTimeMessage(message)) return;
 			if (!message.action) return;
-
 			const [moduleName] = message.action.split('.');
 			if (!this.moduleInContext(moduleName)) return false;
 
@@ -108,6 +106,7 @@ class Runtime {
 			return true;
 		}
 	};
+	handleStartTimeMessage = (message) => message.type === 'GLOBAL_START_TIME' && (() => { this.globalStartTime = message.startTime; return true; })();
 	areAllTestsComplete = () => {
 		const modulesWithTests = this.getModulesWithProperty("test").map(m => m.manifest.name);
 		const modulesWithResults = new Set(Array.from(this.allContextTestResults.values()).flat().map(result => result.module));
@@ -174,6 +173,7 @@ class Runtime {
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
+	broadcastStartTime = async () => await retryAsync(async () => chrome.runtime.sendMessage({ type: 'GLOBAL_START_TIME', startTime: this.globalStartTime, fromContext: this.runtimeName })).catch(() => { }); // Silent fail for broadcast
 	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
 	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
@@ -278,9 +278,11 @@ class Runtime {
 		});
 		await Promise.all(workers);
 	};
-	timeSinceStart = () => (performance.now() - this.runtimeInitStart).toFixed(0);
-	log = (message, data) => (this.runtimeName === 'extension-page') && console.log(`(${performance.now()} ms) [${this.runtimeName}] ${message}`, data || '');
-	logError = (message, data) => (this.runtimeName === 'extension-page') && console.error(`(${performance.now()} ms) [${this.runtimeName}] ${message}`, data || '');
+	// todo: better handle cross context 
+	timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
+	logSpecial = (message, data) => console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+	log = (message, data) => (this.runtimeName === 'extension-page') && console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+	logError = (message, data) => (this.runtimeName === 'extension-page') && console.error(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
 
 	// testing
 	runTests = async () => {

@@ -6,7 +6,7 @@ export const manifest = {
 	// dependencies: ["ui"],
 	actions: ["handleCommandInput", "executeCommand", "getRegisteredActions"],
 	uiComponents: [
-		{ name: "command-input", getTree: "commandTree", zLayer: "PINNED" }
+		{ name: "command-input", getTree: "commandTree", zLayer: "SYSTEM" }
 	]
 };
 
