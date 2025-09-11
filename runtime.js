@@ -13,18 +13,8 @@ class Runtime {
 		this.allContextTestResults = new Map();
 		this.runtimeInitStart = performance.now();
 	}
-
-	addLoadingLog = (message) => {
-		const logEl = document.getElementById('loading-log');
-		if (logEl) {
-			const elapsed = (performance.now() - this.runtimeInitStart).toFixed(0);
-			logEl.innerHTML += `<div>[${elapsed}ms] ${message}</div>`;
-			logEl.scrollTop = logEl.scrollHeight;
-		}
-	};
 	initialize = async () => {
-		// Extension-page specific logging additions:
-		if (this.runtimeName === 'extension-page') this.addLoadingLog('🚀 Runtime initialization started');
+		this.log('🚀 Runtime initialization started');
 		try {
 			this.log('[Runtime] Starting module initialization...');
 			await this.loadModulesForContext();
@@ -127,29 +117,25 @@ class Runtime {
 	};
 
 	initializeModules = async () => {
-		this.log(`Starting module initialization...`);
 		const pending = [...this.contextModules];
 		const maxAttempts = 20;
-
 		for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
 			if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 5000));
 			for (let i = pending.length - 1; i >= 0; i--) {
 				const module = pending[i];
 				if (this.areDependenciesReady(module)) {
 					try {
-						this.log(`Initializing ${module.manifest.name}...`);
 						if (typeof module.initialize !== 'function') {
-							console.warn(`[${this.runtimeName}] Module ${module.manifest.name} has no initialize function`);
 							this.broadcastModuleReady(module.manifest.name);
 							pending.splice(i, 1);
 							continue;
 						}
 						await module.initialize(this);
-						this.log(`✅ ${module.manifest.name} initialized successfully`);
+						this.log(`initialized [${module.manifest.name}]`);
 						this.broadcastModuleReady(module.manifest.name);
 						pending.splice(i, 1);
 					} catch (error) {
-						console.error(`[${this.runtimeName}] ❌ ${module.manifest.name} failed:`, error);
+						this.log(`failed to initialize [${module.manifest.name}]: ${error.message}\n${error.stack}`);
 						this.broadcastModuleFailed(module.manifest.name);
 						this.errors.push({
 							module: module.manifest.name,
@@ -161,7 +147,6 @@ class Runtime {
 				} else {
 					const deps = module.manifest.dependencies || [];
 					const notReady = deps.filter(dep => this.moduleState.get(dep) !== 'ready');
-					this.log(`${module.manifest.name} waiting for dependencies:`, notReady);
 				}
 			}
 		}
@@ -182,11 +167,16 @@ class Runtime {
 
 	areDependenciesReady = (module) => {
 		const dependencies = module.manifest.dependencies || [];
-		if (dependencies.length === 0) return true;
-
 		return dependencies.every(dep => {
-			const state = this.moduleState.get(dep);
-			return state === 'ready';
+			const depModule = this.moduleInContext(dep);
+			if (depModule) {
+				// Local dependency - check if it has initialized function and state
+				return this.moduleState.get(dep) === 'ready' ||
+					(typeof depModule.initialize === 'function' && this.moduleState.has(dep));
+			} else {
+				// Cross-context dependency - wait for message
+				return this.moduleState.get(dep) === 'ready';
+			}
 		});
 	}
 
@@ -199,7 +189,9 @@ class Runtime {
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
-	checkAllModulesInitialized = () => this.contextModules.every(module => this.moduleState.has(module.manifest.name)) && this.addLoadingLog('🎉 Extension ready!');
+	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
+	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
+	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
 	broadcastTestResults = async () => {
 		await retryAsync(async () => chrome.runtime.sendMessage({ type: 'TEST_RESULTS', context: this.runtimeName, results: this.testResults }))
 			.then(() => this.log(`[Runtime] Sent TEST_RESULTS message in ${this.runtimeName}`))
@@ -301,8 +293,9 @@ class Runtime {
 		});
 		await Promise.all(workers);
 	};
-	log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
-	logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '');
+	timeSinceStart = () => (performance.now() - this.runtimeInitStart).toFixed(0);
+	log = (message, data) => (this.runtimeName === 'extension-page') && console.log(`(${performance.now()} ms) [${this.runtimeName}] ${message}`, data || '');
+	logError = (message, data) => (this.runtimeName === 'extension-page') && console.error(`(${performance.now()} ms) [${this.runtimeName}] ${message}`, data || '');
 
 	// testing
 	runTests = async () => {

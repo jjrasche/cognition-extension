@@ -52,18 +52,12 @@ export const initialize = async (rt) => {
 	await addPersistentModeIndicator();
 	await refreshUI('initialization');
 	setupKeyboardHandlers();
-	// Hide loading spinner - layout is the last critical UI module
-	setTimeout(() => {
-		const loadingEl = document.getElementById('cognition-loading');
-		if (loadingEl) {
-			loadingEl.style.opacity = '0';
-			loadingEl.style.transition = 'opacity 0.5s';
-			setTimeout(() => {
-				runtime.addLoadingLog(`✅ Layout complete`);
-				loadingEl.remove()
-			}, 500);
-		}
-	}, 10);
+	const loadingEl = document.getElementById('cognition-loading');
+	if (loadingEl) {
+		loadingEl.style.opacity = '0';
+		loadingEl.style.transition = 'opacity 0.5s';
+		setTimeout(() => loadingEl.remove(), 500)
+	}
 };
 
 // === UNIFIED COMPONENT API ===
