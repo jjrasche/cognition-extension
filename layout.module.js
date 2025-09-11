@@ -227,7 +227,8 @@ const discoverComponents = async () => runtime.getModulesWithProperty('uiCompone
 			componentStates.set(name, {
 				...defaultState,
 				moduleName: module.manifest.name,
-				getTree: comp.getTree
+				getTree: comp.getTree,
+				zIndex: comp.zLayer ? Z_LAYERS[comp.zLayer] : Z_LAYERS.NORMAL
 			});
 		} else {
 			// Update discovery data for existing components

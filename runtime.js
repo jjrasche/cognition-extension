@@ -88,14 +88,14 @@ class Runtime {
 	handleModuleStateMessage = (message) => (this.handleModuleFailedMessage(message) || this.handleModuleReadyMessage(message));
 	handleModuleFailedMessage = (message) => {
 		if (message.type === 'MODULE_FAILED') {
-			this.moduleState.set(message.moduleName, 'failed');
+			if (!this.moduleInContext(message.moduleName)) this.moduleState.set(message.moduleName, 'failed');
 			this.logError(` Module ${message.moduleName} failed in ${message.fromContext}: ${message.error}`);
 			return true;
 		}
 	}
 	handleModuleReadyMessage = (message) => {
 		if (message.type === 'MODULE_READY') {
-			this.moduleState.set(message.moduleName, 'ready');
+			if (!this.moduleInContext(message.moduleName)) this.moduleState.set(message.moduleName, 'ready');
 			this.log(`Module ${message.moduleName} ready in ${message.fromContext}`);
 			return true;
 		}
@@ -164,22 +164,7 @@ class Runtime {
 
 		this.log(`Module initialization complete. Errors:`, this.errors);
 	}
-
-	areDependenciesReady = (module) => {
-		const dependencies = module.manifest.dependencies || [];
-		return dependencies.every(dep => {
-			const depModule = this.moduleInContext(dep);
-			if (depModule) {
-				// Local dependency - check if it has initialized function and state
-				return this.moduleState.get(dep) === 'ready' ||
-					(typeof depModule.initialize === 'function' && this.moduleState.has(dep));
-			} else {
-				// Cross-context dependency - wait for message
-				return this.moduleState.get(dep) === 'ready';
-			}
-		});
-	}
-
+	areDependenciesReady = (module) => (module.manifest.dependencies || []).every(dep => this.moduleInContext(dep) ?? this.moduleState.get(dep) === 'ready');
 	broadcastModuleStatus = async (moduleName, state) => {
 		const type = `MODULE_${state.toUpperCase()}`;
 		this.moduleState.set(moduleName, state);
