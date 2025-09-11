@@ -87,20 +87,20 @@ class Runtime {
 	handleModuleFailedMessage = (message) => {
 		if (message.type === 'MODULE_FAILED') {
 			if (!this.moduleInContext(message.moduleName)) this.moduleState.set(message.moduleName, 'failed');
-			this.logError(` Module ${message.moduleName} failed in ${message.fromContext}: ${message.error}`);
+			// this.logError(` Module ${message.moduleName} failed in ${message.fromContext}: ${message.error}`);
 			return true;
 		}
 	}
 	handleModuleReadyMessage = (message) => {
 		if (message.type === 'MODULE_READY') {
 			if (!this.moduleInContext(message.moduleName)) this.moduleState.set(message.moduleName, 'ready');
-			this.log(`Module ${message.moduleName} ready in ${message.fromContext}`);
+			// this.log(`Module ${message.moduleName} ready in ${message.fromContext}`);
 			return true;
 		}
 	}
 	handleTestResultsMessage = (message) => {
 		if (message.type === 'TEST_RESULTS') {
-			this.log(`Received test results for context ${message.context}`, message.results);
+			// this.log(`Received test results for context ${message.context}`, message.results);
 			this.allContextTestResults.set(message.context, message.results);
 			if (this.areAllTestsComplete()) this.showTests();
 			return true;
@@ -163,12 +163,16 @@ class Runtime {
 
 		this.log(`Module initialization complete. Errors:`, this.errors);
 	}
-	areDependenciesReady = (module) => (module.manifest.dependencies || []).every(dep => this.moduleInContext(dep) ?? this.moduleState.get(dep) === 'ready');
+	areDependenciesReady = (module) => {
+		const deps = module.manifest.dependencies || [];
+		const ret = deps.every(dep => this.moduleInContext(dep) && this.moduleState.get(dep) === 'ready');
+		return ret;
+	}
 	broadcastModuleStatus = async (moduleName, state) => {
 		const type = `MODULE_${state.toUpperCase()}`;
 		this.moduleState.set(moduleName, state);
 		await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }),
-			{ maxAttempts: 15, delay: 3000, onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
+			{ maxAttempts: 15, delay: 3000, onRetry: (error, attempt, max) => { } }//this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
 		).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
@@ -281,8 +285,8 @@ class Runtime {
 	// todo: better handle cross context 
 	timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
 	logSpecial = (message, data) => console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-	log = (message, data) => (this.runtimeName === 'extension-page') && console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-	logError = (message, data) => (this.runtimeName === 'extension-page') && console.error(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+	log = (message, data) => console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+	logError = (message, data) => console.error(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
 
 	// testing
 	runTests = async () => {

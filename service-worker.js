@@ -6,8 +6,8 @@ let runtime;
 chrome.runtime.onInstalled.addListener(async () => {
 	try {
 		runtime = initializeRuntime('service-worker');
-		await initializeOffscreenDocument();
-		await initializeExtensionPage();
+		// await initializeOffscreenDocument();
+		// await initializeExtensionPage();
 	} catch (error) {
 		console.error('Error initializing service worker:', error);
 	}
