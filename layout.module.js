@@ -45,14 +45,14 @@ const handleModuleStateChange = async (moduleName, newState) => {
 };
 // === KEYMAP HANDLER ===
 const setupKeyboardHandlers = () => document.addEventListener('keydown', handleKeyboard);
+// selected components don't handle keys for now
 const handleKeyboard = async (e) => {
 	console.log('Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Alt:', e.altKey, 'sequence:', keySequence);
 	const activeElement = document.activeElement;
 	if (activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) return; // Let the user type
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
 	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
-	if (selected && (await handleComponentKeys(selected.name, e))) return;
-	// Otherwise layout handles it
+	// if (selected && (await handleComponentKeys(selected.name, e))) return;
 	return handleLayoutKeys(e);
 };
 const handleComponentKeys = async (name, event) => {
@@ -66,14 +66,16 @@ const handleComponentKeys = async (name, event) => {
 	}
 	return false;
 };
+// In layout.module.js, update handleLayoutKeys to support movement:
+
 const handleLayoutKeys = async (e) => {
-	console.log(config.keySequenceTimeout)
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
-	// Compound key detection TODO: create a more elegant solution for compound keys
+
+	// Compound key detection 
 	if (e.ctrlKey && e.key === 'a') {
 		e.preventDefault();
 		keySequence = ['ctrl+a'];
-		setTimeout(() => keySequence = [], config.keySequenceTimeout); // Reset after timeout
+		setTimeout(() => keySequence = [], config.keySequenceTimeout);
 		return;
 	}
 	if (keySequence.includes('ctrl+a') && e.ctrlKey && e.key === 'c') {
@@ -82,6 +84,8 @@ const handleLayoutKeys = async (e) => {
 		keySequence = [];
 		return;
 	}
+
+	// Basic navigation
 	if (e.key === 'Escape') {
 		e.preventDefault()
 		if (componentStates.has('_component-picker')) {
@@ -92,7 +96,59 @@ const handleLayoutKeys = async (e) => {
 	}
 	if (e.key === 'Tab') return (e.preventDefault(), await cycleSelection());
 	if (e.key === 'Enter' && selected && !maximized) return (e.preventDefault(), await maximizeSelected());
-	if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selected && !maximized) return (e.preventDefault(), await expandSelectedComponent(e.key));
+
+	// Arrow key behavior for selected, non-maximized components
+	if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selected && !maximized) {
+		e.preventDefault();
+
+		if (e.shiftKey) {
+			// Shift+Arrow = Move without expanding
+			await moveSelectedComponent(e.key);
+		} else {
+			// Arrow = Expand (current behavior)
+			await expandSelectedComponent(e.key);
+		}
+		return;
+	}
+};
+
+// New function: Move component without changing size
+const moveSelectedComponent = async (direction) => {
+	const selected = getSelectedComponent();
+	if (!selected) return;
+
+	console.log(`🚀 Moving: ${selected.name} ${direction}`);
+
+	const moveAmount = config.gridSize;
+	let newPos = { ...selected };
+
+	// Move in the specified direction
+	switch (direction) {
+		case 'ArrowUp':
+			newPos.y = Math.max(0, newPos.y - moveAmount);
+			break;
+		case 'ArrowDown':
+			newPos.y = Math.min(100 - newPos.height, newPos.y + moveAmount);
+			break;
+		case 'ArrowLeft':
+			newPos.x = Math.max(0, newPos.x - moveAmount);
+			break;
+		case 'ArrowRight':
+			newPos.x = Math.min(100 - newPos.width, newPos.x + moveAmount);
+			break;
+	}
+
+	// Apply grid snapping and bounds checking
+	newPos = normalizePosition(newPos);
+
+	// Check for collisions - if collision, don't move
+	if (!isValidPosition(newPos, selected.name)) {
+		console.log(`❌ Move blocked by collision`);
+		return;
+	}
+
+	await updateComponent(selected.name, newPos);
+	console.log(`✅ Moved to:`, newPos);
 };
 // === LAYOUT CONTAINER ===
 const initializeLayoutContainer = async () => {
@@ -152,7 +208,7 @@ const getOrCreateComponentContentContainer = (element) => {
 	if (!contentEl) {
 		contentEl = document.createElement('div');
 		contentEl.className = 'component-content';
-		contentEl.style.cssText = 'width: 100%; height: 100%; overflow: auto;';
+		contentEl.style.cssText = 'width: 100%; height: 100%; overflow: hidden;';
 		element.appendChild(contentEl);
 	}
 	return contentEl;
@@ -175,9 +231,49 @@ const refreshUI = async (reason, changedComponents) => {
 // === STATE MANAGEMENT ===
 const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState, moduleName: registrations.get(name)?.moduleName || null }).get(name);
 const updateComponent = async (name, changes) => {
-	Object.assign(getComponentState(name), changes);
+	console.log('🔄 Before:', { name, changes, current: getComponentState(name) });
+
+	const beforeState = { ...getComponentState(name), ...changes };
+	console.log('📏 Pre-normalize:', beforeState);
+	validateComponentState(name, beforeState);
+
+	const normalized = normalizePosition(beforeState);
+	console.log('✅ Post-normalize:', normalized);
+	validateComponentState(name, normalized);
+
+	Object.assign(getComponentState(name), normalized);
 	await saveComponentStates();
-	await refreshUI('position-change', [name])
+	await refreshUI('position-change', [name]);
+};
+
+// Debug expansion path
+const expandSelectedComponent = async (direction) => {
+	const selected = getSelectedComponent();
+	if (selected) {
+		console.log(`🎯 Starting expansion: ${selected.name} ${direction}`);
+		console.log('📊 Pre-expand state:', componentStates);
+
+		const newPos = pushComponents(selected.name, direction, config.gridSize);
+		console.log('🔧 Push result:', newPos);
+
+		await updateComponent(selected.name, newPos);
+		console.log('📊 Post-expand state:', componentStates);
+	}
+};
+// Validate state integrity 
+const validateComponentState = (name, state) => {
+	const errors = [];
+	if (state.x < 0 || state.x > 100) errors.push(`x out of bounds: ${state.x}`);
+	if (state.y < 0 || state.y > 100) errors.push(`y out of bounds: ${state.y}`);
+	if (state.width <= 0 || state.width > 100) errors.push(`width invalid: ${state.width}`);
+	if (state.height <= 0 || state.height > 100) errors.push(`height invalid: ${state.height}`);
+	if (state.x + state.width > 100) errors.push(`x+width overflow: ${state.x + state.width}`);
+	if (state.y + state.height > 100) errors.push(`y+height overflow: ${state.y + state.height}`);
+
+	if (errors.length > 0) {
+		console.error(`❌ Invalid state for ${name}:`, errors, state);
+	}
+	return errors.length === 0;
 };
 export const addComponent = async (name, position = {}) => {
 	if (!registrations.has(name)) throw new Error(`Component ${name} not registered`);
@@ -267,10 +363,6 @@ const clearSelections = async () => {
 		await saveComponentStates();
 		await refreshUI('selection-change');
 	}
-};
-const expandSelectedComponent = async (direction) => {
-	const selected = getSelectedComponent();
-	selected && await updateComponent(selected.name, pushComponents(selected.name, direction, config.gridSize));
 };
 const getSelectedComponent = () => getAllActiveComponents().find(comp => comp.isSelected);
 // === MAXIMIZE/RESTORE ===

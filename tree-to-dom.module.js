@@ -93,7 +93,8 @@ const createEventData = (event, element) => {
 			tagName: element.tagName.toLowerCase(),
 			id: element.id,
 			name: element.name,
-			value: element.value
+			value: element.value,
+			dataset: { ...element.dataset }
 		},
 		focusedElement: document.activeElement?.["name"] || null,
 		...(form && { formData: serializeForm(form) })

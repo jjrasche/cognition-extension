@@ -290,8 +290,8 @@ class Runtime {
 		});
 		await Promise.all(workers);
 	};
-	log = (message, data) => console.log(`[${this.runtimeName}] ${message}`, data || '');
-	logError = (message, data) => console.error(`[${this.runtimeName}] ${message}`, data || '');
+	log = (message, data) => { } //console.log(`[${this.runtimeName}] ${message}`, data || '');
+	logError = (message, data) => { } //console.error(`[${this.runtimeName}] ${message}`, data || '');
 
 	// testing
 	runTests = async () => {
