@@ -4,12 +4,12 @@ export const manifest = {
 	name: "layout",
 	context: ["extension-page"],
 	version: "1.0.0",
-	description: "Component layout system with keyboard navigation and expansion - DOM persistent",
+	description: "Component layout system with persistent mode indicator and keyboard navigation",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "addComponentFromPicker", "enterLayoutMode", "exitLayoutMode", "cycleMode", "contractComponent"],
+	actions: ["renderComponent", "addComponentFromPicker", "cycleMode", "contractComponent", "showComponentPicker", "addComponent"],
 	commands: [
-		{ name: "layout mode", keyword: "layout", method: "enterLayoutMode" }
+		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
 	config: {
 		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
@@ -21,14 +21,14 @@ export const manifest = {
 
 let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set(), keySequence = [];
 
-// Layout mode state
-let layoutModeActive = false;
+// Mode system - always active
 const modes = [
+	{ name: 'select', icon: '👆', description: 'Select components' },
 	{ name: 'move', icon: '📱', description: 'Move component' },
 	{ name: 'expand', icon: '➕', description: 'Expand component' },
 	{ name: 'contract', icon: '➖', description: 'Contract component' }
 ];
-let currentModeIndex = 0;
+let currentModeIndex = 0; // Start in select mode
 
 const config = configProxy(manifest);
 const defaultState = { x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isLoading: false, moduleName: null, zIndex: 1 };
@@ -39,53 +39,30 @@ export const initialize = async (rt) => {
 	await discoverComponents();
 	await loadComponentStates();
 	await initializeLayoutContainer();
+	await addPersistentModeIndicator();
 	await refreshUI('initialization');
 	setupKeyboardHandlers();
 };
 
-// === LAYOUT MODE SYSTEM ===
-export const enterLayoutMode = async () => {
-	layoutModeActive = true;
-	currentModeIndex = 0; // Start with move mode
-	await addModeSelector();
-	runtime.log('[Layout] Entered layout mode');
-};
-
-export const exitLayoutMode = async () => {
-	layoutModeActive = false;
-	await removeModeSelector();
-	runtime.log('[Layout] Exited layout mode');
-};
-
+// === MODE SYSTEM ===
 export const cycleMode = async () => {
-	if (!layoutModeActive) return;
 	currentModeIndex = (currentModeIndex + 1) % modes.length;
-	await updateModeSelector();
+	await updateModeIndicator();
 	runtime.log(`[Layout] Mode: ${modes[currentModeIndex].name}`);
 };
 
-const addModeSelector = async () => {
-	if (!componentStates.has('_mode-selector')) {
-		componentStates.set('_mode-selector', {
-			...defaultState,
-			x: 85, y: 5, width: 12, height: 15,
-			isTemporary: true,
-			zIndex: 9999
-		});
-		await refreshUI('component-added');
-	}
+const addPersistentModeIndicator = async () => {
+	componentStates.set('_mode-indicator', {
+		...defaultState,
+		x: 85, y: 2, width: 12, height: 8,
+		isTemporary: true,
+		zIndex: 9999
+	});
 };
 
-const removeModeSelector = async () => {
-	if (componentStates.has('_mode-selector')) {
-		componentStates.delete('_mode-selector');
-		await refreshUI('component-removed');
-	}
-};
-
-const updateModeSelector = async () => {
-	if (componentStates.has('_mode-selector')) {
-		await renderComponent('_mode-selector');
+const updateModeIndicator = async () => {
+	if (componentStates.has('_mode-indicator')) {
+		await renderComponent('_mode-indicator');
 	}
 };
 
@@ -156,28 +133,41 @@ const handleKeyboard = async (e) => {
 	const activeElement = document.activeElement;
 	if (activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) return;
 
-	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
+	const maximized = getMaximizedComponent();
+	const selected = getSelectedComponent();
+	const currentMode = modes[currentModeIndex].name;
 
-	// Layout mode specific handling
-	if (layoutModeActive) {
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			return await exitLayoutMode();
-		}
+	// Global shortcuts
+	if (e.shiftKey && e.key === 'Tab') {
+		e.preventDefault();
+		return await cycleMode();
+	}
 
+	// Component-specific shortcuts for maximized components
+	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
+
+	// Mode-specific handling
+	if (currentMode === 'select') {
 		if (e.key === 'Tab') {
 			e.preventDefault();
-			if (e.shiftKey) {
-				return await cycleMode();
-			} else {
-				return await cycleSelection();
-			}
+			return await cycleSelection();
 		}
+		if (e.key === 'Enter' && selected && !maximized) {
+			e.preventDefault();
+			return await maximizeSelected();
+		}
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			return maximized ? await restoreMaximized() : await clearSelections();
+		}
+		// Arrow keys work normally in select mode - no custom handling
+		return;
+	}
 
+	// Move/Expand/Contract modes - arrows do layout actions
+	if (['move', 'expand', 'contract'].includes(currentMode)) {
 		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selected) {
 			e.preventDefault();
-			const currentMode = modes[currentModeIndex].name;
-
 			if (currentMode === 'move') {
 				await moveSelectedComponent(e.key);
 			} else if (currentMode === 'expand') {
@@ -187,12 +177,23 @@ const handleKeyboard = async (e) => {
 			}
 			return;
 		}
-		return; // In layout mode, consume all other keys
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			return maximized ? await restoreMaximized() : await clearSelections();
+		}
 	}
 
-	// Normal mode handling
-	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
-	return handleLayoutKeys(e);
+	// Handle component picker
+	if (componentStates.has('_component-picker')) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			componentStates.delete('_component-picker');
+			return await refreshUI('component-removed');
+		}
+	}
+
+	// Compound key detection for component picker
+	return handleCompoundKeys(e);
 };
 
 const handleComponentKeys = async (name, event) => {
@@ -207,10 +208,7 @@ const handleComponentKeys = async (name, event) => {
 	return false;
 };
 
-const handleLayoutKeys = async (e) => {
-	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
-
-	// Compound key detection 
+const handleCompoundKeys = async (e) => {
 	if (e.ctrlKey && e.key === 'a') {
 		e.preventDefault();
 		keySequence = ['ctrl+a'];
@@ -223,18 +221,6 @@ const handleLayoutKeys = async (e) => {
 		keySequence = [];
 		return;
 	}
-
-	// Basic navigation
-	if (e.key === 'Escape') {
-		e.preventDefault()
-		if (componentStates.has('_component-picker')) {
-			componentStates.delete('_component-picker');
-			return await refreshUI('component-removed');
-		}
-		return maximized ? await restoreMaximized() : selected && await clearSelections();
-	}
-	if (e.key === 'Tab') return (e.preventDefault(), await cycleSelection());
-	if (e.key === 'Enter' && selected && !maximized) return (e.preventDefault(), await maximizeSelected());
 };
 
 // === MOVEMENT METHODS ===
@@ -326,33 +312,22 @@ export const renderComponent = async (name) => {
 
 const getComponentTree = async (name) => {
 	if (name === '_component-picker') return buildComponentPickerTree();
-	if (name === '_mode-selector') return buildModeSelectorTree();
+	if (name === '_mode-indicator') return buildModeIndicatorTree();
 	const reg = registrations.get(name);
 	if (!reg) return { tag: "div", text: `Component ${name} not found` };
 	try { return await runtime.call(`${reg.moduleName}.${reg.getTree}`); }
 	catch (error) { return { tag: "div", text: `Error loading ${name}: ${error.message}` }; }
 };
 
-const buildModeSelectorTree = () => {
+const buildModeIndicatorTree = () => {
 	const currentMode = modes[currentModeIndex];
 	return {
-		tag: "div",
-		style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); color: white; border: 2px solid var(--accent-primary); border-radius: 8px; cursor: pointer;",
-		events: { click: "layout.cycleMode" },
-		"mode-icon": {
+		"mode-display": {
 			tag: "div",
-			style: "font-size: 24px; margin-bottom: 4px;",
-			text: currentMode.icon
-		},
-		"mode-name": {
-			tag: "div",
-			style: "font-size: 10px; text-align: center; text-transform: uppercase; font-weight: bold;",
-			text: currentMode.name
-		},
-		"mode-hint": {
-			tag: "div",
-			style: "font-size: 8px; text-align: center; color: #888; margin-top: 2px;",
-			text: "Tab: cycle"
+			style: "display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--border-primary); border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; height: 100%;",
+			events: { click: "layout.cycleMode" },
+			text: currentMode.icon,
+			title: `${currentMode.description} (Shift+Tab: cycle modes)`
 		}
 	};
 };
@@ -452,7 +427,7 @@ const loadComponentStates = async () => {
 	for (const [name, state] of componentStates) state.moduleName && (state.isLoading = runtime.getState(state.moduleName) !== 'ready');
 };
 
-const saveComponentStates = async () => await runtime.call('chrome-sync.set', { 'layout.componentStates': Object.fromEntries([...componentStates].map(([name, state]) => [name, state])) });
+const saveComponentStates = async () => await runtime.call('chrome-sync.set', { 'layout.componentStates': Object.fromEntries([...componentStates].filter(([name]) => !name.startsWith('_')).map(([name, state]) => [name, state])) });
 
 const applyDefaultLayout = () => registrations.has('command-input') && componentStates.set('command-input', { ...defaultState, x: 0, y: 0, width: 100, height: 20, moduleName: registrations.get('command-input').moduleName });
 
@@ -464,13 +439,13 @@ const normalizePosition = ({ x, y, width, height }) => ({ x: snapToGrid(Math.max
 export const showComponentPicker = async () => {
 	const available = [...registrations.keys()].filter(name => !componentStates.has(name));
 	if (available.length === 0) return runtime.log('[Layout] No components available');
-	componentStates.set('_component-picker', { ...defaultState, ...maximizedState, isTemporary: true, zIndex: 9999 });
+	componentStates.set('_component-picker', { ...defaultState, x: 20, y: 20, width: 60, height: 60, isTemporary: true, zIndex: 9999 });
 	await refreshUI('component-added');
 };
 
 export const buildComponentPickerTree = () => ({
 	tag: "div",
-	style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); color: white;",
+	style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); color: white; padding: 20px;",
 	"picker-title": { tag: "h2", text: "Add Component", style: "margin-bottom: 30px;" },
 	"picker-grid": {
 		tag: "div",
@@ -479,6 +454,7 @@ export const buildComponentPickerTree = () => ({
 			.map(name => [`add-${name}`, { tag: "button", text: name, class: "cognition-button-primary", style: "padding: 20px; font-size: 16px;", events: { click: "layout.addComponentFromPicker" }, "data-component": name }])
 		)
 	},
+	"picker-hint": { tag: "div", text: "Press Escape to cancel", style: "margin-top: 20px; color: #888; font-size: 14px;" }
 });
 
 export const addComponentFromPicker = async (eventData) => {
@@ -536,19 +512,10 @@ const getMaximizedComponent = () => getAllActiveComponents().find(comp => comp.i
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
 	return [
-		await runUnitTest("Layout mode state management", async () => {
-			await enterLayoutMode();
-			const actual = { modeActive: layoutModeActive, hasModeSelector: componentStates.has('_mode-selector') };
-			await exitLayoutMode();
-			const expected = { modeActive: true, hasModeSelector: true };
-			return { actual, assert: deepEqual, expected };
-		}),
 		await runUnitTest("Mode cycling functionality", async () => {
-			await enterLayoutMode();
 			const initialMode = currentModeIndex;
 			await cycleMode();
 			const actual = { modeChanged: currentModeIndex !== initialMode, validIndex: currentModeIndex < modes.length };
-			await exitLayoutMode();
 			return { actual, assert: deepEqual, expected: { modeChanged: true, validIndex: true } };
 		}),
 		await runUnitTest("Z-index management", async () => {
@@ -558,6 +525,10 @@ export const test = async () => {
 			const actual = { test1Front: getComponentState('test1').zIndex === 1000, test2Back: getComponentState('test2').zIndex === 1 };
 			componentStates.delete('test1'), componentStates.delete('test2');
 			return { actual, assert: deepEqual, expected: { test1Front: true, test2Back: true } };
+		}),
+		await runUnitTest("Mode indicator persistence", async () => {
+			const actual = componentStates.has('_mode-indicator');
+			return { actual, assert: strictEqual, expected: true };
 		}),
 		await runUnitTest("Contract functionality", async () => {
 			const testComp = { x: 20, y: 20, width: 40, height: 30, isSelected: true };

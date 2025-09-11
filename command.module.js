@@ -16,7 +16,7 @@ export const initialize = async (rt) => {
 	await registercommands();
 };
 
-const registercommands = async () => runtime.getModulesWithProperty('commands').flatMap(m => m.manifest.commands.map(a => ({
+const registercommands = async () => commands = runtime.getModulesWithProperty('commands').flatMap(m => m.manifest.commands.map(a => ({
 	...a,
 	func: async (input) => await runtime.call(`${m.manifest.name}.${a.method}`, input),
 	condition: a.keyword ? (input) => input.toLowerCase() === a.keyword.toLowerCase() : a.condition,
