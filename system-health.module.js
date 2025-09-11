@@ -87,7 +87,7 @@ export const updateThreshold = async (eventData) => {
 	}
 };
 // === UI COMPONENTS ===
-export const refreshDashboard = () => runtime.call('layout.replaceComponent', 'health-dashboard', buildTree());
+export const refreshDashboard = () => runtime.call('layout.renderComponent', 'health-dashboard', buildTree());
 const statusColors = { good: '#10b981', warning: '#f59e0b', critical: '#ef4444', unknown: '#6b7280' };
 export const buildTree = async () => {
 	const health = await getSystemHealth();

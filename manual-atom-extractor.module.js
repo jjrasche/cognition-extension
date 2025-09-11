@@ -38,7 +38,7 @@ export const saveCollection = async () => {
 	console.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
 };
 // UI
-const refreshUI = () => runtime.call('layout.replaceComponent', 'main', buildTree());
+const refreshUI = () => runtime.call('layout.renderComponent', 'main', buildTree());
 const buildTree = () => ({ "manual-atom-extractor": { tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;", ...header(), ...mainContent() } });
 const header = () => ({ "header": { tag: "div", style: "margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;", "title": { tag: "h2", text: "Knowledge Forge", style: "margin: 0; color: var(--text-primary);" }, ...saveButton() } });
 const saveButton = () => ({ "save-button": { tag: "button", text: "Save Collection", class: "cognition-button-primary", events: { click: "manual-atom-extractor.saveCollection" } } });

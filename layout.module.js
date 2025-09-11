@@ -6,14 +6,15 @@ export const manifest = {
 	description: "Component layout system with keyboard navigation and expansion - DOM persistent",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent"],
+	actions: ["renderComponent", "addComponentFromPicker"],
 	config: {
 		gridSize: { type: 'number', min: 1, max: 20, value: 5, label: 'Grid Snap Size (%)' },
 		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
 		defaultComponentHeight: { type: 'number', min: 10, max: 90, value: 20, label: 'Default Component Height (%)' },
+		keySequenceTimeout: { type: 'number', min: 500, max: 5000, value: 2000, label: 'Key Sequence Timeout (ms)' }
 	}
 };
-let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set();
+let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set(), keySequence = [];
 const config = configProxy(manifest);
 const defaultState = { x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isLoading: false, moduleName: null };
 export const initialize = async (rt) => {
@@ -45,6 +46,7 @@ const handleModuleStateChange = async (moduleName, newState) => {
 // === KEYMAP HANDLER ===
 const setupKeyboardHandlers = () => document.addEventListener('keydown', handleKeyboard);
 const handleKeyboard = async (e) => {
+	console.log('Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Alt:', e.altKey, 'sequence:', keySequence);
 	const activeElement = document.activeElement;
 	if (activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) return; // Let the user type
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
@@ -65,8 +67,29 @@ const handleComponentKeys = async (name, event) => {
 	return false;
 };
 const handleLayoutKeys = async (e) => {
+	console.log(config.keySequenceTimeout)
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent();
-	if (e.key === 'Escape') return (e.preventDefault(), maximized ? await restoreMaximized() : selected && await clearSelections());
+	// Compound key detection TODO: create a more elegant solution for compound keys
+	if (e.ctrlKey && e.key === 'a') {
+		e.preventDefault();
+		keySequence = ['ctrl+a'];
+		setTimeout(() => keySequence = [], config.keySequenceTimeout); // Reset after timeout
+		return;
+	}
+	if (keySequence.includes('ctrl+a') && e.ctrlKey && e.key === 'c') {
+		e.preventDefault();
+		await showComponentPicker();
+		keySequence = [];
+		return;
+	}
+	if (e.key === 'Escape') {
+		e.preventDefault()
+		if (componentStates.has('_component-picker')) {
+			componentStates.delete('_component-picker');
+			return await refreshUI('component-removed');
+		}
+		return maximized ? await restoreMaximized() : selected && await clearSelections();
+	}
 	if (e.key === 'Tab') return (e.preventDefault(), await cycleSelection());
 	if (e.key === 'Enter' && selected && !maximized) return (e.preventDefault(), await maximizeSelected());
 	if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selected && !maximized) return (e.preventDefault(), await expandSelectedComponent(e.key));
@@ -103,6 +126,7 @@ export const renderComponent = async (name) => {
 	}
 };
 const getComponentTree = async (name) => {
+	if (name === '_component-picker') return buildComponentPickerTree();
 	const reg = registrations.get(name);
 	if (!reg) return { tag: "div", text: `Component ${name} not found` };
 	try { return await runtime.call(`${reg.moduleName}.${reg.getTree}`); }
@@ -144,7 +168,6 @@ const renderChangedComponents = (changedComponents) => getAllActiveComponents()
 		setElementStyles(element, comp), setElementClass(element, comp);
 	});
 const refreshUI = async (reason, changedComponents) => {
-	// await initializeLayoutContainer();  // why are we doing this? won't this wipe all DOM???
 	if (['initialization', 'component-added', 'component-removed'].includes(reason)) await renderAllComponents();
 	else if (['position-change', 'selection-change', 'state-change'].includes(reason)) await renderChangedComponents(changedComponents);
 	else await renderAllComponents();
@@ -156,6 +179,20 @@ const updateComponent = async (name, changes) => {
 	await saveComponentStates();
 	await refreshUI('position-change', [name])
 };
+export const addComponent = async (name, position = {}) => {
+	if (!registrations.has(name)) throw new Error(`Component ${name} not registered`);
+	if (componentStates.has(name)) throw new Error(`Component ${name} already added`);
+	componentStates.set(name, {
+		...defaultState,
+		x: position.x ?? 10 + (componentStates.size * 5),
+		y: position.y ?? 20 + (componentStates.size * 5),
+		width: position.width ?? config.defaultComponentWidth,
+		height: position.height ?? config.defaultComponentHeight,
+		moduleName: registrations.get(name).moduleName
+	});
+	await saveComponentStates();
+	await refreshUI('component-added');
+};
 const getAllActiveComponents = () => [...componentStates.entries()].map(([name, state]) => ({ name, ...state }));
 // === PERSISTENCE ===
 const loadComponentStates = async () => {
@@ -164,7 +201,7 @@ const loadComponentStates = async () => {
 	for (const [name, state] of componentStates) state.moduleName && (state.isLoading = runtime.getState(state.moduleName) !== 'ready');
 };
 const saveComponentStates = async () => await runtime.call('chrome-sync.set', { 'layout.componentStates': Object.fromEntries([...componentStates].map(([name, state]) => [name, state])) });
-const applyDefaultLayout = () => registrations.has('command-input') && componentStates.set('command-input', { ...defaultState, x: 10, y: 5, width: 80, height: 10, moduleName: registrations.get('command-input').moduleName });
+const applyDefaultLayout = () => registrations.has('command-input') && componentStates.set('command-input', { ...defaultState, x: 0, y: 0, width: 100, height: 20, moduleName: registrations.get('command-input').moduleName });
 // === GRID & POSITIONING ===
 const snapToGrid = (value) => Math.round(value / config.gridSize) * config.gridSize;
 const normalizePosition = ({ x, y, width, height }) => ({ x: snapToGrid(Math.max(0, Math.min(x, 100 - width))), y: snapToGrid(Math.max(0, Math.min(y, 100 - height))), width: snapToGrid(Math.max(config.gridSize, Math.min(width, 100 - x))), height: snapToGrid(Math.max(config.gridSize, Math.min(height, 100 - y))) });
@@ -188,6 +225,30 @@ const pushComponents = (expandingName, direction, expandAmount) => {
 		updateComponent(comp.name, normalizePosition(pushedPos));
 	});
 	return newPos;
+};
+// === COMPONENT PICKER ===
+export const showComponentPicker = async () => {
+	const available = [...registrations.keys()].filter(name => !componentStates.has(name));
+	if (available.length === 0) return runtime.log('[Layout] No components available');
+	componentStates.set('_component-picker', { ...defaultState, ...maximizedState, isTemporary: true });
+	await refreshUI('component-added');
+};
+export const buildComponentPickerTree = () => ({
+	tag: "div",
+	style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); color: white;",
+	"picker-title": { tag: "h2", text: "Add Component", style: "margin-bottom: 30px;" },
+	"picker-grid": {
+		tag: "div",
+		style: "display: grid; grid-template-columns: repeat(3, 200px); gap: 15px;",
+		...Object.fromEntries([...registrations.keys()].filter(name => !componentStates.has(name))
+			.map(name => [`add-${name}`, { tag: "button", text: name, class: "cognition-button-primary", style: "padding: 20px; font-size: 16px;", events: { click: "layout.addComponentFromPicker" }, "data-component": name }])
+		)
+	},
+});
+export const addComponentFromPicker = async (eventData) => {
+	const componentName = eventData.target.dataset.component;
+	componentStates.delete('_component-picker'); // Remove overlay
+	await addComponent(componentName);
 };
 // === COMPONENT SELECTION ===
 const cycleSelection = async () => {
@@ -213,12 +274,13 @@ const expandSelectedComponent = async (direction) => {
 };
 const getSelectedComponent = () => getAllActiveComponents().find(comp => comp.isSelected);
 // === MAXIMIZE/RESTORE ===
+const maximizedState = { x: 0, y: 0, width: 100, height: 100, isMaximized: true };
 const maximizeSelected = async () => {
 	const selected = getAllActiveComponents().find(comp => comp.isSelected);
 	if (!selected || selected.isMaximized) return;
 	const state = getComponentState(selected.name);
 	state.savedPosition = { x: state.x, y: state.y, width: state.width, height: state.height };
-	await updateComponent(selected.name, { x: 0, y: 0, width: 100, height: 100, isMaximized: true });
+	await updateComponent(selected.name, maximizedState);
 };
 const restoreMaximized = async () => {
 	const maximized = getMaximizedComponent();

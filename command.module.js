@@ -48,7 +48,7 @@ const getCommand = async (input) => {
 // UI
 export const commandTree = async () => ({ tag: "div", style: "display: flex; align-items: center; gap: 8px; flex: 1;", ...commandInput() });
 const commandInput = () => ({ "command-input": { tag: "input", id: "cognition-search-input", type: "text", placeholder: "Search the web, ask questions, or type commands...", events: { keydown: "command.handleCommandInput" }, style: "flex: 1;", disabled: isExecuting } })
-const refreshUI = async () => await runtime.call('layout.replaceComponent', 'command-input')
+const refreshUI = async () => await runtime.call('layout.renderComponent', 'command-input')
 
 // testing
 export const test = async () => {

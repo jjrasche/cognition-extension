@@ -71,7 +71,7 @@ const validateField = (value, schema = {}) => {
 	return { valid: true };
 };
 // === UI GENERATION ===
-export const refreshUI = () => runtime.call('layout.replaceComponent', 'atom-extractor', buildConfigTree());
+export const refreshUI = () => runtime.call('layout.renderComponent', 'atom-extractor', buildConfigTree());
 export const buildConfigTree = () => ({
 	"config-page": {
 		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
