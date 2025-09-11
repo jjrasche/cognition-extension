@@ -11,10 +11,20 @@ class Runtime {
 		// this.testResults = [];
 		this.testResults = null;
 		this.allContextTestResults = new Map();
-
+		this.runtimeInitStart = performance.now();
 	}
 
+	addLoadingLog = (message) => {
+		const logEl = document.getElementById('loading-log');
+		if (logEl) {
+			const elapsed = (performance.now() - this.runtimeInitStart).toFixed(0);
+			logEl.innerHTML += `<div>[${elapsed}ms] ${message}</div>`;
+			logEl.scrollTop = logEl.scrollHeight;
+		}
+	};
 	initialize = async () => {
+		// Extension-page specific logging additions:
+		if (this.runtimeName === 'extension-page') this.addLoadingLog('🚀 Runtime initialization started');
 		try {
 			this.log('[Runtime] Starting module initialization...');
 			await this.loadModulesForContext();
@@ -187,8 +197,9 @@ class Runtime {
 			{ maxAttempts: 15, delay: 3000, onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
 		).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
-	broadcastModuleReady = (moduleName) => this.broadcastModuleStatus(moduleName, 'ready');
-	broadcastModuleFailed = (moduleName) => this.broadcastModuleStatus(moduleName, 'failed');
+	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
+	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
+	checkAllModulesInitialized = () => this.contextModules.every(module => this.moduleState.has(module.manifest.name)) && this.addLoadingLog('🎉 Extension ready!');
 	broadcastTestResults = async () => {
 		await retryAsync(async () => chrome.runtime.sendMessage({ type: 'TEST_RESULTS', context: this.runtimeName, results: this.testResults }))
 			.then(() => this.log(`[Runtime] Sent TEST_RESULTS message in ${this.runtimeName}`))

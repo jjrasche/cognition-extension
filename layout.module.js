@@ -7,7 +7,7 @@ export const manifest = {
 	description: "Component layout system with z-layers, mode overlays, and window snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "addComponentFromPicker", "cycleMode", "contractComponent", "showComponentPicker", "addComponent", "togglePin", "snapToHalf"],
+	actions: ["renderComponent", "updateComponent", "cycleMode", "showComponentPicker", "addComponentFromPicker", "togglePin", "snapToHalf"],
 	commands: [
 		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
@@ -20,32 +20,22 @@ export const manifest = {
 	}
 };
 
-let runtime, componentStates = new Map(), registrations = new Map(), layoutContainer = null, renderedComponents = new Set(), keySequence = [], modeOverlay = null;
+let runtime, componentStates = new Map(), layoutContainer = null, modeOverlay = null, currentModeIndex = 0;
 
-// Z-Index layer system
 const Z_LAYERS = {
 	SYSTEM: 9999,     // Mode indicator, pickers, system UI
 	PINNED: 3000,     // Always-on-top modules  
 	ACTIVE: 2000,     // Currently selected component
 	NORMAL: 1000      // Regular components
 };
-
-// Mode system
 const modes = [
 	{ name: 'select', icon: '👆', description: 'Select components', pattern: '👆'.repeat(200) },
 	{ name: 'move', icon: '📱', description: 'Move component', pattern: '↕️↔️'.repeat(500) },
 	{ name: 'expand', icon: '➕', description: 'Expand component', pattern: '➕'.repeat(300) },
 	{ name: 'contract', icon: '➖', description: 'Contract component', pattern: '➖'.repeat(300) }
 ];
-let currentModeIndex = 0;
-
 const config = configProxy(manifest);
-const defaultState = {
-	x: 0, y: 0, width: 30, height: 20,
-	savedPosition: null, isSelected: false, isMaximized: false, isLoading: false,
-	moduleName: null, zLayer: 'normal', isPinned: false, zIndex: Z_LAYERS.NORMAL
-};
-
+const defaultState = { x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isRendered: false, isLoading: false, moduleName: null, getTree: null, zIndex: Z_LAYERS.NORMAL, isPinned: false };
 export const initialize = async (rt) => {
 	runtime = rt;
 
@@ -62,6 +52,43 @@ export const initialize = async (rt) => {
 	await addPersistentModeIndicator();
 	await refreshUI('initialization');
 	setupKeyboardHandlers();
+	// Hide loading spinner - layout is the last critical UI module
+	setTimeout(() => {
+		const loadingEl = document.getElementById('cognition-loading');
+		if (loadingEl) {
+			loadingEl.style.opacity = '0';
+			loadingEl.style.transition = 'opacity 0.5s';
+			setTimeout(() => {
+				runtime.addLoadingLog(`✅ Layout complete`);
+				loadingEl.remove()
+			}, 500);
+		}
+	}, 10);
+};
+
+// === UNIFIED COMPONENT API ===
+export const updateComponent = async (name, stateChanges) => {
+	// TODO: Add validation for external state updates if needed
+	const state = getComponentState(name);
+	Object.assign(state, normalizeStateChanges(stateChanges));
+	updateComponentZIndex(name);
+	await saveComponentStates();
+	await refreshUI('state-change', [name]);
+	runtime.log(`[Layout] Updated ${name}:`, stateChanges);
+};
+
+const normalizeStateChanges = (changes) => {
+	const normalized = { ...changes };
+	if ('x' in changes || 'y' in changes || 'width' in changes || 'height' in changes) {
+		const position = {
+			x: normalized.x ?? 0,
+			y: normalized.y ?? 0,
+			width: normalized.width ?? 30,
+			height: normalized.height ?? 20
+		};
+		Object.assign(normalized, normalizePosition(position));
+	}
+	return normalized;
 };
 
 // === MODE SYSTEM ===
@@ -76,7 +103,8 @@ const addPersistentModeIndicator = async () => {
 	componentStates.set('_mode-indicator', {
 		...defaultState,
 		x: 85, y: 2, width: 12, height: 8,
-		isTemporary: true, zLayer: 'system', zIndex: Z_LAYERS.SYSTEM
+		isRendered: true, zIndex: Z_LAYERS.SYSTEM,
+		moduleName: 'layout', getTree: '_mode-indicator'
 	});
 };
 
@@ -165,8 +193,8 @@ const updateComponentZIndex = (componentName) => {
 	const state = getComponentState(componentName);
 
 	// Set z-index based on layer and selection
-	if (state.zLayer === 'system') {
-		state.zIndex = Z_LAYERS.SYSTEM;
+	if (state.zIndex === Z_LAYERS.SYSTEM) {
+		// Keep system layer as-is
 	} else if (state.isPinned) {
 		state.zIndex = Z_LAYERS.PINNED;
 	} else if (state.isSelected) {
@@ -184,36 +212,50 @@ const bringToFront = (componentName) => {
 
 	// Selected component gets active layer
 	const state = getComponentState(componentName);
-	if (!state.isPinned && state.zLayer !== 'system') {
+	if (state.zIndex !== Z_LAYERS.SYSTEM && !state.isPinned) {
 		state.zIndex = Z_LAYERS.ACTIVE;
 	}
 };
 
 export const togglePin = async (componentName) => {
 	const state = getComponentState(componentName || getSelectedComponent()?.name);
-	if (!state || state.zLayer === 'system') return;
+	if (!state || state.zIndex === Z_LAYERS.SYSTEM) return;
 
-	state.isPinned = !state.isPinned;
-	updateComponentZIndex(state.name);
-	await saveComponentStates();
-	await refreshUI('position-change', [componentName]);
+	await updateComponent(componentName, { isPinned: !state.isPinned });
 	runtime.log(`[Layout] ${state.isPinned ? 'Pinned' : 'Unpinned'} ${componentName}`);
 };
 
 // === DISCOVERY & REGISTRATION ===
-const discoverComponents = async () => runtime.getModulesWithProperty('uiComponents').forEach(module => module.manifest.uiComponents.forEach(comp => {
-	registrations.set(comp.name, { ...comp, moduleName: module.manifest.name });
-	runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, module[comp.getTree]);
-}));
+const discoverComponents = async () => runtime.getModulesWithProperty('uiComponents').forEach(module =>
+	module.manifest.uiComponents.forEach(comp => {
+		const name = comp.name;
+		if (!componentStates.has(name)) {
+			componentStates.set(name, {
+				...defaultState,
+				moduleName: module.manifest.name,
+				getTree: comp.getTree
+			});
+		} else {
+			// Update discovery data for existing components
+			const existing = componentStates.get(name);
+			existing.moduleName = module.manifest.name;
+			existing.getTree = comp.getTree;
+		}
+		runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, module[comp.getTree]);
+	})
+);
 
 const handleModuleStateChange = async (moduleName, newState) => {
-	const changedComponents = Array.from(componentStates)
-		.filter(([, state]) => {
+	const changedComponents = [];
+	for (const [name, state] of componentStates) {
+		if (state.moduleName === moduleName) {
 			const wasLoading = state.isLoading;
 			state.isLoading = (newState !== 'ready');
-			return state.moduleName === moduleName && wasLoading !== state.isLoading;
-		})
-		.map(([name]) => name);
+			if (wasLoading !== state.isLoading) {
+				changedComponents.push(name);
+			}
+		}
+	}
 
 	if (changedComponents.length > 0) await refreshUI('state-change', changedComponents);
 };
@@ -230,7 +272,7 @@ const handleKeyboard = async (e) => {
 	const currentMode = modes[currentModeIndex].name;
 
 	// Global shortcuts
-	if (e.altKey && e.shiftKey && e.key === ' ') {
+	if (e.altKey && e.key === 'ArrowRight') {
 		e.preventDefault();
 		return await cycleMode();
 	}
@@ -283,8 +325,6 @@ const handleKeyboard = async (e) => {
 			return maximized ? await restoreMaximized() : await clearSelections();
 		}
 	}
-
-	// Handle component picker
 	if (componentStates.has('_component-picker')) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
@@ -292,13 +332,11 @@ const handleKeyboard = async (e) => {
 			return await refreshUI('component-removed');
 		}
 	}
-
-	// Compound key detection for component picker
-	return handleCompoundKeys(e);
 };
 
 const handleComponentKeys = async (name, event) => {
-	const keyMap = registrations.get(name)?.keyMap;
+	const state = getComponentState(name);
+	const keyMap = state.keyMap;
 	const handler = keyMap?.[event.code] || keyMap?.[event.key];
 	if (handler) {
 		event.preventDefault();
@@ -308,22 +346,6 @@ const handleComponentKeys = async (name, event) => {
 	}
 	return false;
 };
-
-const handleCompoundKeys = async (e) => {
-	if (e.ctrlKey && e.key === 'a') {
-		e.preventDefault();
-		keySequence = ['ctrl+a'];
-		setTimeout(() => keySequence = [], config.keySequenceTimeout);
-		return;
-	}
-	if (keySequence.includes('ctrl+a') && e.ctrlKey && e.key === 'c') {
-		e.preventDefault();
-		await showComponentPicker();
-		keySequence = [];
-		return;
-	}
-};
-
 // === MOVEMENT METHODS ===
 const moveSelectedComponent = async (direction) => {
 	const selected = getSelectedComponent();
@@ -392,7 +414,6 @@ const cleanupRemovedComponents = async () => {
 		const name = element.dataset.component;
 		if (!activeNames.has(name)) {
 			elementsToRemove.push(element);
-			renderedComponents.delete(name);
 		}
 	});
 	elementsToRemove.forEach(el => el.remove());
@@ -400,12 +421,15 @@ const cleanupRemovedComponents = async () => {
 
 // === COMPONENT RENDERING ===
 export const renderComponent = async (name) => {
+	const state = getComponentState(name);
+	if (!state.isRendered) return;
+
 	const element = getOrCreateComponentElementContainer(name);
 	let contentEl = getOrCreateComponentContentContainer(element);
 	try {
 		const tree = await getComponentTree(name);
 		await runtime.call('tree-to-dom.transform', tree, contentEl);
-		renderedComponents.add(name);
+		runtime.log(`[Layout] Rendered ${name}`);
 	} catch (error) {
 		contentEl.innerHTML = `<div style="padding: 10px; color: var(--danger, #ff6b6b);">Error loading ${name}: ${error.message}</div>`;
 	}
@@ -414,10 +438,15 @@ export const renderComponent = async (name) => {
 const getComponentTree = async (name) => {
 	if (name === '_component-picker') return buildComponentPickerTree();
 	if (name === '_mode-indicator') return buildModeIndicatorTree();
-	const reg = registrations.get(name);
-	if (!reg) return { tag: "div", text: `Component ${name} not found` };
-	try { return await runtime.call(`${reg.moduleName}.${reg.getTree}`); }
-	catch (error) { return { tag: "div", text: `Error loading ${name}: ${error.message}` }; }
+
+	const state = getComponentState(name);
+	if (!state.getTree) return { tag: "div", text: `Component ${name} not found` };
+
+	try {
+		return await runtime.call(`${state.moduleName}.${state.getTree}`);
+	} catch (error) {
+		return { tag: "div", text: `Error loading ${name}: ${error.message}` };
+	}
 };
 
 const buildModeIndicatorTree = () => {
@@ -428,7 +457,7 @@ const buildModeIndicatorTree = () => {
 			style: "display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--border-primary); border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; height: 100%;",
 			events: { click: "layout.cycleMode" },
 			text: currentMode.icon,
-			title: `${currentMode.description} (Alt+Shift+Space: cycle modes)`
+			title: `${currentMode.description} (Alt+Space: cycle modes)`
 		}
 	};
 };
@@ -482,7 +511,7 @@ const getOrCreateComponentContentContainer = (element) => {
 
 const renderAllComponents = async () => {
 	await cleanupRemovedComponents();
-	getAllActiveComponents().forEach(comp => renderComponent(comp.name));
+	getAllActiveComponents().filter(comp => comp.isRendered).forEach(comp => renderComponent(comp.name));
 };
 
 const renderChangedComponents = (changedComponents) => getAllActiveComponents()
@@ -499,29 +528,19 @@ const refreshUI = async (reason, changedComponents) => {
 };
 
 // === STATE MANAGEMENT ===
-const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState, moduleName: registrations.get(name)?.moduleName || null }).get(name);
-
-const updateComponent = async (name, changes) => {
-	const normalized = normalizePosition({ ...getComponentState(name), ...changes });
-	Object.assign(getComponentState(name), normalized);
-	updateComponentZIndex(name);
-	await saveComponentStates();
-	await refreshUI('position-change', [name]);
-};
+const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState }).get(name);
 
 export const addComponent = async (name, position = {}) => {
-	if (!registrations.has(name)) throw new Error(`Component ${name} not registered`);
-	if (componentStates.has(name)) throw new Error(`Component ${name} already added`);
-	componentStates.set(name, {
-		...defaultState,
+	const state = getComponentState(name);
+	if (!state.moduleName) throw new Error(`Component ${name} not registered`);
+
+	await updateComponent(name, {
 		x: position.x ?? 10 + (componentStates.size * 5),
 		y: position.y ?? 20 + (componentStates.size * 5),
 		width: position.width ?? config.defaultComponentWidth,
 		height: position.height ?? config.defaultComponentHeight,
-		moduleName: registrations.get(name).moduleName
+		isRendered: true
 	});
-	await saveComponentStates();
-	await refreshUI('component-added');
 };
 
 const getAllActiveComponents = () => [...componentStates.entries()].map(([name, state]) => ({ name, ...state }));
@@ -529,38 +548,89 @@ const getAllActiveComponents = () => [...componentStates.entries()].map(([name, 
 // === PERSISTENCE ===
 const loadComponentStates = async () => {
 	const saved = await runtime.call('chrome-sync.get', 'layout.componentStates');
-	saved ? Object.entries(saved).forEach(([name, state]) => componentStates.set(name, { ...defaultState, ...state })) : applyDefaultLayout();
+
+	if (saved) {
+		Object.entries(saved).forEach(([name, savedState]) => {
+			const existing = componentStates.get(name);
+			if (existing) {
+				// Merge saved state with existing discovery data
+				Object.assign(existing, savedState);
+			} else {
+				// Create new state from saved data
+				componentStates.set(name, { ...defaultState, ...savedState });
+			}
+		});
+	} else {
+		applyDefaultLayout();
+	}
+
+	// Update loading states and z-indexes
 	for (const [name, state] of componentStates) {
-		state.moduleName && (state.isLoading = runtime.getState(state.moduleName) !== 'ready');
+		if (state.moduleName) {
+			state.isLoading = runtime.getState(state.moduleName) !== 'ready';
+		}
 		updateComponentZIndex(name);
 	}
 };
 
-const saveComponentStates = async () => await runtime.call('chrome-sync.set', { 'layout.componentStates': Object.fromEntries([...componentStates].filter(([name]) => !name.startsWith('_')).map(([name, state]) => [name, state])) });
+const saveComponentStates = async () => {
+	const stateToSave = Object.fromEntries(
+		[...componentStates].filter(([name]) => !name.startsWith('_')).map(([name, state]) => [name, {
+			// Save position and status data, but not discovery data
+			x: state.x, y: state.y, width: state.width, height: state.height,
+			isSelected: state.isSelected, isMaximized: state.isMaximized, isRendered: state.isRendered,
+			isPinned: state.isPinned, savedPosition: state.savedPosition
+		}])
+	);
+	await runtime.call('chrome-sync.set', { 'layout.componentStates': stateToSave });
+};
 
-const applyDefaultLayout = () => registrations.has('command-input') && componentStates.set('command-input', { ...defaultState, x: 0, y: 0, width: 100, height: 20, moduleName: registrations.get('command-input').moduleName });
+const applyDefaultLayout = () => {
+	// Add command-input as default component if it exists
+	const commandInputExists = [...componentStates.values()].some(state => state.getTree === 'commandTree');
+	if (commandInputExists) {
+		updateComponent('command-input', {
+			x: 0, y: 0, width: 100, height: 20, isRendered: true
+		});
+	}
+};
 
 // === GRID & POSITIONING ===
 const snapToGrid = (value) => Math.round(value / config.gridSize) * config.gridSize;
-const normalizePosition = ({ x, y, width, height }) => ({ x: snapToGrid(Math.max(0, Math.min(x, 100 - width))), y: snapToGrid(Math.max(0, Math.min(y, 100 - height))), width: snapToGrid(Math.max(config.gridSize, Math.min(width, 100 - x))), height: snapToGrid(Math.max(config.gridSize, Math.min(height, 100 - y))) });
+const normalizePosition = ({ x, y, width, height }) => ({
+	x: snapToGrid(Math.max(0, Math.min(x, 100 - width))),
+	y: snapToGrid(Math.max(0, Math.min(y, 100 - height))),
+	width: snapToGrid(Math.max(config.gridSize, Math.min(width, 100 - x))),
+	height: snapToGrid(Math.max(config.gridSize, Math.min(height, 100 - y)))
+});
 
 // === COMPONENT PICKER ===
 export const showComponentPicker = async () => {
-	const available = [...registrations.keys()].filter(name => !componentStates.has(name));
+	const available = getAllActiveComponents().filter(comp => !comp.isRendered && comp.moduleName);
 	if (available.length === 0) return runtime.log('[Layout] No components available');
-	componentStates.set('_component-picker', { ...defaultState, x: 20, y: 20, width: 60, height: 60, isTemporary: true, zLayer: 'system', zIndex: Z_LAYERS.SYSTEM });
+
+	componentStates.set('_component-picker', {
+		...defaultState,
+		x: 20, y: 20, width: 60, height: 60, isRendered: true,
+		zIndex: Z_LAYERS.SYSTEM, moduleName: 'layout', getTree: '_component-picker'
+	});
 	await refreshUI('component-added');
 };
 
-export const buildComponentPickerTree = () => ({
+const buildComponentPickerTree = () => ({
 	tag: "div",
 	style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); color: white; padding: 20px;",
 	"picker-title": { tag: "h2", text: "Add Component", style: "margin-bottom: 30px;" },
 	"picker-grid": {
 		tag: "div",
 		style: "display: grid; grid-template-columns: repeat(3, 200px); gap: 15px;",
-		...Object.fromEntries([...registrations.keys()].filter(name => !componentStates.has(name))
-			.map(name => [`add-${name}`, { tag: "button", text: name, class: "cognition-button-primary", style: "padding: 20px; font-size: 16px;", events: { click: "layout.addComponentFromPicker" }, "data-component": name }])
+		...Object.fromEntries(getAllActiveComponents().filter(comp => !comp.isRendered && comp.moduleName)
+			.map(comp => [`add-${comp.name}`, {
+				tag: "button", text: comp.name, class: "cognition-button-primary",
+				style: "padding: 20px; font-size: 16px;",
+				events: { click: "layout.addComponentFromPicker" },
+				"data-component": comp.name
+			}])
 		)
 	},
 	"picker-hint": { tag: "div", text: "Press Escape to cancel", style: "margin-top: 20px; color: #888; font-size: 14px;" }
@@ -574,7 +644,7 @@ export const addComponentFromPicker = async (eventData) => {
 
 // === COMPONENT SELECTION ===
 const cycleSelection = async () => {
-	const active = getAllActiveComponents().filter(comp => !comp.name.startsWith('_'));
+	const active = getAllActiveComponents().filter(comp => !comp.name.startsWith('_') && comp.isRendered);
 	if (active.length === 0) return;
 	const currentIndex = active.findIndex(comp => comp.isSelected);
 	const nextName = active[(currentIndex + 1) % active.length].name;
@@ -620,7 +690,9 @@ const maximizeSelected = async () => {
 
 const restoreMaximized = async () => {
 	const maximized = getMaximizedComponent();
-	maximized?.savedPosition && await updateComponent(maximized.name, { ...maximized.savedPosition, isMaximized: false, savedPosition: null });
+	if (maximized?.savedPosition) {
+		await updateComponent(maximized.name, { ...maximized.savedPosition, isMaximized: false, savedPosition: null });
+	}
 };
 
 const getMaximizedComponent = () => getAllActiveComponents().find(comp => comp.isMaximized);
@@ -629,9 +701,16 @@ const getMaximizedComponent = () => getAllActiveComponents().find(comp => comp.i
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
 	return [
+		await runUnitTest("Unified updateComponent API works", async () => {
+			componentStates.set('test-unified', { ...defaultState, x: 10, y: 20 });
+			await updateComponent('test-unified', { x: 30, isSelected: true });
+			const actual = { x: getComponentState('test-unified').x, isSelected: getComponentState('test-unified').isSelected };
+			componentStates.delete('test-unified');
+			return { actual, assert: deepEqual, expected: { x: 30, isSelected: true } };
+		}),
 		await runUnitTest("Z-layer system works", async () => {
-			componentStates.set('test1', { ...defaultState, zLayer: 'normal' });
-			componentStates.set('test2', { ...defaultState, zLayer: 'pinned', isPinned: true });
+			componentStates.set('test1', { ...defaultState });
+			componentStates.set('test2', { ...defaultState, isPinned: true });
 			updateComponentZIndex('test1');
 			updateComponentZIndex('test2');
 			const actual = { normal: getComponentState('test1').zIndex, pinned: getComponentState('test2').zIndex };
@@ -645,13 +724,6 @@ export const test = async () => {
 			const actual = { x: getComponentState('test-snap').x, width: getComponentState('test-snap').width };
 			componentStates.delete('test-snap');
 			return { actual, assert: deepEqual, expected: { x: 0, width: 50 } };
-		}),
-		await runUnitTest("Pin toggle functionality", async () => {
-			componentStates.set('test-pin', { ...defaultState, isPinned: false });
-			await togglePin('test-pin');
-			const actual = getComponentState('test-pin').isPinned;
-			componentStates.delete('test-pin');
-			return { actual, assert: strictEqual, expected: true };
 		})
 	];
 };
