@@ -53,8 +53,7 @@ class Runtime {
 			}
 		});
 	}
-	registerAction = (module, action) => this.actions.set(`${module.manifest.name}.${action}`, module[action])
-
+	registerAction = (module, action) => this.actions.set(`${module.manifest.name}.${action}`, { func: module[action], context: this.runtimeName, moduleName: module.manifest.name });
 	moduleInContext = (moduleName) => this.contextModules.find(m => m.manifest.name === moduleName);
 
 	setupMessageListener = () => {
@@ -116,63 +115,20 @@ class Runtime {
 	};
 
 	initializeModules = async () => {
-		const pending = [...this.contextModules];
-		const maxAttempts = 20;
-		for (let attempt = 0; attempt < maxAttempts && pending.length > 0; attempt++) {
-			if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 5000));
-			for (let i = pending.length - 1; i >= 0; i--) {
-				const module = pending[i];
-				if (this.areDependenciesReady(module)) {
-					try {
-						if (typeof module.initialize !== 'function') {
-							this.broadcastModuleReady(module.manifest.name);
-							pending.splice(i, 1);
-							continue;
-						}
-						await module.initialize(this);
-						this.log(`initialized [${module.manifest.name}]`);
-						this.broadcastModuleReady(module.manifest.name);
-						pending.splice(i, 1);
-					} catch (error) {
-						this.log(`failed to initialize [${module.manifest.name}]: ${error.message}\n${error.stack}`);
-						this.broadcastModuleFailed(module.manifest.name);
-						this.errors.push({
-							module: module.manifest.name,
-							error: error.message,
-							stack: error.stack
-						});
-						pending.splice(i, 1);
-					}
-				} else {
-					const deps = module.manifest.dependencies || [];
-					const notReady = deps.filter(dep => this.moduleState.get(dep) !== 'ready');
-				}
+		await Promise.all(this.contextModules.map(async (module) => {
+			try {
+				await module.initialize?.(this);
+				this.broadcastModuleReady(module.manifest.name);
+			} catch (error) {
+				this.broadcastModuleFailed(module.manifest.name);
 			}
-		}
-
-		// Any remaining modules have unmet dependencies
-		pending.forEach(module => {
-			const error = new Error(`Dependencies not met after ${maxAttempts} attempts`);
-			console.error(`[${this.runtimeName}] ❌ ${module.manifest.name} failed:`, error);
-			this.broadcastModuleFailed(module.manifest.name);
-			this.errors.push({
-				module: module.manifest.name,
-				error: error.message
-			});
-		});
-
-		this.log(`Module initialization complete. Errors:`, this.errors);
-	}
-	areDependenciesReady = (module) => {
-		const deps = module.manifest.dependencies || [];
-		const ret = deps.every(dep => this.moduleInContext(dep) && this.moduleState.get(dep) === 'ready');
-		return ret;
+		}));
 	}
 	broadcastModuleStatus = async (moduleName, state) => {
 		const type = `MODULE_${state.toUpperCase()}`;
 		this.moduleState.set(moduleName, state);
 		await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }),
-			{ maxAttempts: 15, delay: 3000, onRetry: (error, attempt, max) => { } }//this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
+			{ maxAttempts: 3, delay: 3000, onRetry: (error, attempt, max) => { } }//this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
 		).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
@@ -189,6 +145,13 @@ class Runtime {
 
 	call = async (actionName, ...args) => {
 		const [moduleName] = actionName.split('.');
+		const localAction = this.actions.get(actionName);
+		if (localAction && localAction.context === this.runtimeName) {
+			this.log(`[Runtime] Local call: ${actionName}`);
+			return this.executeAction(actionName, ...args);
+		}
+
+
 		await this.waitForModule(moduleName);
 		if (this.moduleInContext(moduleName)) return this.executeAction(actionName, ...args);
 
@@ -222,7 +185,7 @@ class Runtime {
 	throwIfTimeout = (moduleName, start, timeout) => Date.now() - start > timeout && (() => { throw new Error(`Module ${moduleName} not ready after ${timeout}ms`); })();
 	waitForModule = async (moduleName, timeout = 10000) => {
 		this.throwIfFailed(moduleName);
-		if (this.isReady(moduleName)) {
+		if (!this.isReady(moduleName)) {
 			const start = Date.now();
 			while (this.getState(moduleName) !== 'ready') {
 				this.throwIfFailed(moduleName);
@@ -250,7 +213,6 @@ class Runtime {
 			throw error;
 		}
 	}
-
 	getAction = (actionName) => {
 		const action = this.actions.get(actionName);
 		if (!action) this.logError(`[Runtime] Action not found: ${actionName}`, { context: this.runtimeName });
@@ -284,10 +246,21 @@ class Runtime {
 	};
 	// todo: better handle cross context 
 	timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
-	logSpecial = (message, data) => console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-	log = (message, data) => console.log(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-	logError = (message, data) => console.error(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-
+	logError = (message, data) => this.log(message, data, 'error');
+	log = (message, data, severity) => {
+		if (this.runtimeName == "extension-page" && message.contains("service-worker")) return;
+		this.printLog(console[severity], message, data);
+		this.persistLog(message, data);
+	}
+	printLog = async (func, message, data) => func(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
+	createLog = (message, data) => ({
+		globalStartTime: this.globalStartTime,
+		timestamp: Date.now(),
+		context: this.runtimeName,
+		message,
+		data: data ? JSON.stringify(data) : null
+	});
 	// testing
 	runTests = async () => {
 		if (!this.testResults) return;

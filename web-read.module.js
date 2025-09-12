@@ -5,14 +5,17 @@ export const manifest = {
 	externalDependencies: [
 		{ rename: 'readability.js', destination: 'libs/', url: 'https://esm.run/@mozilla/readability', sha256: '2A1B198B27A71910CDF26AE7087A8F82D714FEF1C7D5DA335AF020D1FE3B50E4' }
 	],
+	uiComponents: [
+		{ name: "web-reader", getTree: "buildReaderTree" }
+	],
 	commands: [
 		{ name: "read webpage", condition: input => input.startsWith('http'), method: "extractPage" },
 	]
 };
 
+// todo: consider using parse5 for more robust HTML parsing if needed
 
-
-let runtime, readability;
+let runtime, readability, currentArticle;
 export const initialize = async (rt) => {
 	runtime = rt;
 	readability = (await import(chrome.runtime.getURL('libs/readability.js'))).Readability;
@@ -23,9 +26,11 @@ export const extractPage = async (url) => {
 	const dom = new DOMParser().parseFromString(html, 'text/html');
 	const reader = new readability(dom.cloneNode(true));
 	const article = reader.parse();
+	currentArticle = { ...article, url: actualUrl };
 	if (!article) throw new Error('Could not extract article from page');
-	await runtime.call('ui.renderTree', buildArticleTree(article, actualUrl));
+	await runtime.call('layout.renderComponent', 'web-reader');
 };
+export const buildReaderTree = () => currentArticle ? buildArticleTree(currentArticle, currentArticle.url) : { tag: "div", text: "No article loaded" };
 const buildArticleTree = (article, actualUrl) => ({
 	"article-container": {
 		tag: "article", class: "readability-article",

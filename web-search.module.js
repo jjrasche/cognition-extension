@@ -4,24 +4,30 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Web search via DuckDuckGo tab scraping",
 	permissions: ["tabs", "scripting"],
-	actions: ["getSearchResults", "buildUI"],
+	actions: ["getSearchResults", "searchAndShow"],
+	uiComponents: [
+		{ name: "search-results", getTree: "buildSearchTree" }
+	],
 	commands: [
-		{ name: "search web", condition: input => input.length < 20, method: "buildUI" },
+		{ name: "search web", condition: input => input.length < 20, method: "searchAndShow" },
 	]
 };
 
-let runtime;
+let runtime, currentResults, currentQuery;
 export const initialize = async (rt) => runtime = rt;
+
+export const searchAndShow = async (query, maxResults = 5) => {
+	currentResults = await getSearchResults(query, maxResults);
+	currentQuery = query;
+	await runtime.call('layout.addComponent', 'search-results');
+};
 
 export const getSearchResults = async (query, maxResults = 5) => {
 	const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
 	return runtime.call("tab.executeTemp", url, scrapeResultsInTab, [maxResults]);
 };
-export const buildUI = async (query, maxResults = 5) => {
-	const results = await getSearchResults(query, maxResults);
-	await runtime.call('ui.renderTree', buildSearchTree(results, query));
-};
-const buildSearchTree = (results, query) => ({
+export const buildSearchTree = () => currentResults ? buildSearchResultsTree(currentResults, currentQuery) : { tag: "div", text: "No search results" };
+const buildSearchResultsTree = (results, query) => ({
 	"search-container": {
 		tag: "div", class: "search-results",
 		"results-header": { tag: "h2", text: `Results for "${query}"` },

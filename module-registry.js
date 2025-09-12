@@ -2,7 +2,7 @@ import './helpers.js';
 import * as apiKeysModule from './api-keys.module.js';
 // import * as claudeApiModule from './claude-api.module.js';
 // import * as contextModule from './context.module.js';
-// import * as developmentModule from './dev.module.js';
+import * as developmentModule from './dev.module.js';
 // import * as embeddingModule from './embedding.module.js';
 // import * as fileModule from './file.module.js';
 // import * as graphDbModule from './graph-db.module.js';
@@ -42,7 +42,7 @@ export const modules = [
 	// claudeApiModule,
 	// summaryModule,
 	// contextModule,
-	// developmentModule,
+	developmentModule,
 	// embeddingModule,
 	// fileModule,
 	// graphDbModule,
