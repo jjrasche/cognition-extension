@@ -236,7 +236,7 @@ const discoverComponents = async () => runtime.getModulesWithProperty('uiCompone
 			existing.moduleName = module.manifest.name;
 			existing.getTree = comp.getTree;
 		}
-		runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, module[comp.getTree]);
+		runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, { func: module[comp.getTree], context: runtime.runtimeName, moduleName: module.manifest.name });
 	})
 );
 

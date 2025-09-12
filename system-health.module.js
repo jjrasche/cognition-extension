@@ -16,11 +16,11 @@ const registerHealthModules = () => runtime.getModulesWithProperty('healthMetric
 	const { name, healthMetrics = [], healthTriggers = [] } = module.manifest;
 	moduleHealthData.set(name, { metrics: healthMetrics, triggers: healthTriggers, lastCalculated: null, currentValues: {}, status: 'unknown' });
 });
-// need to come up with new architecture if we expand runtime intercepting to multiple modules
+// todo: need to come up with new architecture if we expand runtime intercepting to multiple modules
 const interceptRuntimeCalls = () => {
-	const originalCall = runtime.call;
+	const originalCall = runtime.call.bind(runtime);
 	runtime.call = async (actionName, ...args) => {
-		const result = await originalCall.call(runtime, actionName, ...args);
+		const result = await originalCall(actionName, ...args);
 		getTriggeredModules(actionName).forEach(moduleName => debouncedRecalculate(moduleName));
 		return result;
 	};
