@@ -4,7 +4,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Centralized Chrome local storage operations",
 	permissions: ["storage"],
-	actions: ["set", "get", "getAll", "remove", "clear", "getBytesInUse"]
+	actions: ["set", "get", "getAll", "remove", "append", "clear", "getBytesInUse"]
 };
 
 let runtime;

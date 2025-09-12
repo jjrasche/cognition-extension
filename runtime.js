@@ -15,7 +15,7 @@ class Runtime {
 	}
 	initialize = async () => {
 		if (this.runtimeName === 'service-worker') this.broadcastStartTime();
-		this.log('🚀 Runtime initialization started');
+		this.log('🚀 Runtime initialization started', { appStart: new Date().getTime() });
 		try {
 			this.log('[Runtime] Starting module initialization...');
 			await this.loadModulesForContext();
@@ -127,9 +127,10 @@ class Runtime {
 	broadcastModuleStatus = async (moduleName, state) => {
 		const type = `MODULE_${state.toUpperCase()}`;
 		this.moduleState.set(moduleName, state);
-		await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }),
-			{ maxAttempts: 3, delay: 3000, onRetry: (error, attempt, max) => { } }//this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) }
-		).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
+		await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }), {
+			maxAttempts: 3, delay: 3000,
+			// onRetry: (error, attempt, max) => { this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) 
+		}).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
@@ -145,36 +146,23 @@ class Runtime {
 
 	call = async (actionName, ...args) => {
 		const [moduleName] = actionName.split('.');
-		const localAction = this.actions.get(actionName);
-		if (localAction && localAction.context === this.runtimeName) {
-			this.log(`[Runtime] Local call: ${actionName}`);
+		if (this.moduleInContext(moduleName)) {
+			await this.waitForModule(moduleName);
 			return this.executeAction(actionName, ...args);
 		}
-
-
-		await this.waitForModule(moduleName);
-		if (this.moduleInContext(moduleName)) return this.executeAction(actionName, ...args);
-
 		return await retryAsync(async () => {
 			return new Promise((resolve, reject) => {
-				chrome.runtime.sendMessage(
-					{ action: actionName, params: args },
+				chrome.runtime.sendMessage({ action: actionName, params: args },
 					response => {
-						if (chrome.runtime.lastError) {
-							reject(new Error(chrome.runtime.lastError.message));
-						} else if (response?.error) {
-							reject(new Error(response.error));
-						} else {
-							resolve(response);
-						}
+						if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+						else if (response?.error) reject(new Error(response.error));
+						else resolve(response);
 					}
 				);
 			});
 		}, {
-			maxAttempts: 10,
-			delay: 500,
-			backoff: true,
-			onRetry: (error, attempt, max) => this.log(`[Runtime] Retry ${attempt}/${max} for cross-context call ${actionName}: ${error.message}`),
+			maxAttempts: 50, delay: 100,
+			// onRetry: (error, attempt) => this.log(`[Runtime] Retry ${attempt} for ${actionName}: ${error.message}`),
 			shouldRetry: (error) => error.message.includes('port closed') || error.message.includes('Receiving end does not exist')
 		});
 	}
@@ -183,7 +171,7 @@ class Runtime {
 	isReady = (moduleName) => this.getState(moduleName) === 'ready';
 	throwIfFailed = (moduleName) => this.getState(moduleName) === 'failed' && (() => { throw new Error(`Module ${moduleName} failed to initialize`); })();
 	throwIfTimeout = (moduleName, start, timeout) => Date.now() - start > timeout && (() => { throw new Error(`Module ${moduleName} not ready after ${timeout}ms`); })();
-	waitForModule = async (moduleName, timeout = 10000) => {
+	waitForModule = async (moduleName, timeout = 5000) => {
 		this.throwIfFailed(moduleName);
 		if (!this.isReady(moduleName)) {
 			const start = Date.now();
@@ -205,7 +193,7 @@ class Runtime {
 		const action = this.getAction(actionName);
 		const params = this.createFunctionParamsDebugObject(action, args);
 		try {
-			const result = await action(...args);
+			const result = await action.func(...args);
 			this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
 			return result;
 		} catch (error) {
@@ -247,13 +235,16 @@ class Runtime {
 	// todo: better handle cross context 
 	timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
 	logError = (message, data) => this.log(message, data, 'error');
-	log = (message, data, severity) => {
-		if (this.runtimeName == "extension-page" && message.contains("service-worker")) return;
+	log = (message, data, severity = 'log') => {
+		if (this.runtimeName == "extension-page" && message.includes("service-worker")) return;
 		this.printLog(console[severity], message, data);
-		this.persistLog(message, data);
+		this.persistLog(message, data).catch(() => { });
 	}
 	printLog = async (func, message, data) => func(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
+	persistLog = async (message, data) => {
+		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
+		await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
+	};
 	createLog = (message, data) => ({
 		globalStartTime: this.globalStartTime,
 		timestamp: Date.now(),

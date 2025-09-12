@@ -18,7 +18,7 @@ import * as chromeSyncModule from './chrome-sync.module.js';
 // import * as treeToDomModule from './tree-to-dom.module.js';
 // import * as webSearchModule from './web-search.module.js';
 // import * as superIntendentModule from './superintendent.module.js';
-// import * as chromeLocalModule from './chrome-local.module.js'
+import * as chromeLocalModule from './chrome-local.module.js'
 // import * as summaryModule from './summary.module.js';
 // import * as atomicIdeaModule from './atomic-idea.module.js';
 // import * as siteIndexModule from './site-index.module.js';
@@ -57,7 +57,7 @@ export const modules = [
 	// webReadModule,
 	// webSearchModule,
 	// superIntendentModule,
-	// chromeLocalModule,
+	chromeLocalModule,
 	// atomicIdeaModule
 ];
 
