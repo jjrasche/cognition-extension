@@ -1,5 +1,6 @@
 import { modules } from './module-registry.js';
 import { retryAsync, asserts, truncateOrNA, runUnitTest } from './helpers.js';
+import { remove } from './chrome-local.module.js';
 class Runtime {
 	constructor(runtimeName) {
 		this.runtimeName = runtimeName;
@@ -14,8 +15,12 @@ class Runtime {
 		this.allContextTestResults = new Map();
 	}
 	initialize = async () => {
-		if (this.runtimeName === 'service-worker') this.broadcastStartTime();
-		this.log('🚀 Runtime initialization started', { appStart: new Date().getTime() });
+		if (this.runtimeName === 'service-worker') {
+
+			this.broadcastStartTime();
+			await remove('runtime.logs').catch(() => { });
+			this.log('🚀 Runtime initialization started', { appStart: new Date().getTime() });
+		}
 		try {
 			this.log('[Runtime] Starting module initialization...');
 			await this.loadModulesForContext();
@@ -236,22 +241,16 @@ class Runtime {
 	timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
 	logError = (message, data) => this.log(message, data, 'error');
 	log = (message, data, severity = 'log') => {
-		if (this.runtimeName == "extension-page" && message.includes("service-worker")) return;
+		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
 		this.printLog(console[severity], message, data);
 		this.persistLog(message, data).catch(() => { });
 	}
-	printLog = async (func, message, data) => func(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
-	persistLog = async (message, data) => {
-		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
-		await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
-	};
-	createLog = (message, data) => ({
-		globalStartTime: this.globalStartTime,
-		timestamp: Date.now(),
-		context: this.runtimeName,
-		message,
-		data: data ? JSON.stringify(data) : null
-	});
+	printLog = async (func, message, data) => {
+		if (this.runtimeName == "extension-page" && message.includes("service-worker")) return; // anyoning seeing service-worker logs in extension page
+		func(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+	}
+	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
+	createLog = (message, data) => ({ time: this.globalStartTime, context: this.runtimeName, message, data: data ? JSON.stringify(data) : null });
 	// testing
 	runTests = async () => {
 		if (!this.testResults) return;
