@@ -5,7 +5,16 @@ export const manifest = {
   context: ["extension-page"],
   version: "1.0.0", 
   description: "Web speech recognition streaming to UI",
-  actions: ["startListening", "stopListening", "getStatus"],
+  actions: ["startListening", "stopListening", "toggleListening", "getStatus"],
+  uiComponents: [
+    { name: "stt-indicator", getTree: "buildIndicator", zLayer: "SYSTEM" }
+  ],
+  config: {
+    provider: { type: 'select', options: ['web-speech'], value: 'web-speech' },
+    language: { type: 'select', options: ['en-US', 'es-ES'], value: 'en-US' },
+    pauseThreshold: { type: 'number', min: 500, max: 3000, value: 1500 },
+    toggleKey: { type: 'globalKey', value: 'F1', label: 'Listen Toggle Key', action: 'ui.toggleListening' }
+  }
 };
                 // "mic-button": { tag: "button", id: "mic-button", text: "🎤", class: "cognition-button-secondary", style: "min-width: 40px; height: 40px; border-radius: 50%; font-size: 18px;", events: { click: "ui.toggleListening" } }
 
@@ -21,8 +30,6 @@ export const toggleListening = async () => {
         button["style"].background = '';
     } else {
         await runtime.call('web-speech-stt.startListening');
-        button.textContent = '🔴';
-        button["style"].background = 'rgba(255, 0, 0, 0.1)';
     }
 };
 

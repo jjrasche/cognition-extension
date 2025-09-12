@@ -118,6 +118,7 @@ const buildInputElement = (fieldName, schema) => {
 		case 'password': return { tag: "input", type: "password", ...baseProps };
 		case 'checkbox': return { tag: "input", type: "checkbox", ...baseProps, checked: schema.value || schema.default || false, value: undefined };
 		case 'textarea': return { tag: "textarea", ...baseProps, rows: schema.rows || 4 };
+		case 'globalKey': return { tag: "input", type: "text", ...baseProps };
 		default: return { tag: "input", type: "text", ...baseProps, ...(schema.placeholder && { placeholder: schema.placeholder }) };
 	}
 };

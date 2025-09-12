@@ -20,7 +20,7 @@ export const manifest = {
 	}
 };
 
-let runtime, componentStates = new Map(), layoutContainer = null, modeOverlay = null, currentModeIndex = 0;
+let runtime, componentStates = new Map(), layoutContainer = null, modeOverlay = null, currentModeIndex = 0, globalKeyMap = new Map();
 
 const Z_LAYERS = {
 	SYSTEM: 10000,     // Mode indicator, pickers, system UI
@@ -256,79 +256,38 @@ const handleModuleStateChange = async (moduleName, newState) => {
 };
 
 // === KEYBOARD HANDLER ===
-const setupKeyboardHandlers = () => document.addEventListener('keydown', handleKeyboard);
-
+const setupKeyboardHandlers = () => { document.addEventListener('keydown', handleKeyboard); registerGlobalKeys(); };
 const handleKeyboard = async (e) => {
-	const activeElement = document.activeElement;
-	if (activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) return;
-
-	const maximized = getMaximizedComponent();
-	const selected = getSelectedComponent();
-	const currentMode = modes[currentModeIndex].name;
-
-	// Global shortcuts
-	if (e.altKey && e.key === 'ArrowRight') {
-		e.preventDefault();
-		return await cycleMode();
-	}
-
-	// Shift+Direction = Snap to half screen
-	if (e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-		e.preventDefault();
-		return await snapToHalf(e.key);
-	}
-
-	// Component-specific shortcuts for maximized components
+	if (document.activeElement?.tagName && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+	if (await handleGlobalKeys(e)) return;
+	const maximized = getMaximizedComponent(), selected = getSelectedComponent(), mode = modes[currentModeIndex].name;
+	if (handleLayoutKeys(e, mode, maximized, selected)) return;
 	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
-
-	// Mode-specific handling
-	if (currentMode === 'select') {
-		if (e.key === 'Tab') {
-			e.preventDefault();
-			return await cycleSelection();
-		}
-		if (e.key === 'Enter' && selected && !maximized) {
-			e.preventDefault();
-			return await maximizeSelected();
-		}
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			return maximized ? await restoreMaximized() : await clearSelections();
-		}
-		if (e.key === 'p' && selected) {
-			e.preventDefault();
-			return await togglePin(selected.name);
-		}
-		return;
-	}
-
-	// Move/Expand/Contract modes - arrows do layout actions
-	if (['move', 'expand', 'contract'].includes(currentMode)) {
-		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selected) {
-			e.preventDefault();
-			if (currentMode === 'move') {
-				await moveSelectedComponent(e.key);
-			} else if (currentMode === 'expand') {
-				await expandSelectedComponent(e.key);
-			} else if (currentMode === 'contract') {
-				await contractComponent(e.key);
-			}
-			return;
-		}
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			return maximized ? await restoreMaximized() : await clearSelections();
-		}
-	}
-	if (componentStates.has('_component-picker')) {
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			componentStates.delete('_component-picker');
-			return await refreshUI('component-removed');
-		}
-	}
+	componentStates.has('_component-picker') && e.key === 'Escape' ? (e.preventDefault(), componentStates.delete('_component-picker'), refreshUI('component-removed')) : null;
 };
-
+const handleGlobalKeys = async (e) => {
+	const action = globalKeyMap.get(e);
+	return action ? (e.preventDefault(), await runtime.call(action), true) : false;
+}
+const handleLayoutKeys = (e, mode, maximized, selected) => {
+	if (e.altKey && e.key === ' ') return preventDefaultReturnTrue(cycleMode());
+	if (e.altKey && isArrowKey(e)) return preventDefaultReturnTrue(snapToHalf());
+	if (e.key === 'Enter' && selected && !maximized) return preventDefaultReturnTrue(maximizeSelected());
+	if (e.key === 'Enter' && maximized) return preventDefaultReturnTrue(restoreMaximized());
+	if (e.key === 'Escape' && selected) return preventDefaultReturnTrue(clearSelections());
+	if (mode === 'move' && e.key === 'Tab') return preventDefaultReturnTrue(cycleSelection());
+	if (mode === 'move' && isArrowKey(e)) return preventDefaultReturnTrue(moveSelectedComponent());
+	if (mode === 'expand' && isArrowKey(e)) return preventDefaultReturnTrue(expandSelectedComponent());
+	if (mode === 'contract' && isArrowKey(e)) return preventDefaultReturnTrue(contractComponent());
+	return false;
+};
+const preventDefaultReturnTrue = async (e, method) => (e.preventDefault(), method(e), true);
+const isArrowKey = (e) => ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
+const registerGlobalKeys = () => runtime.getModulesWithProperty('config')
+	.filter(m => Object.values(m.manifest.config || {}).some(cfg => cfg.type === 'globalKey'))
+	.forEach(module => Object.entries(module.manifest.config)
+		.filter(([, schema]) => schema.type === 'globalKey' && schema.value)
+		.forEach(([, schema]) => globalKeyMap.set(schema.value, `${module.manifest.name}.${schema.action}`)));
 const handleComponentKeys = async (name, event) => {
 	const state = getComponentState(name);
 	const keyMap = state.keyMap;
