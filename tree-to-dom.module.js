@@ -99,7 +99,7 @@ const createEventData = (event, element) => {
 		focusedElement: document.activeElement?.["name"] || null,
 		...(form && { formData: serializeForm(form) })
 	};
-	runtime.log("[tree to dom] Event Data:", ret);
+	if (event.type !== "keydown") runtime.log("[tree to dom] Event Data:", ret);
 	return ret;
 };
 const serializeForm = (form) => {

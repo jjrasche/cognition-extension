@@ -4,7 +4,7 @@ import { remove } from './chrome-local.module.js';
 class Runtime {
 	constructor(runtimeName) {
 		this.runtimeName = runtimeName;
-		this.globalStartTime = (runtimeName == "service-worker" ? performance.now() : null); // set by service-worker
+		this.globalStartTime = (runtimeName == "service-worker" ? Date.now() : null); // set by service-worker
 		this.actions = new Map();
 		this.contextModules = [];
 		this.errors = [];
@@ -139,7 +139,7 @@ class Runtime {
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
-	broadcastStartTime = async () => await retryAsync(async () => chrome.runtime.sendMessage({ type: 'GLOBAL_START_TIME', startTime: this.globalStartTime, fromContext: this.runtimeName })).catch(() => { }); // Silent fail for broadcast
+	broadcastStartTime = async () => await retryAsync(async () => chrome.runtime.sendMessage({ type: 'GLOBAL_START_TIME', startTime: this.globalStartTime })).catch(() => { }); // Silent fail for broadcast
 	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
 	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
@@ -194,12 +194,13 @@ class Runtime {
 		return paramNames.reduce((debugObj, paramName, index) => { if (index < args.length) debugObj[paramName] = args[index]; return debugObj; }, {});
 	};
 
+	unloggedCommands = ["command.handleCommandInput"];
 	async executeAction(actionName, ...args) {
 		const action = this.getAction(actionName);
 		const params = this.createFunctionParamsDebugObject(action, args);
 		try {
 			const result = await action.func(...args);
-			this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
+			if (!this.unloggedCommands.includes(actionName)) this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
 			return result;
 		} catch (error) {
 			this.logError(`[Runtime] Action failed: ${actionName}`, { ...params, error });
@@ -238,7 +239,8 @@ class Runtime {
 		await Promise.all(workers);
 	};
 	// todo: better handle cross context 
-	timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
+	// timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
+	timeSinceGlobalStart = () => this.globalStartTime ? (Date.now() - this.globalStartTime) : '0';
 	logError = (message, data) => this.log(message, data, 'error');
 	log = (message, data, severity = 'log') => {
 		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
@@ -250,7 +252,7 @@ class Runtime {
 		func(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
 	}
 	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
-	createLog = (message, data) => ({ time: this.globalStartTime, context: this.runtimeName, message, data: data ? JSON.stringify(data) : null });
+	createLog = (message, data) => ({ time: this.timeSinceGlobalStart(), context: this.runtimeName, message, data: data ? JSON.stringify(data) : null });
 	// testing
 	runTests = async () => {
 		if (!this.testResults) return;
