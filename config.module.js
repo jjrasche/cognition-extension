@@ -10,10 +10,10 @@ export const manifest = {
 	]
 };
 let runtime, expandedCards = new Set();
-export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
-
-const initializeConfigs = async () => {
+export const initialize = async (rt) => {
+	runtime = rt;
 	addConfigSchemaActions();
+	registerOnChangeActions();
 	listenForCrossContextConfigChange();
 	await Promise.all(getModules().map(async module => {
 		const loadedConfig = await loadConfig(module);
@@ -21,7 +21,7 @@ const initializeConfigs = async () => {
 		applyConfig(module, loadedConfig);
 	}));
 };
-export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value, set: (target, prop, value) => { target[prop].value = value; return true; } }); // syntactic sugar for module config access
+export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value }); // syntactic sugar for module config access
 const updateAndSaveConfig = async (moduleName, updates) => {
 	const module = getModule(moduleName)
 	validateConfig(module, updates);
@@ -36,16 +36,15 @@ const validateConfig = (module, updates) => {
 const getModules = () => runtime.getModulesWithProperty('config');
 const getModule = (name) => getModules().find(m => m.manifest.name === name) || (() => { throw new Error(`Module ${name} not found`); })();
 const loadConfig = async (module) => await runtime.call('chrome-sync.get', `config.${module.manifest.name}`) || moduleDefaults(module);
-// const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => module.manifest.config[field] && (module.manifest.config[field].value = value));
-const applyConfig = (module, updates) => {
-	console.log('Applying config to:', module.manifest.name, updates);
-	Object.entries(updates).forEach(([field, value]) => {
-		if (module.manifest.config[field]) {
-			console.log(`Setting ${field} from`, module.manifest.config[field], 'to value:', value);
-			module.manifest.config[field].value = value; // This should only set .value, not replace the whole object
-		}
-	});
-};
+const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => {
+	if (module.manifest.config[field]) {
+		runtime.log(`Setting ${field} from`, module.manifest.config[field], 'to value:', value);
+		module.manifest.config[field].value = value;
+		const onChange = module.manifest.config[field].onChange;
+		if (onChange) runtime.call(`${module.manifest.name}.${onChange}`);
+	}
+});
+
 const saveConfig = async (module, updates) => await runtime.call('chrome-sync.set', { [`config.${module.manifest.name}`]: updates });
 const removeConfig = async (module) => await runtime.call('chrome-sync.remove', `config.${module.manifest.name}`);
 export const resetToDefaults = async (eventData) => {
@@ -166,20 +165,25 @@ const listenForCrossContextConfigChange = () => chrome.runtime.onMessage.addList
 });
 const addConfigSchemaActions = () => getModules().forEach(module => {
 	const actionName = `${module.manifest.name}.getConfigSchema`;
-	const moduleName = module.manifest.name; // Capture name, not reference
-	const func = () => {
-		const freshModule = getModule(moduleName); // Get fresh module by name
-		console.log(`getting schema for ${moduleName}`, freshModule.manifest.config);
-		return freshModule.manifest.config;
-	}
 	if (!runtime.actions.has(actionName)) {
-		runtime.actions.set(actionName, { func, context: runtime.runtimeName, moduleName });
+		runtime.actions.set(actionName, { func: () => module.manifest.config, context: runtime.runtimeName, moduleName: module.manifest.name });
 	}
 });
 const getSchemaCrossContext = async (moduleName) => {
 	try { return await runtime.call(`${moduleName}.getConfigSchema`); }
 	catch (error) { runtime.log(`[Config] Failed to get fresh schema for ${moduleName}, using local copy`); }
 }
+const registerOnChangeActions = () => getModules().forEach(module => {
+	Object.entries(module.manifest.config || {}).forEach(([fieldName, fieldSchema]) => {
+		if (fieldSchema.onChange) {
+			const actionName = `${module.manifest.name}.${fieldSchema.onChange}`;
+			if (!runtime.actions.has(actionName) && typeof module[fieldSchema.onChange] === 'function') {
+				console.log(`[Config] Registered onChange action ${actionName}`);
+				runtime.registerAction(module, fieldSchema.onChange);
+			}
+		}
+	});
+});
 // === TESTING ===
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
