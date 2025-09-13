@@ -272,15 +272,15 @@ const handleGlobalKeys = async (e) => {
 	return action ? (e.preventDefault(), await runtime.call(action), true) : false;
 }
 const handleLayoutKeys = (e, mode, maximized, selected) => {
-	if (e.altKey && e.key === ' ') return preventDefaultReturnTrue(cycleMode());
-	if (e.altKey && isArrowKey(e)) return preventDefaultReturnTrue(snapToHalf());
-	if (e.key === 'Enter' && selected && !maximized) return preventDefaultReturnTrue(maximizeSelected());
-	if (e.key === 'Enter' && maximized) return preventDefaultReturnTrue(restoreMaximized());
-	if (e.key === 'Escape' && selected) return preventDefaultReturnTrue(clearSelections());
-	if (mode === 'move' && e.key === 'Tab') return preventDefaultReturnTrue(cycleSelection());
-	if (mode === 'move' && isArrowKey(e)) return preventDefaultReturnTrue(moveSelectedComponent());
-	if (mode === 'expand' && isArrowKey(e)) return preventDefaultReturnTrue(expandSelectedComponent());
-	if (mode === 'contract' && isArrowKey(e)) return preventDefaultReturnTrue(contractComponent());
+	if (e.altKey && e.key === 'Enter') return preventDefaultReturnTrue(e, cycleMode);
+	if (e.altKey && isArrowKey(e)) return preventDefaultReturnTrue(e, snapToHalf);
+	if (e.key === 'Enter' && selected && !maximized) return preventDefaultReturnTrue(e, maximizeSelected);
+	if (e.key === 'Enter' && maximized) return preventDefaultReturnTrue(e, restoreMaximized);
+	if (e.key === 'Escape' && selected) return preventDefaultReturnTrue(e, clearSelections);
+	if (mode === 'select' && e.key === 'Tab') return preventDefaultReturnTrue(e, cycleSelection);
+	if (mode === 'move' && isArrowKey(e)) return preventDefaultReturnTrue(e, moveSelectedComponent);
+	if (mode === 'expand' && isArrowKey(e)) return preventDefaultReturnTrue(e, expandSelectedComponent);
+	if (mode === 'contract' && isArrowKey(e)) return preventDefaultReturnTrue(e, contractComponent);
 	return false;
 };
 const preventDefaultReturnTrue = async (e, method) => (e.preventDefault(), method(e), true);
@@ -669,30 +669,100 @@ const getMaximizedComponent = () => getAllActiveComponents().find(comp => comp.i
 // === TESTING ===
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
-	return [
-		await runUnitTest("Unified updateComponent API works", async () => {
-			componentStates.set('test-unified', { ...defaultState, x: 10, y: 20 });
-			await updateComponent('test-unified', { x: 30, isSelected: true });
-			const actual = { x: getComponentState('test-unified').x, isSelected: getComponentState('test-unified').isSelected };
-			componentStates.delete('test-unified');
-			return { actual, assert: deepEqual, expected: { x: 30, isSelected: true } };
+	const originalStates = new Map([...componentStates]), originalMode = currentModeIndex;
+	componentStates.set('test-component', { ...defaultState, moduleName: 'test-module', getTree: 'testTree' });
+	const results = await Promise.all([
+		await runUnitTest("addComponent creates with correct defaults", async () => {
+			await addComponent('test-component', { x: 25, y: 35, width: 40, height: 30 });
+			const state = getComponentState('test-component');
+			const actual = { x: state.x, y: state.y, width: state.width, height: state.height, isRendered: state.isRendered };
+			const expected = { x: 25, y: 35, width: 40, height: 30, isRendered: true };
+			return { actual, assert: deepEqual, expected };
 		}),
-		await runUnitTest("Z-layer system works", async () => {
-			componentStates.set('test1', { ...defaultState });
-			componentStates.set('test2', { ...defaultState, isPinned: true });
-			updateComponentZIndex('test1');
-			updateComponentZIndex('test2');
-			const actual = { normal: getComponentState('test1').zIndex, pinned: getComponentState('test2').zIndex };
-			componentStates.delete('test1'), componentStates.delete('test2');
-			return { actual, assert: deepEqual, expected: { normal: Z_LAYERS.NORMAL, pinned: Z_LAYERS.PINNED } };
+		await runUnitTest("maximize saves position and restores", async () => {
+			componentStates.set('test-maximize', { ...defaultState, x: 10, y: 20, width: 30, height: 40, isSelected: true });
+			await maximizeSelected();
+			const maxState = getComponentState('test-maximize');
+			const actualMax = { x: maxState.x, y: maxState.y, width: maxState.width, height: maxState.height, isMaximized: maxState.isMaximized };
+			const expectedMax = { x: 0, y: 0, width: 100, height: 100, isMaximized: true };
+			await restoreMaximized();
+			const restoreState = getComponentState('test-maximize');
+			const actualRestore = { x: restoreState.x, y: restoreState.y, width: restoreState.width, height: restoreState.height, isMaximized: restoreState.isMaximized };
+			const expectedRestore = { x: 10, y: 20, width: 30, height: 40, isMaximized: false };
+			return { actual: { max: actualMax, restore: actualRestore }, assert: deepEqual, expected: { max: expectedMax, restore: expectedRestore } };
 		}),
-		await runUnitTest("Snap to half functionality", async () => {
-			const testComp = { x: 25, y: 25, width: 50, height: 50, isSelected: true };
-			componentStates.set('test-snap', testComp);
+		await runUnitTest("cycleSelection works correctly", async () => {
+			componentStates.set('test-cycle1', { ...defaultState, isRendered: true, isSelected: false });
+			componentStates.set('test-cycle2', { ...defaultState, isRendered: true, isSelected: true });
+			componentStates.set('test-cycle3', { ...defaultState, isRendered: true, isSelected: false });
+			await cycleSelection();
+			const actual = { cycle1: getComponentState('test-cycle1').isSelected, cycle2: getComponentState('test-cycle2').isSelected, cycle3: getComponentState('test-cycle3').isSelected };
+			const expected = { cycle1: false, cycle2: false, cycle3: true };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("clearSelections clears all selections", async () => {
+			componentStates.set('test-clear1', { ...defaultState, isSelected: true });
+			componentStates.set('test-clear2', { ...defaultState, isSelected: true });
+			await clearSelections();
+			const actual = { clear1: getComponentState('test-clear1').isSelected, clear2: getComponentState('test-clear2').isSelected };
+			const expected = { clear1: false, clear2: false };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("cycleMode changes mode index", async () => {
+			const initialMode = currentModeIndex;
+			await cycleMode();
+			const newMode = currentModeIndex;
+			await cycleMode(); // cycle back for cleanup
+			const actual = newMode !== initialMode;
+			return { actual, assert: strictEqual, expected: true };
+		}),
+		await runUnitTest("snapToHalf positions correctly", async () => {
+			componentStates.set('test-snap', { ...defaultState, x: 25, y: 25, width: 50, height: 50, isSelected: true });
 			await snapToHalf('ArrowLeft');
-			const actual = { x: getComponentState('test-snap').x, width: getComponentState('test-snap').width };
-			componentStates.delete('test-snap');
-			return { actual, assert: deepEqual, expected: { x: 0, width: 50 } };
+			const state = getComponentState('test-snap');
+			const actual = { x: state.x, y: state.y, width: state.width, height: state.height };
+			const expected = { x: 0, y: 0, width: 50, height: 100 };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("togglePin changes pin state", async () => {
+			componentStates.set('test-pin', { ...defaultState, isPinned: false });
+			await togglePin('test-pin');
+			const actualPinned = getComponentState('test-pin').isPinned;
+			await togglePin('test-pin');
+			const actualUnpinned = getComponentState('test-pin').isPinned;
+			const actual = { pinned: actualPinned, unpinned: actualUnpinned };
+			const expected = { pinned: true, unpinned: false };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("z-index management works correctly", async () => {
+			componentStates.set('test-z1', { ...defaultState, zIndex: Z_LAYERS.NORMAL, isPinned: false });
+			componentStates.set('test-z2', { ...defaultState, zIndex: Z_LAYERS.NORMAL, isPinned: true });
+			componentStates.set('test-z3', { ...defaultState, zIndex: Z_LAYERS.SYSTEM });
+			updateComponentZIndex('test-z1');
+			updateComponentZIndex('test-z2');
+			updateComponentZIndex('test-z3');
+			const actual = { normal: getComponentState('test-z1').zIndex, pinned: getComponentState('test-z2').zIndex, system: getComponentState('test-z3').zIndex };
+			const expected = { normal: Z_LAYERS.NORMAL, pinned: Z_LAYERS.PINNED, system: Z_LAYERS.SYSTEM };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("moveSelectedComponent respects boundaries", async () => {
+			componentStates.set('test-move', { ...defaultState, x: 0, y: 0, width: 20, height: 20, isSelected: true });
+			await moveSelectedComponent('ArrowLeft'); // should not move past 0
+			await moveSelectedComponent('ArrowUp'); // should not move past 0
+			const state = getComponentState('test-move');
+			const actual = { x: state.x, y: state.y };
+			const expected = { x: 0, y: 0 };
+			return { actual, assert: deepEqual, expected };
 		})
-	];
+	]);
+	await cleanup(originalStates, originalMode);
+	return results;
+};
+
+const cleanup = async (originalStates, originalMode) => {
+	[...componentStates.keys()].filter(name => name.startsWith('test-')).forEach(name => componentStates.delete(name));
+	componentStates.clear();
+	originalStates.forEach((state, name) => componentStates.set(name, { ...state }));
+	currentModeIndex = originalMode;
+	await refreshUI('test-cleanup');
 };
