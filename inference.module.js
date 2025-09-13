@@ -23,9 +23,10 @@ export const initialize = (rt) => {
 const registerProviders = () => providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function'));
 const setConfigOptions = () => { setProviderConfigOptions(); setModelConfigOptions(); };
 const setProviderConfigOptions = () => manifest.config.provider.options = [{ value: '', text: 'Select a provider...' }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
-const setModelConfigOptions = () => {
+export const setModelConfigOptions = () => {
+	const provider = getSelectedProvider();
 	manifest.config.model["options"] = [{ value: '', text: 'Select a model...' },
-	...(getSelectedProvider()?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
+	...(provider?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
 	manifest.config.model.value = '';
 }
 export const infer = async (query) => await prompt({ query });

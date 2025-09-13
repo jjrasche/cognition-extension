@@ -25,8 +25,8 @@ export const configProxy = (manifest) => new Proxy(manifest.config, { get: (targ
 const updateAndSaveConfig = async (moduleName, updates) => {
 	const module = getModule(moduleName)
 	validateConfig(module, updates);
-	applyConfig(module, updates); // makes immediately available changes to the running module
-	await saveConfig(module, updates); // persists changes
+	await applyConfig(module, updates);
+	await saveConfig(module, updates);
 	return updates;
 };
 const validateConfig = (module, updates) => {
@@ -36,14 +36,14 @@ const validateConfig = (module, updates) => {
 const getModules = () => runtime.getModulesWithProperty('config');
 const getModule = (name) => getModules().find(m => m.manifest.name === name) || (() => { throw new Error(`Module ${name} not found`); })();
 const loadConfig = async (module) => await runtime.call('chrome-sync.get', `config.${module.manifest.name}`) || moduleDefaults(module);
-const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => {
+const applyConfig = async (module, updates) => Promise.all(Object.entries(updates).map(async ([field, value]) => {
 	if (module.manifest.config[field]) {
-		runtime.log(`Setting ${field} from`, module.manifest.config[field], 'to value:', value);
+		runtime.log(`Setting ${field} from`, { oldValue: module.manifest.config[field], newValue: value });
 		module.manifest.config[field].value = value;
 		const onChange = module.manifest.config[field].onChange;
-		if (onChange) runtime.call(`${module.manifest.name}.${onChange}`);
+		if (onChange) await runtime.call(`${module.manifest.name}.${onChange}`).catch(error => runtime.logError(`[Config] onChange failed for ${field}:`, error));
 	}
-});
+}));
 
 const saveConfig = async (module, updates) => await runtime.call('chrome-sync.set', { [`config.${module.manifest.name}`]: updates });
 const removeConfig = async (module) => await runtime.call('chrome-sync.remove', `config.${module.manifest.name}`);
@@ -178,7 +178,6 @@ const registerOnChangeActions = () => getModules().forEach(module => {
 		if (fieldSchema.onChange) {
 			const actionName = `${module.manifest.name}.${fieldSchema.onChange}`;
 			if (!runtime.actions.has(actionName) && typeof module[fieldSchema.onChange] === 'function') {
-				console.log(`[Config] Registered onChange action ${actionName}`);
 				runtime.registerAction(module, fieldSchema.onChange);
 			}
 		}
