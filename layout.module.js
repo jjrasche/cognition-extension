@@ -15,19 +15,13 @@ export const manifest = {
 		defaultComponentWidth: { type: 'number', min: 10, max: 90, value: 30, label: 'Default Component Width (%)' },
 		defaultComponentHeight: { type: 'number', min: 10, max: 90, value: 20, label: 'Default Component Height (%)' },
 		keySequenceTimeout: { type: 'number', min: 500, max: 5000, value: 2000, label: 'Key Sequence Timeout (ms)' },
-		overlayOpacity: { type: 'number', min: 0.05, max: 0.3, value: 0.15, label: 'Mode Overlay Opacity' }
+		overlayOpacity: { type: 'number', min: 0.05, max: 0.3, value: 0.05, label: 'Mode Overlay Opacity' }
 	}
 };
-let runtime, componentStates = new Map(), layoutContainer = null, modeOverlay = null, currentModeIndex = 0, globalKeyMap = new Map();
+let runtime, componentStates = new Map(), layoutContainer = null, globalKeyMap = new Map();
 const Z_LAYERS = {
 	SYSTEM: 10000, PINNED: 9999, ACTIVE: 2000, NORMAL: 1000
 };
-const modes = [
-	{ name: 'select', icon: '👆', description: 'Select components', pattern: '👆'.repeat(200) },
-	{ name: 'move', icon: '📱', description: 'Move component', pattern: '↕️↔️'.repeat(500) },
-	{ name: 'expand', icon: '➕', description: 'Expand component', pattern: '➕'.repeat(300) },
-	{ name: 'contract', icon: '➖', description: 'Contract component', pattern: '➖'.repeat(300) }
-];
 const config = configProxy(manifest);
 let defaultState = { name: '', x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isRendered: false, isLoading: false, moduleName: null, getTree: null, zIndex: Z_LAYERS.NORMAL, isPinned: false };
 export const initialize = async (rt) => {
@@ -37,7 +31,6 @@ export const initialize = async (rt) => {
 	await discoverComponents();
 	await loadComponentStates();
 	await initializeLayoutContainer();
-	await addPersistentModeIndicator();
 	await refreshUI('initialization');
 	setupKeyboardHandlers();
 	const loadingEl = document.getElementById('cognition-loading');
@@ -94,24 +87,26 @@ const handleModuleStateChange = async (moduleName, newState) => {
 	changedComponents.length > 0 && await refreshUI('state-change', changedComponents);
 };
 // === MODE SYSTEM ===
+const selectMode = { name: 'select', description: 'Select component' };
+const moveMode = { name: 'move', description: 'Move component', pattern: ' ✥ '.repeat(10000) };
+const expandMode = { name: 'expand', description: 'Expand component', pattern: ' + '.repeat(10000) };
+const contractMode = { name: 'contract', description: 'Contract component', pattern: ' - '.repeat(10000) };
+let modeOverlay = null, currentModeIndex = 0, modes = [selectMode, moveMode, expandMode, contractMode];
 export const cycleMode = async () => {
 	currentModeIndex = (currentModeIndex + 1) % modes.length;
-	await updateModeIndicator();
 	await showModeOverlay();
 	runtime.log(`[Layout] Mode: ${modes[currentModeIndex].name}`);
 };
-const addPersistentModeIndicator = async () => componentStates.set('_mode-indicator', { ...defaultState, name: '_mode-indicator', x: 85, y: 2, width: 12, height: 8, isRendered: true, zIndex: Z_LAYERS.SYSTEM, moduleName: 'layout', getTree: '_mode-indicator' });
-const updateModeIndicator = async () => componentStates.has('_mode-indicator') && await renderComponent('_mode-indicator');
 const showModeOverlay = async () => {
 	removeModeOverlay();
+	if (currentModeIndex === modes.findIndex(m => m.name === "select")) return;
 	const mode = modes[currentModeIndex];
 	modeOverlay = Object.assign(document.createElement('div'), {
 		className: 'mode-overlay',
 		textContent: mode.pattern
 	});
-	modeOverlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,${config.overlayOpacity}); color: rgba(255,255,255,0.1); font-size: 24px; line-height: 1; word-break: break-all; pointer-events: none; z-index: ${Z_LAYERS.SYSTEM + 1}; font-family: monospace; overflow: hidden;`;
+	modeOverlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,${config.overlayOpacity}); color: rgba(255,255,255,${config.overlayOpacity}); font-size: 24px; line-height: 1; word-break: break-all; pointer-events: none; z-index: ${Z_LAYERS.SYSTEM + 1}; font-family: monospace; overflow: hidden;`;
 	document.body.appendChild(modeOverlay);
-	setTimeout(removeModeOverlay, 2000);
 };
 const removeModeOverlay = () => modeOverlay && (modeOverlay.remove(), modeOverlay = null);
 // === COMPONENT OPERATIONS ===
@@ -212,11 +207,11 @@ const handleGlobalKeys = async (e) => {
 const handleLayoutKeys = (e, mode, maximized, selected) => {
 	if (e.altKey && e.key === 'Enter') return preventDefaultReturnTrue(e, cycleMode);
 	if (e.altKey && isArrowKey(e)) return preventDefaultReturnTrue(e, snapToHalf);
+	if (e.key === 'Tab') return preventDefaultReturnTrue(e, cycleSelection);
 	if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !maximized) return preventDefaultReturnTrue(e, removeSelected);
 	if (e.key === 'Enter' && selected && !maximized) return preventDefaultReturnTrue(e, maximizeSelected);
 	if (e.key === 'Enter' && maximized) return preventDefaultReturnTrue(e, restoreMaximized);
 	if (e.key === 'Escape' && selected) return preventDefaultReturnTrue(e, clearSelections);
-	if (mode === 'select' && e.key === 'Tab') return preventDefaultReturnTrue(e, cycleSelection);
 	if (mode === 'move' && isArrowKey(e)) return preventDefaultReturnTrue(e, moveSelectedComponent);
 	if (mode === 'expand' && isArrowKey(e)) return preventDefaultReturnTrue(e, expandSelectedComponent);
 	if (mode === 'contract' && isArrowKey(e)) return preventDefaultReturnTrue(e, contractComponent);
@@ -324,15 +319,10 @@ export const renderComponent = async (name) => {
 };
 const getComponentTree = async (name) => {
 	if (name === '_component-picker') return buildComponentPickerTree();
-	if (name === '_mode-indicator') return buildModeIndicatorTree();
 	const state = getComponentState(name);
 	if (!state.getTree) return { tag: "div", text: `Component ${name} not found` };
 	try { return await runtime.call(`${state.moduleName}.${state.getTree}`); }
 	catch (error) { return { tag: "div", text: `Error loading ${name}: ${error.message}` }; }
-};
-const buildModeIndicatorTree = () => {
-	const currentMode = modes[currentModeIndex];
-	return { "mode-display": { tag: "div", style: "display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--border-primary); border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; height: 100%;", events: { click: "layout.cycleMode" }, text: currentMode.icon, title: `${currentMode.description} (Alt+Space: cycle modes)` } };
 };
 const getComponentElementContainer = (name) => layoutContainer.querySelector(`[data-component="${name}"]`);
 const getOrCreateComponentElementContainer = (name) => {
