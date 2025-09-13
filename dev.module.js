@@ -33,16 +33,7 @@ const addModuleToConsole = () => runtime.getContextModules().forEach(module => {
 	const camelModuleName = kebabToCamel(module.manifest.name);
 	globalThis[camelModuleName] = {};
 	globalThis[camelModuleName].manifest = module.manifest;
-	globalThis[camelModuleName].test = async () => {
-		const results = await runtime.runModuleTests(module);
-		runtime.log(`[Dev] ${camelModuleName}.test → ${results.filter(r => r.passed).length}/${results.length} passed`);
-		console.table(results.reduce((acc, r) => {
-			acc[r.name] = { Result: r.passed ? '✅' : '❌', errror: r.error || '' };
-			return acc;
-		}, {}));
-		console.log(JSON.stringify(results, null, 2));
-		return results;
-	};
+	globalThis[camelModuleName].test = async () => runtime.showTests(await runtime.runModuleTests(module));
 });
 
 const addModuleActionsToConsole = () => {

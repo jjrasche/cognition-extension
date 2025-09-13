@@ -42,7 +42,13 @@ const setupRecognition = () => {
 	recognition.onresult = (e) => handleResult(e);
 };
 // === RECORDING HANDLERS ===
-const handleStart = async () => { isListening = true; audioStartTime = performance.now(); recordingChunks = []; await refreshUI(); };
+const handleStart = async () => {
+	isListening = true;
+	audioStartTime = performance.now();
+	recordingChunks = [];
+	await refreshUI();
+	await runtime.call('layout.addComponent', 'transcript-viewer');
+};
 const handleEnd = async () => { isListening = false; await refreshUI(); };
 const handleError = async (e) => { isListening = false; await refreshUI(); runtime.logError('[STT] Error:', e.error); };
 const handleResult = (event) => {
@@ -58,7 +64,7 @@ const handleResult = (event) => {
 		const existingIndex = recordingChunks.findIndex(c => result.isFinal ? (!c.isFinal && Math.abs(c.timestamp - currentTimeMs) < 1000) : !c.isFinal);
 		existingIndex >= 0 ? recordingChunks[existingIndex] = chunk : recordingChunks.push(chunk);
 	}
-	currentRecording && refreshTranscriptViewer();
+	(currentRecording || isListening) && refreshTranscriptViewer();
 };
 // === RECORDING CONTROL ===
 export const startListening = async () => { if (!recognition || isListening) return; try { await startAudioRecording(); recognition.start(); } catch (e) { runtime.logError('[STT] Start failed:', e); await stopAudioRecording(); } };
@@ -160,8 +166,8 @@ const refreshUI = () => runtime.call('layout.renderComponent', 'stt-indicator');
 const refreshTranscriptViewer = () => runtime.call('layout.renderComponent', 'transcript-viewer');
 const refreshRecordingManager = () => runtime.call('layout.renderComponent', 'recording-manager');
 export const buildIndicator = () => !isListening ? null : { "recording-indicator": { tag: "div", style: "display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.9); color: white; border-radius: 50%; width: 100%; height: 100%; font-size: 16px; animation: pulse 1.5s infinite;", text: "🎤", title: "Recording..." } };
-export const buildTranscriptViewer = () => !currentRecording ? { "no-recording": { tag: "div", style: "display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);", text: "Load recording to view transcript" } } : { "transcript-container": { tag: "div", style: "display: flex; flex-direction: column; height: 100%; background: var(--bg-secondary);", ...buildAudioControls(), ...buildTranscriptContent(), ...buildGoldStandardEditor() } };
-const buildAudioControls = () => ({
+export const buildTranscriptViewer = () => (currentRecording || isListening) ? { "no-recording": { tag: "div", style: "display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);", text: "Load recording to view transcript" } } : { "transcript-container": { tag: "div", style: "display: flex; flex-direction: column; height: 100%; background: var(--bg-secondary);", ...buildAudioControls(), ...buildTranscriptContent(), ...buildGoldStandardEditor() } };
+const buildAudioControls = () => isListening ? {} : ({
 	"audio-controls": {
 		tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary); background: var(--bg-tertiary);",
 		"playback-controls": {
@@ -178,8 +184,26 @@ const buildProgressBar = () => {
 	return { tag: "div", style: "width: 100%; height: 6px; background: var(--border-primary); border-radius: 3px; cursor: pointer;", events: { click: "web-speech-stt.handleProgressClick" }, "progress-fill": { tag: "div", style: `height: 100%; background: var(--accent-primary); border-radius: 3px; width: ${progress}%; transition: width 0.1s;` } };
 };
 const buildTranscriptContent = () => ({ "transcript-content": { tag: "div", style: "flex: 1; overflow-y: auto; padding: 15px; line-height: 1.6;", ...buildTranscriptChunks() } });
-const buildTranscriptChunks = () => Object.fromEntries(currentRecording.chunks.map((chunk, index) => [`chunk-${index}`, { tag: "span", style: `cursor: pointer; padding: 2px 4px; margin: 0 1px; border-radius: 3px; transition: background-color 0.2s; ${index === highlightedChunkIndex ? 'background: var(--accent-primary); color: var(--bg-primary);' : 'background: transparent;'}`, text: chunk.text + ' ', events: { click: "web-speech-stt.handleChunkClick" }, "data-chunk-index": index, title: `${formatTime(chunk.startTime)} - ${formatTime(chunk.endTime)} (${Math.round(chunk.confidence * 100)}%)` }]));
-const buildGoldStandardEditor = () => ({
+const buildTranscriptChunks = () => {
+	const chunks = isListening ? recordingChunks : currentRecording?.chunks || [];
+	return Object.fromEntries(
+		chunks.map((chunk, index) => [`chunk-${index}`, {
+			tag: "span",
+			style: `cursor: pointer; padding: 2px 4px; margin: 0 1px; border-radius: 3px; 
+				${isListening ?
+					(chunk.isFinal ? 'opacity: 1;' : 'opacity: 0.6; font-style: italic;') :
+					(index === highlightedChunkIndex ? 'background: var(--accent-primary);' : '')
+				}`,
+			text: chunk.text + ' ',
+			...(isListening ? {} : {
+				events: { click: "web-speech-stt.handleChunkClick" },
+				"data-chunk-index": index,
+				title: `${formatTime(chunk.startTime)} - ${formatTime(chunk.endTime)}`
+			})
+		}])
+	);
+};
+const buildGoldStandardEditor = () => isListening ? {} : ({
 	"gold-standard": {
 		tag: "div", style: "border-top: 1px solid var(--border-primary); padding: 15px; background: var(--bg-tertiary);",
 		"gold-label": { tag: "label", text: "Gold Standard (Manual Correction):", style: "display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-primary);" },

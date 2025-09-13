@@ -7,7 +7,7 @@ export const manifest = {
 	description: "Component layout system with z-layers, mode overlays, and window snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "updateComponent", "cycleMode", "showComponentPicker", "addComponentFromPicker", "togglePin", "snapToHalf"],
+	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponentFromPicker", "togglePin", "snapToHalf"],
 	commands: [
 		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
@@ -72,6 +72,7 @@ export const updateComponent = async (name, stateChanges) => {
 };
 
 const normalizeStateChanges = (changes) => {
+	if (!changes) return {}; // Add this guard
 	const normalized = { ...changes };
 	if ('x' in changes || 'y' in changes || 'width' in changes || 'height' in changes) {
 		const position = {
@@ -274,6 +275,7 @@ const handleGlobalKeys = async (e) => {
 const handleLayoutKeys = (e, mode, maximized, selected) => {
 	if (e.altKey && e.key === 'Enter') return preventDefaultReturnTrue(e, cycleMode);
 	if (e.altKey && isArrowKey(e)) return preventDefaultReturnTrue(e, snapToHalf);
+	if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !maximized) return preventDefaultReturnTrue(e, removeSelected);
 	if (e.key === 'Enter' && selected && !maximized) return preventDefaultReturnTrue(e, maximizeSelected);
 	if (e.key === 'Enter' && maximized) return preventDefaultReturnTrue(e, restoreMaximized);
 	if (e.key === 'Escape' && selected) return preventDefaultReturnTrue(e, clearSelections);
@@ -377,11 +379,11 @@ const initializeLayoutContainer = async () => {
 };
 
 const cleanupRemovedComponents = async () => {
-	const activeNames = new Set([...componentStates.keys()]);
 	const elementsToRemove = [];
 	layoutContainer.querySelectorAll('[data-component]').forEach(element => {
 		const name = element.dataset.component;
-		if (!activeNames.has(name)) {
+		const state = componentStates.get(name);
+		if (!state || !state.isRendered) {
 			elementsToRemove.push(element);
 		}
 	});
@@ -510,6 +512,26 @@ export const addComponent = async (name, position = {}) => {
 		height: position.height ?? config.defaultComponentHeight,
 		isRendered: true
 	});
+};
+
+export const removeComponent = async (name) => {
+	const state = getComponentState(name);
+	if (!state || name.startsWith('_')) return;
+	state.isRendered = false; // Direct assignment instead of updateComponent
+	if (state.isSelected) {
+		state.isSelected = false;
+		updateComponentZIndex(name);
+	}
+	await saveComponentStates();
+	await refreshUI('component-removed'); // This triggers cleanupRemovedComponents()
+	runtime.log(`[Layout] Removed component: ${name}`);
+};
+
+export const removeSelected = async () => {
+	const selected = getSelectedComponent();
+	if (selected && !selected.name.startsWith('_')) {
+		await removeComponent(selected.name);
+	}
 };
 
 const getAllActiveComponents = () => [...componentStates.entries()].map(([name, state]) => ({ name, ...state }));
@@ -752,6 +774,14 @@ export const test = async () => {
 			const state = getComponentState('test-move');
 			const actual = { x: state.x, y: state.y };
 			const expected = { x: 0, y: 0 };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("removeComponent sets isRendered false and clears selection", async () => {
+			componentStates.set('test-remove', { ...defaultState, isRendered: true, isSelected: true });
+			await removeComponent('test-remove');
+			const state = getComponentState('test-remove');
+			const actual = { isRendered: state.isRendered, isSelected: state.isSelected };
+			const expected = { isRendered: false, isSelected: false };
 			return { actual, assert: deepEqual, expected };
 		})
 	]);
