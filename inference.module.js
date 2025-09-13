@@ -1,3 +1,4 @@
+import { configProxy } from "./config.module.js";
 export const manifest = {
 	name: "inference",
 	context: ["service-worker"],
@@ -7,12 +8,12 @@ export const manifest = {
 	actions: ["prompt", "infer"],
 	commands: [{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" }],
 	config: {
-		provider: { type: 'select', value: '', label: 'AI Provider', description: 'Select your preferred AI provider', options: [{ value: '', text: 'Loading...' }] },
-		model: { type: 'select', value: '', label: 'Model', description: 'Select the AI model to use', options: [{ value: '', text: 'Loading...' }] }
+		provider: { type: 'select', value: '', label: 'AI Provider', description: 'Select your preferred AI provider' },
+		model: { type: 'select', value: '', label: 'Model', description: 'Select the AI model to use' },
 	}
 };
 
-let runtime, providers = [];
+let runtime, providers = [], config = configProxy(manifest);
 export const initialize = (rt) => {
 	runtime = rt;
 	registerProviders();
@@ -21,8 +22,13 @@ export const initialize = (rt) => {
 
 const registerProviders = () => providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function'));
 const setConfigOptions = () => { setProviderConfigOptions(); setModelConfigOptions(); };
-const setProviderConfigOptions = () => manifest.config.provider.options = [{ value: '', text: 'Select a provider...' }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
-const setModelConfigOptions = () => manifest.config.model["options"] = [{ value: '', text: 'Select a model...' }, ...(getSelectedProvider()?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
+const setProviderConfigOptions = () => {
+	console.log('manifest.config:', manifest.config);
+	console.log('manifest.config.provider:', manifest.config.provider);
+	console.log('typeof manifest.config.provider:', typeof manifest.config.provider);
+	config.provider.options = [{ value: '', text: 'Select a provider...' }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
+}
+const setModelConfigOptions = () => config.model.options = [{ value: '', text: 'Select a model...' }, ...(getSelectedProvider()?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
 export const infer = async (query) => await prompt({ query });
 export const prompt = async (params) => {
 	let { query, systemPrompt, webSearch, loadSource = false, provider, model } = params;

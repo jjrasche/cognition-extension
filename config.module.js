@@ -1,6 +1,6 @@
 export const manifest = {
 	name: "config",
-	context: ["extension-page"],
+	context: ["extension-page", "service-worker", "offscreen"],
 	version: "1.0.0",
 	description: "Auto-generates configuration UIs from module manifests with validation and persistence",
 	dependencies: ["chrome-sync"],
@@ -12,12 +12,16 @@ export const manifest = {
 let runtime, expandedCards = new Set();
 export const initialize = async (rt) => (runtime = rt, await initializeConfigs());
 
-const initializeConfigs = async () => await Promise.all(getModules().map(async module => {
-	const loadedConfig = await loadConfig(module)
-	validateConfig(module, loadedConfig)
-	applyConfig(module, loadedConfig);
-}));
-export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value }); // syntactic sugar for module config access
+const initializeConfigs = async () => {
+	addConfigSchemaActions();
+	listenForCrossContextConfigChange();
+	await Promise.all(getModules().map(async module => {
+		const loadedConfig = await loadConfig(module);
+		validateConfig(module, loadedConfig);
+		applyConfig(module, loadedConfig);
+	}));
+};
+export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value, set: (target, prop, value) => { target[prop].value = value; return true; } }); // syntactic sugar for module config access
 const updateAndSaveConfig = async (moduleName, updates) => {
 	const module = getModule(moduleName)
 	validateConfig(module, updates);
@@ -32,12 +36,23 @@ const validateConfig = (module, updates) => {
 const getModules = () => runtime.getModulesWithProperty('config');
 const getModule = (name) => getModules().find(m => m.manifest.name === name) || (() => { throw new Error(`Module ${name} not found`); })();
 const loadConfig = async (module) => await runtime.call('chrome-sync.get', `config.${module.manifest.name}`) || moduleDefaults(module);
-const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => module.manifest.config[field] && (module.manifest.config[field].value = value));
+// const applyConfig = (module, updates) => Object.entries(updates).forEach(([field, value]) => module.manifest.config[field] && (module.manifest.config[field].value = value));
+const applyConfig = (module, updates) => {
+	console.log('Applying config to:', module.manifest.name, updates);
+	Object.entries(updates).forEach(([field, value]) => {
+		if (module.manifest.config[field]) {
+			console.log(`Setting ${field} from`, module.manifest.config[field], 'to value:', value);
+			module.manifest.config[field].value = value; // This should only set .value, not replace the whole object
+		}
+	});
+};
 const saveConfig = async (module, updates) => await runtime.call('chrome-sync.set', { [`config.${module.manifest.name}`]: updates });
 const removeConfig = async (module) => await runtime.call('chrome-sync.remove', `config.${module.manifest.name}`);
-export const resetToDefaults = async (moduleName) => {
+export const resetToDefaults = async (eventData) => {
+	const moduleName = eventData.target.dataset.moduleName;
+	if (!moduleName) return;
 	const module = getModule(moduleName);
-	removeConfig(module);
+	await removeConfig(module);
 	applyConfig(module, moduleDefaults(module));
 	refreshUI();
 };
@@ -60,7 +75,7 @@ const validateField = (value, schema = {}) => {
 			if (schema.maxLength && value.length > schema.maxLength) return { valid: false, error: `Max length: ${schema.maxLength}` };
 			break;
 		case 'select':
-			const options = schema.options || [];
+			const options = schema.options || [{ value: '', text: 'Loading...' }];
 			const validValues = options.map(opt => typeof opt === 'string' ? opt : opt.value);
 			if (!validValues.includes(value)) return { valid: false, error: 'Invalid selection' };
 			break;
@@ -71,17 +86,19 @@ const validateField = (value, schema = {}) => {
 	return { valid: true };
 };
 // === UI GENERATION ===
-export const refreshUI = () => runtime.call('layout.renderComponent', 'atom-extractor', buildConfigTree());
-export const buildConfigTree = () => ({
+export const refreshUI = () => runtime.call('layout.renderComponent', 'module-config');
+const buildModuleCards = async () => Object.fromEntries(await Promise.all(getModules().map(async module => [`card-${module.manifest.name}`, await buildModuleCard(module)])));
+export const buildConfigTree = async () => ({
 	"config-page": {
 		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
 		"title": { tag: "h2", text: "Module Configuration", style: "margin-bottom: 20px;" },
-		"config-cards": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; max-width: 800px;", ...buildModuleCards() }
+		"config-cards": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; max-width: 800px;", ...(await buildModuleCards()) }
 	}
 });
-const buildModuleCards = () => Object.fromEntries(getModules().map(module => [`card-${module.manifest.name}`, buildModuleCard(module)]));
-const buildModuleCard = (module) => {
-	const name = module.manifest.name, isExpanded = expandedCards.has(name), schema = module.manifest.config;
+const buildModuleCard = async (module) => {
+	const name = module.manifest.name, isExpanded = expandedCards.has(name);
+	const isLocalModule = runtime.getContextModules().find(m => m.manifest.name === name);
+	const schema = isLocalModule ? module.manifest.config : await getSchemaCrossContext(name);
 	return {
 		tag: "div", class: "cognition-card", style: "border: 1px solid var(--border-primary);",
 		[`header-${name}`]: {
@@ -113,7 +130,7 @@ const buildFormField = (fieldName, schema) => ({
 const buildInputElement = (fieldName, schema) => {
 	const baseProps = { name: fieldName, class: getInputClass(schema.type), value: schema.value || schema.default || '', required: schema.required || false };
 	switch (schema.type) {
-		case 'select': return { tag: "select", ...baseProps, class: "cognition-select", options: (schema.options || []).map(opt => typeof opt === 'string' ? { value: opt, text: opt } : opt) };
+		case 'select': return { tag: "select", ...baseProps, class: "cognition-select", options: (schema.options || [{ value: '', text: 'Loading...' }]).map(opt => typeof opt === 'string' ? { value: opt, text: opt } : opt) };
 		case 'number': return { tag: "input", type: "number", ...baseProps, ...(schema.min !== undefined && { min: schema.min }), ...(schema.max !== undefined && { max: schema.max }) };
 		case 'password': return { tag: "input", type: "password", ...baseProps };
 		case 'checkbox': return { tag: "input", type: "checkbox", ...baseProps, checked: schema.value || schema.default || false, value: undefined };
@@ -125,7 +142,7 @@ const buildInputElement = (fieldName, schema) => {
 const getInputClass = (type) => type === 'select' ? "cognition-select" : "cognition-input";
 // === EVENT HANDLERS ===
 export const toggleCard = async (eventData) => {
-	const moduleName = eventData.target.closest('[data-module-name]')?.dataset.moduleName;
+	const moduleName = eventData.target.dataset.moduleName;
 	if (!moduleName) return;
 	expandedCards.has(moduleName) ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
 	refreshUI();
@@ -136,12 +153,33 @@ export const saveModuleConfig = async (eventData) => {
 	if (!moduleName) return;
 	try {
 		await updateAndSaveConfig(moduleName, fieldValues);
-		runtime.log(`[Config] ✅ Saved ${moduleName} configuration`);
+		chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED', moduleName, updates: fieldValues }).catch(() => { }); // Broadcast to all contexts
 		refreshUI();
-	} catch (error) {
-		runtime.logError(`[Config] Save failed:`, error);
-	}
+	} catch (error) { runtime.logError(`[Config] Save failed:`, error); }
 };
+// === Cross Context Messaging ===
+const listenForCrossContextConfigChange = () => chrome.runtime.onMessage.addListener((message) => {
+	if (message.type === 'CONFIG_UPDATED') {
+		const module = getModule(message.moduleName);
+		if (module) applyConfig(module, message.updates);
+	}
+});
+const addConfigSchemaActions = () => getModules().forEach(module => {
+	const actionName = `${module.manifest.name}.getConfigSchema`;
+	const moduleName = module.manifest.name; // Capture name, not reference
+	const func = () => {
+		const freshModule = getModule(moduleName); // Get fresh module by name
+		console.log(`getting schema for ${moduleName}`, freshModule.manifest.config);
+		return freshModule.manifest.config;
+	}
+	if (!runtime.actions.has(actionName)) {
+		runtime.actions.set(actionName, { func, context: runtime.runtimeName, moduleName });
+	}
+});
+const getSchemaCrossContext = async (moduleName) => {
+	try { return await runtime.call(`${moduleName}.getConfigSchema`); }
+	catch (error) { runtime.log(`[Config] Failed to get fresh schema for ${moduleName}, using local copy`); }
+}
 // === TESTING ===
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;

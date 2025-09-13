@@ -124,7 +124,9 @@ class Runtime {
 			try {
 				await module.initialize?.(this);
 				this.broadcastModuleReady(module.manifest.name);
+				this.log(`Module ${module.manifest.name} initialized in ${this.runtimeName}`);
 			} catch (error) {
+				this.logError(` Module ${module.manifest.name} failed to initialize in ${this.runtimeName}`, error);
 				this.broadcastModuleFailed(module.manifest.name);
 			}
 		}));
