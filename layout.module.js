@@ -266,7 +266,9 @@ const handleKeyboard = async (e) => {
 	componentStates.has('_component-picker') && e.key === 'Escape' ? (e.preventDefault(), componentStates.delete('_component-picker'), refreshUI('component-removed')) : null;
 };
 const handleGlobalKeys = async (e) => {
-	const action = globalKeyMap.get(e);
+	const keyCombo = buildKeyCombo(e);
+	if (!keyCombo) return false; // Ignore modifier-only events
+	const action = globalKeyMap.get(keyCombo);
 	return action ? (e.preventDefault(), await runtime.call(action), true) : false;
 }
 const handleLayoutKeys = (e, mode, maximized, selected) => {
@@ -282,7 +284,6 @@ const handleLayoutKeys = (e, mode, maximized, selected) => {
 	return false;
 };
 const preventDefaultReturnTrue = async (e, method) => (e.preventDefault(), method(e), true);
-const isArrowKey = (e) => ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
 const registerGlobalKeys = () => runtime.getModulesWithProperty('config')
 	.filter(m => Object.values(m.manifest.config || {}).some(cfg => cfg.type === 'globalKey'))
 	.forEach(module => Object.entries(module.manifest.config)
@@ -299,6 +300,20 @@ const handleComponentKeys = async (name, event) => {
 		return true;
 	}
 	return false;
+};
+const isArrowKey = (e) => ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
+const buildKeyCombo = (e) => {
+	if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
+	const parts = [];
+	if (e.ctrlKey) parts.push('Ctrl');
+	if (e.altKey) parts.push('Alt');
+	if (e.shiftKey) parts.push('Shift');
+	if (e.metaKey) parts.push('Meta');
+	// Add the main key (avoid modifier keys themselves)
+	if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+		parts.push(e.key === ' ' ? 'Space' : e.key);
+	}
+	return parts.join('+');
 };
 // === MOVEMENT METHODS ===
 const moveSelectedComponent = async (direction) => {
