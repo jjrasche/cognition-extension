@@ -139,8 +139,8 @@ const removeModeOverlay = () => {
 };
 
 // === SNAP TO HALF FUNCTIONALITY ===
-export const snapToHalf = async (direction) => {
-	const selected = getSelectedComponent();
+export const snapToHalf = async (key) => {
+	const selected = getSelectedComponent(), direction = key.key;
 	if (!selected) return;
 
 	const positions = {
@@ -155,8 +155,8 @@ export const snapToHalf = async (direction) => {
 };
 
 // === CONTRACT FUNCTIONALITY ===
-export const contractComponent = async (direction) => {
-	const selected = getSelectedComponent();
+export const contractComponent = async (key) => {
+	const selected = getSelectedComponent(), direction = key.key;
 	if (!selected) return;
 
 	const contractAmount = config.gridSize;
@@ -318,8 +318,8 @@ const buildKeyCombo = (e) => {
 	return parts.join('+');
 };
 // === MOVEMENT METHODS ===
-const moveSelectedComponent = async (direction) => {
-	const selected = getSelectedComponent();
+const moveSelectedComponent = async (key) => {
+	const selected = getSelectedComponent(), direction = key.key;
 	if (!selected) return;
 
 	const moveAmount = config.gridSize;
@@ -343,8 +343,8 @@ const moveSelectedComponent = async (direction) => {
 	await updateComponent(selected.name, normalizePosition(newPos));
 };
 
-const expandSelectedComponent = async (direction) => {
-	const selected = getSelectedComponent();
+const expandSelectedComponent = async (key) => {
+	const selected = getSelectedComponent(), direction = key.key;
 	if (!selected) return;
 
 	const expandAmount = config.gridSize;
@@ -702,7 +702,7 @@ export const test = async () => {
 			return { actual, assert: deepEqual, expected };
 		}),
 		await runUnitTest("maximize saves position and restores", async () => {
-			componentStates.set('test-maximize', { ...defaultState, x: 10, y: 20, width: 30, height: 40, isSelected: true });
+			componentStates.set('test-maximize', { ...defaultState, x: 10, y: 20, width: 30, height: 40, isSelected: true, isRendered: true, moduleName: 'test', getTree: 'testTree' });
 			await maximizeSelected();
 			const maxState = getComponentState('test-maximize');
 			const actualMax = { x: maxState.x, y: maxState.y, width: maxState.width, height: maxState.height, isMaximized: maxState.isMaximized };
@@ -740,7 +740,7 @@ export const test = async () => {
 		}),
 		await runUnitTest("snapToHalf positions correctly", async () => {
 			componentStates.set('test-snap', { ...defaultState, x: 25, y: 25, width: 50, height: 50, isSelected: true });
-			await snapToHalf('ArrowLeft');
+			await snapToHalf({ key: 'ArrowLeft' });
 			const state = getComponentState('test-snap');
 			const actual = { x: state.x, y: state.y, width: state.width, height: state.height };
 			const expected = { x: 0, y: 0, width: 50, height: 100 };
@@ -769,8 +769,8 @@ export const test = async () => {
 		}),
 		await runUnitTest("moveSelectedComponent respects boundaries", async () => {
 			componentStates.set('test-move', { ...defaultState, x: 0, y: 0, width: 20, height: 20, isSelected: true });
-			await moveSelectedComponent('ArrowLeft'); // should not move past 0
-			await moveSelectedComponent('ArrowUp'); // should not move past 0
+			await moveSelectedComponent({ key: 'ArrowLeft' }); // should not move past 0
+			await moveSelectedComponent({ key: 'ArrowUp' }); // should not move past 0
 			const state = getComponentState('test-move');
 			const actual = { x: state.x, y: state.y };
 			const expected = { x: 0, y: 0 };
@@ -783,7 +783,39 @@ export const test = async () => {
 			const actual = { isRendered: state.isRendered, isSelected: state.isSelected };
 			const expected = { isRendered: false, isSelected: false };
 			return { actual, assert: deepEqual, expected };
-		})
+		}),
+		await runUnitTest("snapToGrid works with different grid sizes", async () => {
+			const originalGridSize = config.gridSize;
+			manifest.config.gridSize.value = 5;
+			const withGrid5 = normalizePosition({ x: 7, y: 8, width: 32, height: 17 });
+			manifest.config.gridSize.value = 10;
+			const withGrid10 = normalizePosition({ x: 14, y: 16, width: 32, height: 17 });
+			manifest.config.gridSize.value = originalGridSize;
+			const actual = { grid5: withGrid5, grid10: withGrid10 };
+			const expected = { grid5: { x: 5, y: 10, width: 30, height: 15 }, grid10: { x: 10, y: 20, width: 30, height: 20 } };
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("expandSelectedComponent increases size correctly", async () => {
+			componentStates.set('test-expand', { ...defaultState, x: 20, y: 20, width: 30, height: 30, isSelected: true, isRendered: true, moduleName: 'test', getTree: 'testTree' });
+			await expandSelectedComponent({ key: 'ArrowRight' });
+			const state = getComponentState('test-expand');
+			const actual = { width: state.width, x: state.x }; // width should increase, x should stay same
+			const expected = { width: 35, x: 20 }; // assuming gridSize=5
+			return { actual, assert: deepEqual, expected };
+		}),
+		await runUnitTest("component picker adds component and self-removes", async () => {
+			componentStates.set('available-comp', { ...defaultState, moduleName: 'test', isRendered: false });
+			await showComponentPicker();
+			const hasPickerBefore = componentStates.has('_component-picker');
+			await addComponentFromPicker({ target: { dataset: { component: 'available-comp' } } });
+			const actual = {
+				hadPicker: hasPickerBefore,
+				noPicker: !componentStates.has('_component-picker'),
+				compAdded: getComponentState('available-comp').isRendered
+			};
+			return { actual, assert: deepEqual, expected: { hadPicker: true, noPicker: true, compAdded: true } };
+		}),
+
 	]);
 	await cleanup(originalStates, originalMode);
 	return results;
