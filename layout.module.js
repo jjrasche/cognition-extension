@@ -495,26 +495,43 @@ export const test = async () => {
 		return { actual, assert: deepEqual, expected };
 	}, cleanupTestComponents));
 	results.push(await runUnitTest("component picker adds component and self-removes", async () => {
-		componentStates.set('available-comp', { ...defaultState, moduleName: 'test', isRendered: false });
+		componentStates.set('test-available-comp', { ...defaultState, name: 'test-available-comp', moduleName: 'test', isRendered: false });
 		await showComponentPicker();
 		const hasPickerBefore = componentStates.has('_component-picker');
-		await addComponentFromPicker({ target: { dataset: { component: 'available-comp' } } });
+		await addComponentFromPicker({ target: { dataset: { component: 'test-available-comp' } } });
 		const actual = {
 			hadPicker: hasPickerBefore,
 			noPicker: !componentStates.has('_component-picker'),
-			compAdded: getComponentState('available-comp').isRendered
+			compAdded: getComponentState('test-available-comp').isRendered
 		};
 		return { actual, assert: deepEqual, expected: { hadPicker: true, noPicker: true, compAdded: true } };
+	}, cleanupTestComponents));
+	results.push(await runUnitTest("component picker full workflow: show, select, render, and escape", async () => {
+		componentStates.set('test-picker-component', { ...defaultState, name: 'test-picker-component', moduleName: 'test-module', isRendered: false });
+		await showComponentPicker();
+		const pickerInitiallyShown = componentStates.has('_component-picker') && getComponentState('_component-picker').isRendered;
+		await addComponentFromPicker({ target: { dataset: { component: 'test-picker-component' } } });
+		const componentRendered = getComponentState('test-picker-component')?.isRendered;
+		const pickerClosedAfterSelection = !componentStates.has('_component-picker');
+		await showComponentPicker();
+		const pickerShownAgain = componentStates.has('_component-picker');
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+		await new Promise(resolve => setTimeout(resolve, 0));
+		const pickerClosedAfterEscape = !componentStates.has('_component-picker');
+		const actual = { pickerInitiallyShown, componentRendered, pickerClosedAfterSelection, pickerShownAgain, pickerClosedAfterEscape };
+		const expected = { pickerInitiallyShown: true, componentRendered: true, pickerClosedAfterSelection: true, pickerShownAgain: true, pickerClosedAfterEscape: true };
+		return { actual, assert: deepEqual, expected };
 	}, cleanupTestComponents));
 	await cleanup(originalStates, originalMode, originalDefaultState);
 	return results;
 };
-const cleanupTestComponents = () => [...componentStates.keys()].filter(name => name.startsWith('test-')).forEach(name => componentStates.delete(name));
+const cleanupTestComponents = () => [...componentStates.keys()].filter(name => name.startsWith('test-') || name.startsWith('_') || name === '').forEach(name => componentStates.delete(name));
 const cleanup = async (originalStates, originalMode, originalDefaultState) => {
 	cleanupTestComponents();
 	componentStates.clear();
 	originalStates.forEach((state, name) => componentStates.set(name, { ...state }));
 	currentModeIndex = originalMode;
 	defaultState = originalDefaultState;
+	showModeOverlay();
 	await refreshUI('test-cleanup');
 };
