@@ -15,13 +15,13 @@ class Runtime {
 	}
 	initialize = async () => {
 		if (this.runtimeName === 'service-worker') {
-			await remove('runtime.logs'); // todo: keep historical logs and rotate
-			this.log('🚀 Runtime initialization started');
+			// await remove('runtime.logs'); // todo: keep historical logs and rotate
 		}
 		try {
-			this.log('[Runtime] Starting module initialization...');
 			await this.loadModulesForContext();
 			this.registerActions();
+			this.log('[Runtime] Starting module initialization...');
+			this.log('🚀 Runtime initialization started');
 			this.setupMessageListener();
 			await this.initializeModules();
 			// setTimeout(async () => await this.runTests(), this.runtimeName === 'service-worker' ? 0 : 4000); // gives time to open devtools render engine to load for things like console.table
@@ -131,7 +131,7 @@ class Runtime {
 		const type = `MODULE_${state.toUpperCase()}`;
 		this.moduleState.set(moduleName, state);
 		await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }), {
-			maxAttempts: 3, delay: 3000,
+			maxAttempts: this.MODULE_INIT_TIMEOUT / this.RETRY_INTERVAL, delay: this.RETRY_INTERVAL,
 			// onRetry: (error, attempt, max) => { this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) 
 		}).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
@@ -146,10 +146,17 @@ class Runtime {
 			.catch(() => this.logError(`[Runtime] Failed to send TEST_RESULTS message in ${this.runtimeName}`));
 	};
 
+	MODULE_INIT_TIMEOUT = 15000; // 15 seconds
+	RETRY_INTERVAL = 100; // 100ms between checks
+	CROSS_CONTEXT_TIMEOUT = 9000; // 9 seconds for messaging
+
+
 	call = async (actionName, ...args) => {
 		const [moduleName] = actionName.split('.');
 		if (this.moduleInContext(moduleName)) {
+			console.log(`[DEBUG] Calling ${actionName}, module state: ${this.getState(moduleName)}`);
 			await this.waitForModule(moduleName);
+			console.log(`[DEBUG] Module ${moduleName} ready, executing action`);
 			return this.executeAction(actionName, ...args);
 		}
 		return await retryAsync(async () => {
@@ -163,28 +170,37 @@ class Runtime {
 				);
 			});
 		}, {
-			maxAttempts: 50, delay: 100,
+			maxAttempts: this.MODULE_INIT_TIMEOUT / this.RETRY_INTERVAL, delay: this.RETRY_INTERVAL,
 			// onRetry: (error, attempt) => this.log(`[Runtime] Retry ${attempt} for ${actionName}: ${error.message}`),
 			shouldRetry: (error) => error.message.includes('port closed') || error.message.includes('Receiving end does not exist')
 		});
 	}
 
-	getState = (moduleName) => this.moduleState.get(moduleName);
-	isReady = (moduleName) => this.getState(moduleName) === 'ready';
-	throwIfFailed = (moduleName) => this.getState(moduleName) === 'failed' && (() => { throw new Error(`Module ${moduleName} failed to initialize`); })();
-	throwIfTimeout = (moduleName, start, timeout) => Date.now() - start > timeout && (() => { throw new Error(`Module ${moduleName} not ready after ${timeout}ms`); })();
-	waitForModule = async (moduleName, timeout = 5000) => {
+	waitForModule = async (moduleName, timeout = this.MODULE_INIT_TIMEOUT) => {
+		console.log(`[DEBUG] Waiting for ${moduleName}, current state: ${this.getState(moduleName)}`);
 		this.throwIfFailed(moduleName);
 		if (!this.isReady(moduleName)) {
 			const start = Date.now();
 			while (this.getState(moduleName) !== 'ready') {
+				console.log(`[DEBUG] ${moduleName} still not ready, state: ${this.getState(moduleName)}, elapsed: ${Date.now() - start}ms`);
 				this.throwIfFailed(moduleName);
 				this.throwIfTimeout(moduleName, start, timeout);
-				await this.wait(100);
+				await this.wait(this.RETRY_INTERVAL);
 			}
 		}
+		console.log(`[DEBUG] ${moduleName} is now ready!`);
 	}
 
+	getState = (moduleName) => this.moduleState.get(moduleName);
+	isReady = (moduleName) => this.getState(moduleName) === 'ready';
+	throwIfFailed = (moduleName) => this.getState(moduleName) === 'failed' && (() => { throw new Error(`Module ${moduleName} failed to initialize`); })();
+	throwIfTimeout = (moduleName, start, timeout) => {
+		if (Date.now() - start > timeout) {
+			const error = new Error(`Module ${moduleName} not ready after ${timeout}ms`);
+			console.error(`[TIMEOUT ERROR] ${error.message}`);
+			throw error;
+		}
+	};
 	createFunctionParamsDebugObject = (func, args) => {
 		const match = func.toString().match(/\(([^)]*)\)/);
 		const paramNames = match ? match[1].split(',').map(p => p.trim().split('=')[0].trim()).filter(Boolean) : [];
@@ -238,15 +254,46 @@ class Runtime {
 	// todo: better handle cross context 
 	logError = (message, data) => this.log(message, data, 'error');
 	log = (message, data, severity = 'log') => {
-		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
-		if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // anyoning seeing service-worker logs in extension page
+		console.log(`[DEBUG LOG] Context: ${this.runtimeName}, Message: "${message}"`);
+
+		// Always show in console
 		this.printLog(console[severity], message, data);
-		this.persistLog(message, data).catch(() => { });
+
+		// Only prevent persistence of storage calls to avoid infinite loops
+		const isStorageCall = message.includes('chrome-local.') || message.includes('chrome-sync.');
+		if (isStorageCall) {
+			console.log(`[DEBUG LOG] Skipping persist - storage call detected`);
+			return;
+		}
+
+		if (message.includes("service-worker") && this.runtimeName !== "service-worker") {
+			console.log(`[DEBUG LOG] Skipping persist - cross-context service-worker log`);
+			return;
+		}
+
+		console.log(`[DEBUG LOG] Attempting to persist log...`);
+		this.persistLog(message, data).catch(err => console.warn('Log persist failed:', err));
 	}
 	printLog = async (func, message, data) => {
 		func(`[${this.runtimeName}] ${message}`, data || '');
 	}
-	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
+	persistLog = async (message, data) => {
+		// Only prevent persistence of direct storage action logs to avoid infinite loops
+		const isStorageActionLog = message.includes('[Runtime] Action executed: chrome-local.') ||
+			message.includes('[Runtime] Action executed: chrome-sync.');
+		if (isStorageActionLog) return;
+
+		if (message.includes("service-worker") && this.runtimeName !== "service-worker") return;
+
+		try {
+			await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data));
+		} catch (error) {
+			// Only log timeout errors for debugging, not all persist failures
+			if (error.message.includes('not ready after') || error.message.includes('timeout')) {
+				console.warn(`[PERSIST TIMEOUT] "${message}" - ${error.message}`);
+			}
+		}
+	}
 	createLog = (message, data) => ({ time: Date.now(), context: this.runtimeName, message, data: data ? JSON.stringify(data) : null });
 	// testing
 	runTests = async () => {
