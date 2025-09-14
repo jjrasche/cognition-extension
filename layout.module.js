@@ -222,10 +222,10 @@ const handleGlobalKeys = async (e) => {
 const handleLayoutKeys = (e, mode, maximized, selected) => {
 	if (e.altKey && e.key === 'Enter') return preventDefaultReturnTrue(e, cycleMode);
 	if (e.altKey && isArrowKey(e)) return preventDefaultReturnTrue(e, snapToHalf);
-	if (e.key === 'Tab') return preventDefaultReturnTrue(e, cycleSelection);
+	if (e.key === 'Tab' && !maximized) return preventDefaultReturnTrue(e, cycleSelection);
 	if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !maximized) return preventDefaultReturnTrue(e, removeSelected);
 	if (e.key === 'Enter' && selected && !maximized) return preventDefaultReturnTrue(e, maximizeSelected);
-	if (e.key === 'Enter' && maximized) return preventDefaultReturnTrue(e, restoreMaximized);
+	if (e.key === 'Escape' && maximized) return preventDefaultReturnTrue(e, restoreMaximized);
 	if (e.key === 'Escape' && selected) return preventDefaultReturnTrue(e, clearSelections);
 	if (mode === 'move' && isArrowKey(e)) return preventDefaultReturnTrue(e, moveSelectedComponent);
 	if (mode === 'expand' && isArrowKey(e)) return preventDefaultReturnTrue(e, expandSelectedComponent);
