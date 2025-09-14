@@ -1,3 +1,5 @@
+import { retryAsync } from "./helpers.js";
+
 export const configProxy = (manifest) => new Proxy(manifest.config, { get: (target, prop) => target[prop]?.value });
 export const manifest = {
 	name: "config",
@@ -5,7 +7,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Auto-generates configuration UIs from module manifests with validation and persistence",
 	dependencies: ["chrome-sync"],
-	actions: ["showConfig", "toggleCard", "resetToDefaults", "handleFieldChange"],
+	actions: ["showConfig", "toggleCard", "resetToDefaults", "handleFieldChange", "testInferenceConfig"],
 	uiComponents: [{ name: "module-config", getTree: "buildConfigTree" }]
 };
 
@@ -20,7 +22,14 @@ export const initialize = async (rt) => {
 		validateConfig(module.manifest.config, config);
 		applyConfigLocal(module, config);
 	}));
+
+	// if (runtime.runtimeName === "extension-page") await retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
+	if (runtime.runtimeName === "extension-page") {
+		await debugConfigElements();
+		await retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
+	}
 };
+
 
 // Core operations - UI discovery
 const getModules = () => runtime.getModulesWithProperty('config');
@@ -65,9 +74,12 @@ const saveConfig = async (moduleName, updates) => {
 	await runtime.call('chrome-sync.set', { [`config.${moduleName}`]: { ...currentConfig, ...updates } });
 };
 const applyConfigLocal = async (module, updates) => {
+	runtime.log(`[Config Debug] applyConfigLocal - module: ${module.manifest.name}, updates:`, updates);
 	for (const [field, value] of Object.entries(updates)) {
 		if (module.manifest.config[field]) {
+			const oldValue = module.manifest.config[field].value;
 			module.manifest.config[field].value = value;
+			runtime.log(`[Config Debug] Updated ${field}: ${oldValue} -> ${value}`);
 			const onChange = module.manifest.config[field].onChange;
 			onChange && await runtime.call(`${module.manifest.name}.${onChange}`).catch(error => runtime.logError(`[Config] onChange failed for ${field}:`, error));
 		}
@@ -75,9 +87,12 @@ const applyConfigLocal = async (module, updates) => {
 };
 const triggerOnChange = async (moduleName, fieldName, schema) => {
 	const onChange = schema[fieldName]?.onChange;
+	runtime.log(`[Config Debug] triggerOnChange - module: ${moduleName}, field: ${fieldName}, onChange: ${onChange}`);
 	if (onChange) {
 		try {
-			await runtime.call(`${moduleName}.${onChange}`);
+			runtime.log(`[Config Debug] Calling ${moduleName}.${onChange}`);
+			const result = await runtime.call(`${moduleName}.${onChange}`);
+			runtime.log(`[Config Debug] onChange result:`, result);
 		} catch (error) {
 			runtime.logError(`[Config] Cross-context onChange failed for ${moduleName}.${fieldName}:`, error);
 		}
@@ -86,6 +101,7 @@ const triggerOnChange = async (moduleName, fieldName, schema) => {
 // Event handlers
 export const handleFieldChange = async (eventData) => {
 	const { target: { name: fieldName, value }, formData } = eventData, moduleName = formData?.moduleName;
+	runtime.log(`[Config Debug] handleFieldChange - module: ${moduleName}, field: ${fieldName}, value: ${value}`);
 	if (!moduleName || !fieldName) return;
 	try {
 		// Get schema (works for local and cross-context)
@@ -238,4 +254,89 @@ export const test = async () => {
 			return { actual: mockSchema.apiKey.value, assert: strictEqual, expected: 'loaded-key' };
 		})
 	];
+};
+
+export const testInferenceConfig = async () => {
+	runtime.log(`[Dev Test] Starting inference config DOM test`);
+
+	// Helper to wait for element
+	const waitForElement = (selector, timeout = 5000) => {
+		return new Promise((resolve, reject) => {
+			const start = Date.now();
+			const check = () => {
+				const el = document.querySelector(selector);
+				if (el) resolve(el);
+				else if (Date.now() - start > timeout) reject(new Error(`Element not found: ${selector}`));
+				else setTimeout(check, 100);
+			};
+			check();
+		});
+	};
+
+	try {
+		// Step 1: Find and click the inference card header to expand it
+		runtime.log(`[Dev Test] Looking for inference config card...`);
+		const cardHeader = await waitForElement('[data-module-name="inference"]');
+		runtime.log(`[Dev Test] Found inference card, clicking to expand...`);
+		cardHeader.click();
+
+		await runtime.wait(200);
+
+		// Step 2: Find and click the provider dropdown
+		runtime.log(`[Dev Test] Looking for provider dropdown...`);
+		const providerSelect = await waitForElement('select[name="provider"]');
+		runtime.log(`[Dev Test] Found provider dropdown, setting value...`);
+
+		// Set provider value and trigger change event
+		providerSelect.value = 'groq-inference';
+		providerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+		await runtime.wait(500); // Wait for onChange to complete
+
+		// Step 3: Check if model dropdown got populated
+		runtime.log(`[Dev Test] Checking model dropdown...`);
+		const modelSelect = await waitForElement('select[name="model"]');
+		const modelOptions = Array.from(modelSelect.options).map(opt => ({ value: opt.value, text: opt.text }));
+		runtime.log(`[Dev Test] Model options found:`, modelOptions);
+
+		// Get filtered logs
+		const logs = await runtime.call('chrome-local.get', 'runtime.logs') || [];
+		const filteredLogs = logs.filter(log =>
+			log.message.includes('[Config Debug]') ||
+			log.message.includes('[Inference Debug]') ||
+			log.message.includes('handleFieldChange') ||
+			log.message.includes('setModelConfigOptions') ||
+			log.message.includes('[Dev Test]')
+		);
+
+		// Copy to clipboard
+		await navigator.clipboard.writeText(JSON.stringify(filteredLogs, null, 4));
+		runtime.log(`[Dev Test] Test complete! ${filteredLogs.length} logs copied to clipboard`);
+
+		return { success: true, modelOptions, logs: filteredLogs };
+
+	} catch (error) {
+		runtime.logError(`[Dev Test] Failed:`, error);
+		return { success: false, error: error.message };
+	}
+};
+
+export const debugConfigElements = async () => {
+	runtime.log(`[Dev Debug] Looking for config elements...`);
+
+	// Check what module cards exist
+	const moduleCards = document.querySelectorAll('[data-module-name]');
+	runtime.log(`[Dev Debug] Found ${moduleCards.length} module cards:`,
+		Array.from(moduleCards).map(el => el.dataset.moduleName));
+
+	// Check for inference specifically
+	const inferenceCard = document.querySelector('[data-module-name="inference"]');
+	runtime.log(`[Dev Debug] Inference card found:`, !!inferenceCard);
+
+	// Check for any select elements
+	const selects = document.querySelectorAll('select');
+	runtime.log(`[Dev Debug] Found ${selects.length} select elements:`,
+		Array.from(selects).map(s => s.name));
+
+	return { moduleCards: moduleCards.length, hasInference: !!inferenceCard, selects: selects.length };
 };
