@@ -139,13 +139,35 @@ export const handleFieldChange = async (eventData) => {
 		runtime.logError(`[Config] Field change failed:`, error);
 	}
 };
+// In config.module.js, replace the toggleCard function (around line 120):
 export const toggleCard = async (eventData) => {
 	const moduleName = eventData.target.dataset.moduleName;
-	runtime.log('[Config Debug] toggleCard called:', { moduleName, hasModuleName: !!moduleName });
 	if (!moduleName) return;
+
+	// Capture scroll BEFORE any DOM changes
+	const scrollableElement = document.querySelector('[data-component="module-config"] .component-content');
+	const savedScrollTop = scrollableElement ? scrollableElement.scrollTop : 0;
+
+	runtime.log('[Config Debug] toggleCard - captured scroll:', { moduleName, savedScrollTop });
+
 	expandedCards.has(moduleName) ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
-	runtime.log('[Config Debug] toggleCard about to call refreshUI');
-	refreshUI();
+
+	// Re-render with preserved scroll
+	await runtime.call('layout.renderComponent', 'module-config');
+
+	// Restore scroll immediately after render
+	if (savedScrollTop > 0 && scrollableElement) {
+		setTimeout(() => {
+			const newScrollableElement = document.querySelector('[data-component="module-config"] .component-content');
+			if (newScrollableElement) {
+				newScrollableElement.scrollTop = savedScrollTop;
+				runtime.log('[Config Debug] scroll restored:', {
+					target: savedScrollTop,
+					actual: newScrollableElement.scrollTop
+				});
+			}
+		}, 0);
+	}
 };
 export const resetToDefaults = async (eventData) => {
 	const moduleName = eventData.target.dataset.moduleName;
@@ -181,6 +203,7 @@ const listenForCrossContextConfigChange = () => chrome.runtime.onMessage.addList
 	}
 });
 // UI generation
+// In config.module.js, replace the refreshUI function (around line 154):
 const refreshUI = async () => {
 	// Debug all potential scrolling elements
 	const candidates = [
@@ -196,6 +219,7 @@ const refreshUI = async () => {
 		if (el && el.scrollTop > 0) {
 			scrollElement = selector;
 			scrollTop = el.scrollTop;
+			runtime.log('[Config Debug] Found scrolling element:', { selector, scrollTop: el.scrollTop });
 		}
 	});
 
@@ -212,13 +236,27 @@ const refreshUI = async () => {
 
 	// Restore if we found a scrolling element
 	if (scrollElement && scrollTop > 0) {
-		setTimeout(() => {
-			const newEl = document.querySelector(scrollElement);
-			if (newEl) {
-				newEl.scrollTop = scrollTop;
-				runtime.log('[Config Debug] Restored scroll:', { selector: scrollElement, scrollTop: newEl.scrollTop });
-			}
-		}, 100);
+		// Try multiple times with increasing delays
+		[50, 100, 200].forEach((delay, index) => {
+			setTimeout(() => {
+				const newEl = document.querySelector(scrollElement);
+				if (newEl) {
+					const beforeScrollTop = newEl.scrollTop;
+					newEl.scrollTop = scrollTop;
+					runtime.log(`[Config Debug] Restore attempt ${index + 1} (${delay}ms):`, {
+						selector: scrollElement,
+						targetScroll: scrollTop,
+						beforeScroll: beforeScrollTop,
+						afterScroll: newEl.scrollTop,
+						success: newEl.scrollTop === scrollTop
+					});
+				} else {
+					runtime.log(`[Config Debug] Restore attempt ${index + 1} failed - element not found:`, scrollElement);
+				}
+			}, delay);
+		});
+	} else {
+		runtime.log('[Config Debug] No scroll to restore:', { scrollElement, scrollTop });
 	}
 };
 const getSchemaCrossContext = async (moduleName) => {
