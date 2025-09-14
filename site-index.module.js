@@ -82,7 +82,6 @@ export const indexWebsite = async (params) => {
 
 	runtime.log(`[Site-Index] ✅ Crawl complete!`);
 	runtime.log(`[Site-Index] 📊 Stats:`, result.stats);
-	console.log(`[Site-Index] Full result:`, result);
 
 	return result;
 };

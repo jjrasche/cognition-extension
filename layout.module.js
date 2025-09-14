@@ -191,12 +191,25 @@ export const togglePin = async (componentName) => {
 // === KEYBOARD HANDLER ===
 const setupKeyboardHandlers = () => { document.addEventListener('keydown', handleKeyboard); registerGlobalKeys(); };
 const handleKeyboard = async (e) => {
+	if (e.key === 'Escape') {
+		runtime.log('[Layout Debug] Escape pressed:', {
+			activeElement: document.activeElement?.tagName,
+			hasComponentPicker: componentStates.has('_component-picker'),
+			willEarlyReturn: document.activeElement?.tagName && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)
+		});
+	}
 	if (document.activeElement?.tagName && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 	if (await handleGlobalKeys(e)) return;
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent(), mode = modes[currentModeIndex].name;
 	if (handleLayoutKeys(e, mode, maximized, selected)) return;
 	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
-	componentStates.has('_component-picker') && e.key === 'Escape' ? (e.preventDefault(), componentStates.delete('_component-picker'), refreshUI('component-removed')) : null;
+	// componentStates.has('_component-picker') && e.key === 'Escape' ? (e.preventDefault(), componentStates.delete('_component-picker'), refreshUI('component-removed')) : null;
+	if (componentStates.has('_component-picker') && e.key === 'Escape') {
+		runtime.log('[Layout Debug] Component picker deletion:', { reason: 'escape pressed' });
+		e.preventDefault();
+		componentStates.delete('_component-picker');
+		refreshUI('component-removed');
+	}
 };
 const handleGlobalKeys = async (e) => {
 	const keyCombo = buildKeyCombo(e);
@@ -377,8 +390,16 @@ export const showComponentPicker = async () => {
 	await refreshUI('component-added');
 };
 const buildComponentPickerTree = () => ({ tag: "div", style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); color: white; padding: 20px;", "picker-title": { tag: "h2", text: "Add Component", style: "margin-bottom: 30px;" }, "picker-grid": { tag: "div", style: "display: grid; grid-template-columns: repeat(3, 200px); gap: 15px;", ...Object.fromEntries(getAllActiveComponents().filter(comp => !comp.isRendered && comp.moduleName).map(comp => [`add-${comp.name}`, { tag: "button", text: comp.name, class: "cognition-button-primary", style: "padding: 20px; font-size: 16px;", events: { click: "layout.addComponentFromPicker" }, "data-component": comp.name }])) }, "picker-hint": { tag: "div", text: "Press Escape to cancel", style: "margin-top: 20px; color: #888; font-size: 14px;" } });
-export const addComponentFromPicker = async (eventData) => { const componentName = eventData.target.dataset.component; componentStates.delete('_component-picker'); await addComponent(componentName); };
-// === TESTING ===
+export const addComponentFromPicker = async (eventData) => {
+	runtime.log('[Layout Debug] Component picker deletion:', {
+		reason: 'component selected',
+		component: eventData.target.dataset.component,
+		hasPickerBefore: componentStates.has('_component-picker')
+	});
+	const componentName = eventData.target.dataset.component;
+	componentStates.delete('_component-picker');
+	await addComponent(componentName);
+};// === TESTING ===
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
 	const originalStates = new Map([...componentStates]), originalMode = currentModeIndex, originalDefaultState = defaultState;

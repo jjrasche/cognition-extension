@@ -35,7 +35,7 @@ export const editIdea = async (eventData) => {
 export const saveCollection = async () => {
 	if (atomicIdeas.length === 0) return;
 	const collection = { sourceId: currentSource?.sourceId, extractedAt: new Date().toISOString(), atomicIdeas: atomicIdeas };
-	console.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
+	runtime.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
 };
 // UI
 const refreshUI = () => runtime.call('layout.renderComponent', 'main', buildTree());

@@ -41,7 +41,6 @@ export const makeRequest = async (model, messages, webSearch) => {
 };
 export const getContent = async (response) => {
 	const data = JSON.parse(await response.json());
-	console.log("[claude]", data);
 	// With tool use, there can be multiple text blocks - concatenate ALL of them
 	const textBlocks = data.content
 		.filter(block => block.type === 'text')

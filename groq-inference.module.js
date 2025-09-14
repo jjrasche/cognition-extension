@@ -18,7 +18,6 @@ export const manifest = {
 let runtime, apiKey;
 export const initialize = async (rt) => {
 	runtime = rt;
-	console.log(rt);
 	apiKey = await runtime.call("api-keys.getKey", manifest.apiKeys[0]);
 	if (!apiKey) throw new Error('GROQ API key not configured');
 };

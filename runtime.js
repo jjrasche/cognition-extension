@@ -14,9 +14,9 @@ class Runtime {
 		this.allContextTestResults = new Map();
 	}
 	initialize = async () => {
-		await remove('runtime.logs').catch(() => { }); // todo: keep historical logs and rotate
 		if (this.runtimeName === 'service-worker') {
-			this.log('🚀 Runtime initialization started', { appStart: new Date().getTime() });
+			await remove('runtime.logs'); // todo: keep historical logs and rotate
+			this.log('🚀 Runtime initialization started');
 		}
 		try {
 			this.log('[Runtime] Starting module initialization...');
@@ -120,9 +120,9 @@ class Runtime {
 			try {
 				await module.initialize?.(this);
 				this.broadcastModuleReady(module.manifest.name);
-				this.log(`Module ${module.manifest.name} initialized in ${this.runtimeName}`);
+				this.log(`[${this.runtimeName}] Module ${module.manifest.name} initialized`);
 			} catch (error) {
-				this.logError(` Module ${module.manifest.name} failed to initialize in ${this.runtimeName}`, error);
+				this.logError(`[${this.runtimeName}] Module ${module.manifest.name} failed to initialize`, error);
 				this.broadcastModuleFailed(module.manifest.name);
 			}
 		}));
@@ -239,11 +239,11 @@ class Runtime {
 	logError = (message, data) => this.log(message, data, 'error');
 	log = (message, data, severity = 'log') => {
 		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
+		if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // anyoning seeing service-worker logs in extension page
 		this.printLog(console[severity], message, data);
 		this.persistLog(message, data).catch(() => { });
 	}
 	printLog = async (func, message, data) => {
-		if (this.runtimeName == "extension-page" && message.includes("service-worker")) return; // anyoning seeing service-worker logs in extension page
 		func(`[${this.runtimeName}] ${message}`, data || '');
 	}
 	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
@@ -278,8 +278,8 @@ class Runtime {
 		const totalTests = Object.values(moduleStats).reduce((sum, stats) => sum + stats.total, 0);
 		const totalPassed = Object.values(moduleStats).reduce((sum, stats) => sum + stats.passed, 0);
 
-		console.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed / totalTests * 100)}%)`);
-		console.log('\n=== MODULE TEST RESULTS ===');
+		this.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed / totalTests * 100)}%)`);
+		this.log('\n=== MODULE TEST RESULTS ===');
 		console.table(Object.entries(moduleStats).map(([module, stats]) => ({
 			Module: module,
 			'Total Tests': stats.total,
@@ -291,8 +291,7 @@ class Runtime {
 	showTestFailures = (results) => {
 		const failedTests = results.filter(test => !test.passed);
 		if (failedTests.length > 0) {
-			console.log('\n=== FAILED TEST DETAILS ===');
-			// Change from Object.fromEntries to just map to array
+			this.log('\n=== FAILED TEST DETAILS ===');
 			console.table(failedTests.map((test, i) => ({
 				'Module': test.module,
 				'Test #': i + 1,
@@ -301,7 +300,7 @@ class Runtime {
 				'Assert': test?.assert?.name ?? 'N/A',
 				'Actual': truncateOrNA(test.actual)
 			})));
-			console.log(JSON.stringify(failedTests, null, 2), failedTests);
+			this.log(failedTests);
 		}
 	}
 }

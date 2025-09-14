@@ -11,11 +11,7 @@ let runtime, DBs = new Map();
 export const initialize = async (rt) => (runtime = rt, await registerModules());
 
 // Database management
-const registerModules = async () => await Promise.all(runtime.getModulesWithProperty('indexeddb')
-	.map(async m => {
-		await createDB(m.manifest.indexeddb);
-		runtime.log(`✅ ${m.manifest.name} database created successfully`);
-	}));
+const registerModules = async () => await Promise.all(runtime.getModulesWithProperty('indexeddb').map(async m => await createDB(m.manifest.indexeddb)));
 export const createDB = async ({ name, version, storeConfigs }) => DBs.set(name, await new Promise((resolve, reject) => {
 	const request = indexedDB.open(name, version);
 	request.onerror = () => reject(request.error);

@@ -9,7 +9,7 @@ export const manifest = {
 	actions: ["testEmbeddingSpeed", "quickLogs", "last20Logs"],
 	config: {
 		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Filter Logs from Clipboard', action: "quickLogs" },
-		last20LogsKey: { type: 'globalKey', value: 'Ctrl+Shift+J', label: 'Filter Last 20 Logs from Clipboard', action: "last20Logs" }
+		last20LogsKey: { type: 'globalKey', value: 'Ctrl+Shift+K', label: 'Filter Last 20 Logs from Clipboard', action: "last20Logs" }
 	}
 };
 
@@ -17,7 +17,6 @@ let runtime;
 export async function initialize(rt) {
 	runtime = rt;
 	createActionShortcuts();
-	runtime.log('[Dev] Development helpers ready');
 }
 
 const isDevMode = () => runtime.runtimeName == "offscreen" || !chrome.runtime.getManifest().update_url;
