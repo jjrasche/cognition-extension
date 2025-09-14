@@ -6,8 +6,11 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Development utilities and shortcuts for debugging",
 	permissions: ["storage"],
-	actions: ["testEmbeddingSpeed", "updateSuperintendentData", "testModules", "testSegmenterCompleteness"],
-	// dependencies: ["file"]//, "inference", "transformer", "embedding"]
+	actions: ["testEmbeddingSpeed", "updateSuperintendentData", "testModules", "testSegmenterCompleteness", "quickLogs", "handleLogsCommand"],
+	config: {
+		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Quick Logs to Clipboard', action: "quickLogs" },
+		logsCommandKey: { type: 'globalKey', value: 'Ctrl+Shift+G', label: 'Query Logs Command', action: "handleLogsCommand", description: 'Type "logs [filter]" in any input to copy recent logs to clipboard' }
+	}
 };
 
 let runtime;
@@ -115,3 +118,55 @@ export const testEmbeddingSpeed = async (text, runs = 10) => {
 	console.table(sorted);
 	return sorted;
 }
+
+export const queryLogs = async (filters) => {
+	const logs = await runtime.call('chrome-local.get', 'runtime.logs') || [];
+	let filtered = logs;
+
+	// Handle string filter as shorthand for contains
+	if (typeof filters === 'string') filters = { contains: filters };
+
+	if (filters.contains) filtered = filtered.filter(log => log.message.includes(filters.contains));
+	if (filters.context) filtered = filtered.filter(log => log.context === filters.context);
+	if (filters.lastN) filtered = filtered.slice(-filters.lastN);
+
+	return filtered.map(log => {
+		const dataStr = log.data ? ` | ${log.data}` : '';
+		return `${log.context}: ${log.message}${dataStr}`;
+	});
+};
+const matchesFilters = (log, filters) => {
+	if (filters.contains && !log.message.includes(filters.contains)) return false;
+	if (filters.context && log.context !== filters.context) return false;
+	if (filters.since && log.time < filters.since) return false;
+	if (filters.level && !log.message.includes(`[${filters.level}]`)) return false;
+	return true;
+};
+
+export const quickLogs = async () => {
+	const logs = await queryLogs({ lastN: 20 });
+	try {
+		await navigator.clipboard.writeText(logs.join('\n'));
+		runtime.log('[Dev] Last 20 logs copied to clipboard');
+	} catch (error) {
+		runtime.logError('[Dev] Clipboard copy failed:', error);
+		// Maybe fallback to console.log the logs?
+	}
+};
+
+export const handleLogsCommand = async (input) => {
+	const parts = input.split(' ').slice(1); // Remove 'logs'
+	const filter = parts.join(' ') || {};
+	const logs = await queryLogs(filter);
+
+	// Copy to clipboard if available
+	if (typeof navigator !== 'undefined' && navigator.clipboard) {
+		const logText = logs.join('\n');
+		await navigator.clipboard.writeText(logText);
+		runtime.log('[Dev] Logs copied to clipboard:', { count: logs.length, filter });
+		return { message: `${logs.length} logs copied to clipboard`, logs };
+	} else {
+		runtime.log('[Dev] Logs query result:', { count: logs.length, filter });
+		return logs;
+	}
+};

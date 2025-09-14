@@ -4,7 +4,7 @@ export const manifest = {
 	context: ["service-worker"],
 	version: "1.0.0",
 	description: "Manages LLM inference across multiple providers",
-	dependencies: ["chrome-sync", "graph-db"],
+	dependencies: ["chrome-sync", "graph-db", "config"],
 	actions: ["prompt", "infer"],
 	commands: [{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" }],
 	config: {
@@ -23,18 +23,36 @@ export const initialize = (rt) => {
 const registerProviders = () => providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function'));
 const setConfigOptions = () => { setProviderConfigOptions(); setModelConfigOptions(); };
 const setProviderConfigOptions = () => manifest.config.provider.options = [{ value: '', text: 'Select a provider...' }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
-export const setModelConfigOptions = () => {
-	runtime.log(`[Inference Debug] setModelConfigOptions called`);
-	runtime.log(`[Inference Debug] Current config.provider:`, config.provider);
-	const provider = getSelectedProvider();
-	runtime.log(`[Inference Debug] Selected provider:`, provider?.manifest?.name);
+export const setModelConfigOptions = async () => {
+	try {
+		console.log('[INFERENCE DEBUG] setModelConfigOptions START');
+		runtime.log('[Inference Debug] setModelConfigOptions called');
+		runtime.log('[Inference Debug] Current config values', { provider: config.provider, model: config.model });
 
-	manifest.config.model["options"] = [{ value: '', text: 'Select a model...' },
-	...(provider?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
-	manifest.config.model.value = '';
+		const provider = getSelectedProvider();
+		runtime.log('[Inference Debug] Selected provider', { name: provider?.manifest?.name });
 
-	runtime.log(`[Inference Debug] New model options:`, manifest.config.model.options);
-}
+		manifest.config.model.options = [{ value: '', text: 'Select a model...' },
+		...(provider?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
+
+		console.log('[INFERENCE DEBUG] About to call chrome-sync');
+		const savedConfig = await runtime.call('chrome-sync.get', 'config.inference').catch((err) => {
+			console.error('[INFERENCE DEBUG] chrome-sync error:', err);
+			return {};
+		}) || {};
+
+		console.log('[INFERENCE DEBUG] Got saved config:', savedConfig);
+		const savedModel = savedConfig.model;
+		manifest.config.model.value = (savedModel && provider?.manifest?.inferenceModels?.find(m => m.id === savedModel)) ? savedModel : '';
+
+		runtime.log('[Inference Debug] Restored model', { value: manifest.config.model.value, 'from saved': savedModel });
+		console.log('[INFERENCE DEBUG] setModelConfigOptions COMPLETE');
+	} catch (error) {
+		console.error('[INFERENCE DEBUG] setModelConfigOptions ERROR:', error);
+		runtime.logError('[Inference] setModelConfigOptions failed', { error: error.message });
+		throw error;
+	}
+};
 export const infer = async (query) => await prompt({ query });
 export const prompt = async (params) => {
 	let { query, systemPrompt, webSearch, loadSource = false, provider, model } = params;

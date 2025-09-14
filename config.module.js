@@ -13,20 +13,37 @@ export const manifest = {
 
 let runtime, expandedCards = new Set();
 export const initialize = async (rt) => {
-	runtime = rt;
-	addConfigSchemaActions();
-	registerOnChangeActions();
-	listenForCrossContextConfigChange();
-	await Promise.all(getModules().map(async module => {
-		const config = await loadConfig(module);
-		validateConfig(module.manifest.config, config);
-		applyConfigLocal(module, config);
-	}));
+	try {
+		console.log('[CONFIG DEBUG] Initialize starting in:', rt.runtimeName);
+		runtime = rt;
 
-	// if (runtime.runtimeName === "extension-page") await retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
-	if (runtime.runtimeName === "extension-page") {
-		debugConfigElements();
-		retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
+		console.log('[CONFIG DEBUG] Adding schema actions...');
+		addConfigSchemaActions();
+
+		console.log('[CONFIG DEBUG] Registering onChange actions...');
+		registerOnChangeActions();
+
+		console.log('[CONFIG DEBUG] Setting up cross-context listener...');
+		listenForCrossContextConfigChange();
+
+		const modules = getModules();
+		console.log('[CONFIG DEBUG] Found modules with config:', modules.map(m => m.manifest.name));
+
+		console.log('[CONFIG DEBUG] Loading configs for each module...');
+		await Promise.all(modules.map(async module => {
+			console.log('[CONFIG DEBUG] Loading config for:', module.manifest.name);
+			const config = await loadConfig(module);
+			console.log('[CONFIG DEBUG] Loaded config:', config);
+			validateConfig(module.manifest.config, config);
+			console.log('[CONFIG DEBUG] Config validated, applying locally...');
+			applyConfigLocal(module, config);
+			console.log('[CONFIG DEBUG] Config applied for:', module.manifest.name);
+		}));
+
+		console.log('[CONFIG DEBUG] Initialize complete successfully');
+	} catch (error) {
+		console.error('[CONFIG DEBUG] Initialize failed:', error);
+		throw error;
 	}
 };
 
@@ -124,8 +141,10 @@ export const handleFieldChange = async (eventData) => {
 };
 export const toggleCard = async (eventData) => {
 	const moduleName = eventData.target.dataset.moduleName;
+	runtime.log('[Config Debug] toggleCard called:', { moduleName, hasModuleName: !!moduleName });
 	if (!moduleName) return;
 	expandedCards.has(moduleName) ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
+	runtime.log('[Config Debug] toggleCard about to call refreshUI');
 	refreshUI();
 };
 export const resetToDefaults = async (eventData) => {
@@ -162,7 +181,46 @@ const listenForCrossContextConfigChange = () => chrome.runtime.onMessage.addList
 	}
 });
 // UI generation
-const refreshUI = () => runtime.call('layout.renderComponent', 'module-config');
+const refreshUI = async () => {
+	// Debug all potential scrolling elements
+	const candidates = [
+		'[data-component="module-config"]',
+		'[data-component="module-config"] .component-content',
+		'.cognition-layout-container',
+		'body'
+	];
+
+	let scrollElement = null, scrollTop = 0;
+	candidates.forEach(selector => {
+		const el = document.querySelector(selector);
+		if (el && el.scrollTop > 0) {
+			scrollElement = selector;
+			scrollTop = el.scrollTop;
+		}
+	});
+
+	runtime.log('[Config Debug] Before refresh - scroll analysis:', {
+		scrollElement,
+		scrollTop,
+		allElements: candidates.map(sel => {
+			const el = document.querySelector(sel);
+			return { selector: sel, found: !!el, scrollTop: el?.scrollTop || 0 };
+		})
+	});
+
+	await runtime.call('layout.renderComponent', 'module-config');
+
+	// Restore if we found a scrolling element
+	if (scrollElement && scrollTop > 0) {
+		setTimeout(() => {
+			const newEl = document.querySelector(scrollElement);
+			if (newEl) {
+				newEl.scrollTop = scrollTop;
+				runtime.log('[Config Debug] Restored scroll:', { selector: scrollElement, scrollTop: newEl.scrollTop });
+			}
+		}, 100);
+	}
+};
 const getSchemaCrossContext = async (moduleName) => {
 	// Try local first
 	const localModule = runtime.getContextModules().find(m => m.manifest.name === moduleName);
@@ -178,7 +236,7 @@ const getSchemaCrossContext = async (moduleName) => {
 };
 export const buildConfigTree = async () => ({
 	"config-page": {
-		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px;",
+		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; overflow-y: auto;",
 		"title": { tag: "h2", text: "Module Configuration", style: "margin-bottom: 20px;" },
 		"config-cards": { tag: "div", style: "display: flex; flex-direction: column; gap: 15px; max-width: 800px;", ...await buildModuleCards() }
 	}
@@ -262,7 +320,7 @@ export const testInferenceConfig = async () => {
 	try {
 		// Step 1: Ensure config UI is rendered to layout
 		runtime.log(`[Dev Test] Adding config component to layout...`);
-		await runtime.call('layout.addComponent', 'module-config');
+		await runtime.call('layout.renderComponent', 'module-config');
 		await runtime.wait(500);
 
 		// Step 2: Wait for inference card to exist

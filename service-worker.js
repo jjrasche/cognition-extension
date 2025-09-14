@@ -42,7 +42,7 @@ const extensionPageExists = async () => {
 const createExtensionPage = async () => {
 	runtime.log("[service worker] Creating extension page...");
 	try {
-		const tab = await chrome.tabs.create({ url: chrome.runtime.getURL('extension-page.html'), active: true });
+		const tab = await chrome.tabs.create({ url: chrome.runtime.getURL('extension-page.html'), active: false });
 		runtime.log(`[service worker] Created extension page (tab ${tab.id})`);
 		await setExtensionPageTabId(tab.id);
 	} catch (error) {
