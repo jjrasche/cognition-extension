@@ -72,6 +72,7 @@ const discoverComponents = async () => runtime.getModulesWithProperty('uiCompone
 			const existing = componentStates.get(name);
 			Object.assign(existing, { moduleName: module.manifest.name, getTree: comp.getTree });
 		}
+		runtime.log(`[Layout] Discovered component: ${name} from module ${module.manifest.name}`);
 		runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, { func: module[comp.getTree], context: runtime.runtimeName, moduleName: module.manifest.name });
 	})
 );

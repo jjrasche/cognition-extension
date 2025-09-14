@@ -17,11 +17,7 @@ export const initialize = async (rt) => {
 	addConfigSchemaActions();
 	registerOnChangeActions();
 	listenForCrossContextConfigChange();
-	await Promise.all(getModules().map(async module => {
-		const config = await loadConfig(module);
-		validateConfig(module.manifest.config, config);
-		applyConfigLocal(module, config);
-	}));
+	await Promise.all(getModules().map(async module => applyConfigLocal(module, await loadConfig(module))));
 };
 
 // Core operations - UI discovery
@@ -31,7 +27,7 @@ const moduleDefaults = (module) => Object.fromEntries(Object.entries(module.mani
 // Validation
 const validateConfig = (schema, updates) => {
 	const errors = Object.entries(updates).map(([field, value]) => ({ field, ...validateField(value, schema[field]) })).filter(v => !v.valid);
-	if (errors.length > 0) throw new Error(`Validation failed: ${errors.map(e => `${e.field}: ${e.error}`).join(', ')}`);
+	if (errors.length > 0) runtime.logError(`Validation failed: ${errors.map(e => `${e.field}: ${e.error}`).join(', ')}`);
 };
 const validateField = (value, schema = {}) => {
 	if (schema.required && (value === undefined || value === null || value === '')) return { valid: false, error: 'Required field' };
