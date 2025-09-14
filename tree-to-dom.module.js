@@ -11,10 +11,12 @@ export const initialize = async (rt) => runtime = rt;
 
 export const transform = async (tree, container) => {
 	if (!tree || typeof tree !== 'object') throw new Error('Tree must be valid object');
-	container.innerHTML = '';
-	const elements = {};
-	Object.entries(tree).forEach(([id, node]) => createElement(id, node, elements, container));
-	return elements;
+	await preserveScrollDuringTransform(tree, container, async () => {
+		container.innerHTML = '';
+		const elements = {};
+		Object.entries(tree).forEach(([id, node]) => createElement(id, node, elements, container));
+		return elements;
+	});
 };
 const createElement = (id, node, elements, parent) => {
 	if (!node.tag) return;
@@ -113,7 +115,33 @@ const serializeForm = (form) => {
 	});
 	return data;
 };
+const preserveScrollDuringTransform = async (tree, container, transformFn) => {
+	const scrollableElements = container.querySelectorAll('*');
+	const scrollState = Array.from(scrollableElements)
+		.filter(el => el.scrollTop > 0 || el.scrollLeft > 0)
+		.map(el => ({
+			selector: getElementSelector(el),
+			scrollTop: el.scrollTop,
+			scrollLeft: el.scrollLeft
+		}));
 
+	await transformFn();
+
+	// Restore scroll positions
+	scrollState.forEach(({ selector, scrollTop, scrollLeft }) => {
+		const el = container.querySelector(selector);
+		if (el) {
+			el.scrollTop = scrollTop;
+			el.scrollLeft = scrollLeft;
+		}
+	});
+};
+const getElementSelector = (element) => {
+	if (element.id) return `#${element.id}`;
+	if (element.className) return `.${element.className.split(' ')[0]}`;
+	if (element.dataset.component) return `[data-component="${element.dataset.component}"]`;
+	return element.tagName.toLowerCase();
+};
 // testing
 export const test = async () => {
 	const { runUnitTest } = runtime.testUtils;
@@ -323,6 +351,19 @@ export const test = async () => {
 			cleanupTestContainer(container);
 			return { actual, assert: runtime.testUtils.deepEqual, expected };
 		} finally { window.getSelection = originalGetSelection; }
+	}));
+	results.push(await runUnitTest("Scroll preservation during transform", async () => {
+		const scrollTree = { "scroll-container": { tag: "div", style: "height: 100px; overflow-y: auto;", "content": { tag: "div", style: "height: 500px;", text: "Tall content" } } };
+		const container = createTestContainer();
+		await transform(scrollTree, container);
+		const scrollEl = container.firstElementChild;
+		scrollEl.scrollTop = 150;
+		const initialScroll = scrollEl.scrollTop;
+		await transform({ "scroll-container": { tag: "div", style: "height: 100px; overflow-y: auto;", "content": { tag: "div", style: "height: 500px;", text: "Updated content" } } }, container);
+		const finalScroll = container.firstElementChild.scrollTop;
+		cleanupTestContainer(container);
+		const actual = { preserved: finalScroll === initialScroll && initialScroll === 150 };
+		return { actual, assert: runtime.testUtils.deepEqual, expected: { preserved: true } };
 	}));
 	runtime.call = origRuntimeCall;
 	return results;

@@ -6,9 +6,10 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Development utilities and shortcuts for debugging",
 	permissions: ["storage"],
-	actions: ["testEmbeddingSpeed", "quickLogs"],
+	actions: ["testEmbeddingSpeed", "quickLogs", "last20Logs"],
 	config: {
-		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Filter Logs from Clipboard', action: "quickLogs" }
+		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Filter Logs from Clipboard', action: "quickLogs" },
+		last20LogsKey: { type: 'globalKey', value: 'Ctrl+Shift+J', label: 'Filter Last 20 Logs from Clipboard', action: "last20Logs" }
 	}
 };
 
@@ -75,9 +76,9 @@ export const testEmbeddingSpeed = async (text, runs = 10) => {
 	return sorted;
 };
 
-export const quickLogs = async () => {
+export const quickLogs = async (shouldFilter) => {
 	try {
-		const filter = (await navigator.clipboard.readText()).trim();
+		const filter = shouldFilter ?? (await navigator.clipboard.readText()).trim();
 		const logs = await runtime.call('chrome-local.get', 'runtime.logs') || [];
 		const filtered = filter ? logs.filter(log => log.message.includes(filter)) : logs.slice(-20);
 		const formatted = filtered.map(log => `${log.context}: ${log.message}${log.data ? ` | ${log.data}` : ''}`);
@@ -87,3 +88,5 @@ export const quickLogs = async () => {
 		return `Clipboard failed: ${error.message}`;
 	}
 };
+
+export const last20Logs = async () => quickLogs(false);

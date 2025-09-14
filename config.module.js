@@ -139,35 +139,39 @@ export const handleFieldChange = async (eventData) => {
 		runtime.logError(`[Config] Field change failed:`, error);
 	}
 };
-// In config.module.js, replace the toggleCard function (around line 120):
 export const toggleCard = async (eventData) => {
 	const moduleName = eventData.target.dataset.moduleName;
 	if (!moduleName) return;
 
-	// Capture scroll BEFORE any DOM changes
-	const scrollableElement = document.querySelector('[data-component="module-config"] .component-content');
-	const savedScrollTop = scrollableElement ? scrollableElement.scrollTop : 0;
+	const cardElement = eventData.target.closest('.cognition-card');
+	if (!cardElement) return;
 
-	runtime.log('[Config Debug] toggleCard - captured scroll:', { moduleName, savedScrollTop });
+	const isCurrentlyExpanded = expandedCards.has(moduleName);
+	const willBeExpanded = !isCurrentlyExpanded;
 
-	expandedCards.has(moduleName) ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
+	// Update state
+	isCurrentlyExpanded ? expandedCards.delete(moduleName) : expandedCards.add(moduleName);
 
-	// Re-render with preserved scroll
-	await runtime.call('layout.renderComponent', 'module-config');
+	// Update icon immediately
+	const expandIcon = cardElement.querySelector('[data-module-name="' + moduleName + '"] span');
+	if (expandIcon) expandIcon.textContent = willBeExpanded ? "▼" : "▶";
 
-	// Restore scroll immediately after render
-	if (savedScrollTop > 0 && scrollableElement) {
-		setTimeout(() => {
-			const newScrollableElement = document.querySelector('[data-component="module-config"] .component-content');
-			if (newScrollableElement) {
-				newScrollableElement.scrollTop = savedScrollTop;
-				runtime.log('[Config Debug] scroll restored:', {
-					target: savedScrollTop,
-					actual: newScrollableElement.scrollTop
-				});
-			}
-		}, 0);
+	// Handle form section
+	let formElement = cardElement.querySelector(`[id*="form-${moduleName}"]`);
+
+	if (willBeExpanded && !formElement) {
+		// Create and append form
+		const schema = await getSchemaCrossContext(moduleName);
+		const formTree = { [`form-${moduleName}`]: buildModuleForm(moduleName, schema) };
+		const tempContainer = document.createElement('div');
+		await runtime.call('tree-to-dom.transform', formTree, tempContainer);
+		cardElement.appendChild(tempContainer.firstElementChild);
+	} else if (!willBeExpanded && formElement) {
+		// Remove form
+		formElement.remove();
 	}
+
+	runtime.log('[Config Debug] Card toggled without scroll disruption:', { moduleName, willBeExpanded });
 };
 export const resetToDefaults = async (eventData) => {
 	const moduleName = eventData.target.dataset.moduleName;
