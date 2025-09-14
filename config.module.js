@@ -25,8 +25,8 @@ export const initialize = async (rt) => {
 
 	// if (runtime.runtimeName === "extension-page") await retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
 	if (runtime.runtimeName === "extension-page") {
-		await debugConfigElements();
-		await retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
+		debugConfigElements();
+		retryAsync(async () => await testInferenceConfig(), { delay: 500, shouldRetry: (error) => error.message.includes('Element not found') });
 	}
 };
 
@@ -199,7 +199,7 @@ const buildModuleCard = async (module) => {
 	};
 };
 const buildModuleForm = (name, schema) => ({
-	tag: "div", style: "margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-primary);",
+	tag: "form", style: "margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-primary);",
 	"hidden-module": { tag: "input", type: "hidden", name: "moduleName", value: name },
 	...Object.fromEntries(Object.entries(schema).map(([fieldName, fieldSchema]) => [`field-${name}-${fieldName}`, buildFormField(fieldName, fieldSchema)]))
 });
@@ -259,66 +259,72 @@ export const test = async () => {
 export const testInferenceConfig = async () => {
 	runtime.log(`[Dev Test] Starting inference config DOM test`);
 
-	// Helper to wait for element
-	const waitForElement = (selector, timeout = 5000) => {
-		return new Promise((resolve, reject) => {
-			const start = Date.now();
-			const check = () => {
-				const el = document.querySelector(selector);
-				if (el) resolve(el);
-				else if (Date.now() - start > timeout) reject(new Error(`Element not found: ${selector}`));
-				else setTimeout(check, 100);
-			};
-			check();
-		});
-	};
-
 	try {
-		// Step 1: Find and click the inference card header to expand it
-		runtime.log(`[Dev Test] Looking for inference config card...`);
-		const cardHeader = await waitForElement('[data-module-name="inference"]');
-		runtime.log(`[Dev Test] Found inference card, clicking to expand...`);
-		cardHeader.click();
+		// Step 1: Ensure config UI is rendered to layout
+		runtime.log(`[Dev Test] Adding config component to layout...`);
+		await runtime.call('layout.addComponent', 'module-config');
+		await runtime.wait(500);
 
+		// Step 2: Wait for inference card to exist
+		runtime.log(`[Dev Test] Waiting for inference config card...`);
+		const cardHeader = await waitForElement('[data-module-name="inference"]');
+		runtime.log(`[Dev Test] Found inference card, expanding...`);
+		cardHeader.click();
 		await runtime.wait(200);
 
-		// Step 2: Find and click the provider dropdown
-		runtime.log(`[Dev Test] Looking for provider dropdown...`);
+		// Step 3: Wait for provider dropdown and set value
+		runtime.log(`[Dev Test] Waiting for provider dropdown...`);
 		const providerSelect = await waitForElement('select[name="provider"]');
-		runtime.log(`[Dev Test] Found provider dropdown, setting value...`);
-
-		// Set provider value and trigger change event
+		runtime.log(`[Dev Test] Setting provider to groq-inference...`);
 		providerSelect.value = 'groq-inference';
 		providerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+		await runtime.wait(500);
 
-		await runtime.wait(500); // Wait for onChange to complete
-
-		// Step 3: Check if model dropdown got populated
+		// Step 4: Check model dropdown populated
 		runtime.log(`[Dev Test] Checking model dropdown...`);
 		const modelSelect = await waitForElement('select[name="model"]');
 		const modelOptions = Array.from(modelSelect.options).map(opt => ({ value: opt.value, text: opt.text }));
-		runtime.log(`[Dev Test] Model options found:`, modelOptions);
+		runtime.log(`[Dev Test] Found ${modelOptions.length} model options`);
 
-		// Get filtered logs
+		// Step 5: Collect and format logs with timing
 		const logs = await runtime.call('chrome-local.get', 'runtime.logs') || [];
 		const filteredLogs = logs.filter(log =>
 			log.message.includes('[Config Debug]') ||
 			log.message.includes('[Inference Debug]') ||
-			log.message.includes('handleFieldChange') ||
-			log.message.includes('setModelConfigOptions') ||
 			log.message.includes('[Dev Test]')
 		);
 
-		// Copy to clipboard
-		await navigator.clipboard.writeText(JSON.stringify(filteredLogs, null, 4));
-		runtime.log(`[Dev Test] Test complete! ${filteredLogs.length} logs copied to clipboard`);
+		const startTime = filteredLogs.length > 0 ? filteredLogs[0].time : Date.now();
+		const logsWithTiming = filteredLogs.map(log => ({
+			time: `+${log.time - startTime}ms`,
+			context: log.context,
+			message: log.message,
+			data: log.data
+		}));
 
-		return { success: true, modelOptions, logs: filteredLogs };
+		await navigator.clipboard.writeText(JSON.stringify(logsWithTiming, null, 2));
+		runtime.log(`[Dev Test] Complete! ${logsWithTiming.length} logs copied to clipboard`);
+
+		return { success: true, modelOptions, logs: logsWithTiming };
 
 	} catch (error) {
 		runtime.logError(`[Dev Test] Failed:`, error);
 		return { success: false, error: error.message };
 	}
+};
+
+// Helper function (keep existing)
+const waitForElement = (selector, timeout = 5000) => {
+	return new Promise((resolve, reject) => {
+		const start = Date.now();
+		const check = () => {
+			const el = document.querySelector(selector);
+			if (el) resolve(el);
+			else if (Date.now() - start > timeout) reject(new Error(`Element not found: ${selector}`));
+			else setTimeout(check, 100);
+		};
+		check();
+	});
 };
 
 export const debugConfigElements = async () => {
