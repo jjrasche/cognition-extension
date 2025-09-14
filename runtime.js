@@ -15,7 +15,7 @@ class Runtime {
 	}
 	initialize = async () => {
 		if (this.runtimeName === 'service-worker') {
-			// await remove('runtime.logs'); // todo: keep historical logs and rotate
+			await remove('runtime.logs'); // todo: keep historical logs and rotate
 		}
 		try {
 			await this.loadModulesForContext();
@@ -135,7 +135,12 @@ class Runtime {
 			// onRetry: (error, attempt, max) => { this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) 
 		}).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
-	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
+	broadcastModuleReady = (moduleName) => {
+		console.log(`[STATE] Setting ${moduleName} to ready in ${this.runtimeName}`);
+		this.broadcastModuleStatus(moduleName, 'ready');
+		console.log(`[STATE] ${moduleName} state is now: ${this.getState(moduleName)}`);
+		this.checkAllModulesInitialized();
+	}
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
 	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
@@ -154,10 +159,13 @@ class Runtime {
 	call = async (actionName, ...args) => {
 		const [moduleName] = actionName.split('.');
 		if (this.moduleInContext(moduleName)) {
-			console.log(`[DEBUG] Calling ${actionName}, module state: ${this.getState(moduleName)}`);
+			const callId = Math.random().toString(36).substr(2, 5);
+			console.log(`[CALL ${callId}] Calling ${actionName}, module state: ${this.getState(moduleName)}`);
 			await this.waitForModule(moduleName);
-			console.log(`[DEBUG] Module ${moduleName} ready, executing action`);
-			return this.executeAction(actionName, ...args);
+			console.log(`[CALL ${callId}] Module ${moduleName} ready, executing action`);
+			const result = await this.executeAction(actionName, ...args);
+			console.log(`[CALL ${callId}] Action ${actionName} completed`);
+			return result;
 		}
 		return await retryAsync(async () => {
 			return new Promise((resolve, reject) => {
@@ -176,19 +184,37 @@ class Runtime {
 		});
 	}
 
+	// In runtime.js, enhance waitForModule with more detailed logging:
 	waitForModule = async (moduleName, timeout = this.MODULE_INIT_TIMEOUT) => {
-		console.log(`[DEBUG] Waiting for ${moduleName}, current state: ${this.getState(moduleName)}`);
-		this.throwIfFailed(moduleName);
-		if (!this.isReady(moduleName)) {
-			const start = Date.now();
-			while (this.getState(moduleName) !== 'ready') {
-				console.log(`[DEBUG] ${moduleName} still not ready, state: ${this.getState(moduleName)}, elapsed: ${Date.now() - start}ms`);
-				this.throwIfFailed(moduleName);
-				this.throwIfTimeout(moduleName, start, timeout);
-				await this.wait(this.RETRY_INTERVAL);
+		if (this.isReady(moduleName)) return;
+
+		const callId = Math.random().toString(36).substr(2, 5);
+		console.log(`[WAIT ${callId}] Event-waiting for ${moduleName}`);
+
+		return new Promise((resolve, reject) => {
+			const timeoutId = setTimeout(() => {
+				unsubscribe();
+				reject(new Error(`Module ${moduleName} not ready after ${timeout}ms`));
+			}, timeout);
+
+			const listener = (name, state) => {
+				if (name === moduleName && state === 'ready') {
+					clearTimeout(timeoutId);
+					unsubscribe();
+					console.log(`[WAIT ${callId}] Event-completed for ${moduleName}`);
+					resolve();
+				}
+			};
+
+			const unsubscribe = this.moduleState.addListener(listener);
+
+			// Double-check in case we missed the event
+			if (this.isReady(moduleName)) {
+				clearTimeout(timeoutId);
+				unsubscribe();
+				resolve();
 			}
-		}
-		console.log(`[DEBUG] ${moduleName} is now ready!`);
+		});
 	}
 
 	getState = (moduleName) => this.moduleState.get(moduleName);
@@ -209,13 +235,29 @@ class Runtime {
 
 	unloggedCommands = ["command.handleCommandInput"];
 	async executeAction(actionName, ...args) {
+		const callId = Math.random().toString(36).substr(2, 5);
+		console.log(`[EXEC ${callId}] Starting ${actionName}`);
+
 		const action = this.getAction(actionName);
+		if (!action) {
+			console.log(`[EXEC ${callId}] Action not found: ${actionName}`);
+			throw new Error(`Action not found: ${actionName}`);
+		}
+
+		console.log(`[EXEC ${callId}] Action found, executing...`);
 		const params = this.createFunctionParamsDebugObject(action, args);
+
 		try {
+			console.log(`[EXEC ${callId}] Calling action.func for ${actionName}`);
 			const result = await action.func(...args);
-			if (!this.unloggedCommands.includes(actionName)) this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
+			console.log(`[EXEC ${callId}] Action ${actionName} returned:`, result);
+
+			if (!this.unloggedCommands.includes(actionName)) {
+				this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
+			}
 			return result;
 		} catch (error) {
+			console.log(`[EXEC ${callId}] Action ${actionName} threw error:`, error);
 			this.logError(`[Runtime] Action failed: ${actionName}`, { ...params, error });
 			throw error;
 		}

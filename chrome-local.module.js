@@ -22,11 +22,25 @@ export const getBytesInUse = async (keys) => await chrome.storage.local.getBytes
 
 
 export const append = async (key, value, maxEntries) => {
-	const current = (await get(key)) || [];
-	const updated = [...current, value];
-	const final = maxEntries ? updated.slice(-maxEntries) : updated;
-	await set({ [key]: final });
-	return final.length;
+	console.log(`[chrome-local] append start: ${key}`);
+
+	try {
+		console.log(`[chrome-local] getting current value for ${key}`);
+		const current = (await get(key)) || [];
+		console.log(`[chrome-local] got current, length: ${current.length}`);
+
+		const updated = [...current, value];
+		const final = maxEntries ? updated.slice(-maxEntries) : updated;
+		console.log(`[chrome-local] setting updated value, length: ${final.length}`);
+
+		await set({ [key]: final });
+		console.log(`[chrome-local] append complete: ${key}`);
+
+		return final.length;
+	} catch (error) {
+		console.error(`[chrome-local] append failed for ${key}:`, error);
+		throw error;
+	}
 };
 
 export const test = async () => {
