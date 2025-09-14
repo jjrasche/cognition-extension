@@ -4,7 +4,6 @@ import { remove } from './chrome-local.module.js';
 class Runtime {
 	constructor(runtimeName) {
 		this.runtimeName = runtimeName;
-		this.globalStartTime = (runtimeName == "service-worker" ? Date.now() : null); // set by service-worker
 		this.actions = new Map();
 		this.contextModules = [];
 		this.errors = [];
@@ -15,10 +14,8 @@ class Runtime {
 		this.allContextTestResults = new Map();
 	}
 	initialize = async () => {
+		await remove('runtime.logs').catch(() => { }); // todo: keep historical logs and rotate
 		if (this.runtimeName === 'service-worker') {
-
-			this.broadcastStartTime();
-			await remove('runtime.logs').catch(() => { });
 			this.log('🚀 Runtime initialization started', { appStart: new Date().getTime() });
 		}
 		try {
@@ -63,7 +60,7 @@ class Runtime {
 
 	setupMessageListener = () => {
 		chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-			if (this.handleModuleStateMessage(message) || this.handletTabStabilityMessage(message) || this.handleTestResultsMessage(message) || this.handleStartTimeMessage(message)) return;
+			if (this.handleModuleStateMessage(message) || this.handletTabStabilityMessage(message) || this.handleTestResultsMessage(message)) return;
 			if (!message.action) return;
 			const [moduleName] = message.action.split('.');
 			if (!this.moduleInContext(moduleName)) return false;
@@ -110,7 +107,6 @@ class Runtime {
 			return true;
 		}
 	};
-	handleStartTimeMessage = (message) => message.type === 'GLOBAL_START_TIME' && (() => { this.globalStartTime = message.startTime; return true; })();
 	areAllTestsComplete = () => {
 		const modulesWithTests = this.getModulesWithProperty("test").map(m => m.manifest.name);
 		const modulesWithResults = new Set(Array.from(this.allContextTestResults.values()).flat().map(result => result.module));
@@ -141,7 +137,6 @@ class Runtime {
 	};
 	broadcastModuleReady = (moduleName) => { this.broadcastModuleStatus(moduleName, 'ready'); this.checkAllModulesInitialized(); }
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
-	broadcastStartTime = async () => await retryAsync(async () => chrome.runtime.sendMessage({ type: 'GLOBAL_START_TIME', startTime: this.globalStartTime })).catch(() => { }); // Silent fail for broadcast
 	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
 	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
@@ -241,8 +236,6 @@ class Runtime {
 		await Promise.all(workers);
 	};
 	// todo: better handle cross context 
-	// timeSinceGlobalStart = () => this.globalStartTime ? (performance.now() - this.globalStartTime).toFixed(0) : '0';
-	timeSinceGlobalStart = () => this.globalStartTime ? (Date.now() - this.globalStartTime) : '0';
 	logError = (message, data) => this.log(message, data, 'error');
 	log = (message, data, severity = 'log') => {
 		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // prevents infinite loop when logging runtime.call
@@ -251,10 +244,10 @@ class Runtime {
 	}
 	printLog = async (func, message, data) => {
 		if (this.runtimeName == "extension-page" && message.includes("service-worker")) return; // anyoning seeing service-worker logs in extension page
-		func(`(${this.timeSinceGlobalStart()} ms) [${this.runtimeName}] ${message}`, data || '');
+		func(`[${this.runtimeName}] ${message}`, data || '');
 	}
 	persistLog = async (message, data) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data), 10000);
-	createLog = (message, data) => ({ time: this.timeSinceGlobalStart(), context: this.runtimeName, message, data: data ? JSON.stringify(data) : null });
+	createLog = (message, data) => ({ time: Date.now(), context: this.runtimeName, message, data: data ? JSON.stringify(data) : null });
 	// testing
 	runTests = async () => {
 		if (!this.testResults) return;
