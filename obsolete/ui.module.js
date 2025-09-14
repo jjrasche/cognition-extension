@@ -6,9 +6,10 @@ export const manifest = {
 	dependencies: ['tree-to-dom', 'command'],
 	actions: ['initializeLayout', 'renderTree', 'showModal', 'closeModal', 'updatePrompt', 'clearPrompt', 'toggleListening', 'speakPrompt', "showPageSpinner", "hidePageSpinner"],
 };
-let runtime
-export const initialize = async (rt) => {
+let runtime, log;
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	await initializeLayout();
 };
 const initializeLayout = async () => {
@@ -61,7 +62,7 @@ export const showModal = async ({ title, content = "", tree, actions = {} }) => 
 		if (tree) {
 			const contentDiv = newOverlay.querySelector('.cognition-modal-content');
 			if (contentDiv) await renderTree(tree, contentDiv);
-			else runtime.logError('[UI] Could not find modal content div for tree rendering');
+			else log.error(' Could not find modal content div for tree rendering');
 		}
 		// Atomic swap: show new, remove old
 		newOverlay.style.display = '';

@@ -65,7 +65,7 @@
 // // Inject content scripts
 // const injectIntoAllTabs = async (moduleName) => await forAllValidTabs((tab) => injectModuleScript(moduleName, tab));
 // async function injectModuleScript(moduleName, tab) {
-//   console.log(`[ContentHandler] Injecting ${moduleName} into tab ${tab.title || tab.id}`);
+//   console.log(` Injecting ${moduleName} into tab ${tab.title || tab.id}`);
 //   try {
 //     const registration = getRegistration(moduleName);
 //     const [stateLoaded, moduleLoaded] = await Promise.all([(await ModuleLoadedInDOM(manifest.name, tab)), (await ModuleLoadedInDOM(moduleName, tab))]);
@@ -74,15 +74,15 @@
 //       await insertContent(registration.contentFunction, tab);
 //       if (registration.css) await insertCSS(registration.css, tab);
 //     }
-//     if (!stateLoaded || !moduleLoaded) console.log(`[ContentHandler] Injected ${moduleName} into tab ${tab.title || tab.id} ${stateLoaded ? '' : '(state)'}${moduleLoaded ? '' : '(module)'}`);
-//     else console.log(`[ContentHandler] ${moduleName} already loaded in tab ${tab.title || tab.id}`);
+//     if (!stateLoaded || !moduleLoaded) console.log(` Injected ${moduleName} into tab ${tab.title || tab.id} ${stateLoaded ? '' : '(state)'}${moduleLoaded ? '' : '(module)'}`);
+//     else console.log(` ${moduleName} already loaded in tab ${tab.title || tab.id}`);
 //     return { success: true };
 //   } catch (error) {
 //     if (error.message.includes('Cannot access contents')) {
-//       console.log(`[ContentHandler] Cannot inject into ${tab.url} (CSP/permissions)`);
+//       console.log(` Cannot inject into ${tab.url} (CSP/permissions)`);
 //       return { success: false, error: 'Blocked by site policy', silent: true };
 //     }
-//     console.error(`[ContentHandler] Failed to inject ${moduleName} into tab ${tab.title || tab.id}:`, error);
+//     console.error(` Failed to inject ${moduleName} into tab ${tab.title || tab.id}:`, error);
 //     return { success: false, error: error.message };
 //   }
 // }

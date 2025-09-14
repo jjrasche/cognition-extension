@@ -9,8 +9,8 @@ export const manifest = {
 	requiredDirectories: ["Documents/cognition/site-indexes"]
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const indexWebsite = async (params) => {
 	const { baseUrl, maxPages = 1000 } = params;
@@ -25,7 +25,7 @@ export const indexWebsite = async (params) => {
 		const doNotSearch = state.blackListed.includes(url);
 		if (alreadySearched || doNotSearch) continue;
 
-		runtime.log(`[Site-Index] 📄 Processing ${url} (${processed + 1}/${maxPages}, queue: ${state.queue.length})`);
+		log.log(`[Site-Index] 📄 Processing ${url} (${processed + 1}/${maxPages}, queue: ${state.queue.length})`);
 
 		try {
 			const pageData = await runtime.call('tab.executeTemp', url, extractPageAndLinks, [domain]);
@@ -52,14 +52,14 @@ export const indexWebsite = async (params) => {
 			// Save progress every 10 pages
 			if (processed % 10 === 0) {
 				await saveProgress(state);
-				runtime.log(`[Site-Index] 💾 Saved progress: ${processed} pages`);
+				log.log(`[Site-Index] 💾 Saved progress: ${processed} pages`);
 			}
 
 			// Rate limiting - 200ms between requests
 			await new Promise(resolve => setTimeout(resolve, 200));
 
 		} catch (error) {
-			runtime.logError(`[Site-Index] ❌ Failed to process ${url}:`, error.message);
+			log.error(`[Site-Index] ❌ Failed to process ${url}:`, error.message);
 			state.errors.push({ url, error: error.message, timestamp: new Date().toISOString() });
 		}
 	}
@@ -80,8 +80,8 @@ export const indexWebsite = async (params) => {
 
 	await saveProgress(result);
 
-	runtime.log(`[Site-Index] ✅ Crawl complete!`);
-	runtime.log(`[Site-Index] 📊 Stats:`, result.stats);
+	log.log(`[Site-Index] ✅ Crawl complete!`);
+	log.log(`[Site-Index] 📊 Stats:`, result.stats);
 
 	return result;
 };

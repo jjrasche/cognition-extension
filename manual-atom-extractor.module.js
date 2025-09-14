@@ -9,8 +9,8 @@ export const manifest = {
 	]
 };
 
-let runtime, selectedSpans = [], atomicIdeas = [], currentSource = null;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log, selectedSpans = [], atomicIdeas = [], currentSource = null;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const loadSource = async (tree, params = {}) => {
 	currentSource = { tree, ...params };
@@ -35,7 +35,7 @@ export const editIdea = async (eventData) => {
 export const saveCollection = async () => {
 	if (atomicIdeas.length === 0) return;
 	const collection = { sourceId: currentSource?.sourceId, extractedAt: new Date().toISOString(), atomicIdeas: atomicIdeas };
-	runtime.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
+	log.log('Atomic Ideas Collection:', JSON.stringify(collection, null, 2));	// todo save to file for now, graph db when stable
 };
 // UI
 const refreshUI = () => runtime.call('layout.renderComponent', 'main', buildTree());

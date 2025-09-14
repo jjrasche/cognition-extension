@@ -11,8 +11,8 @@ export const manifest = {
 	]
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const ingestFolder = async () => {
 	const files = [];
@@ -22,7 +22,7 @@ export const ingestFolder = async () => {
 };
 export const ingestFile = async (filename) => {
 	const { fileChunkTest } = await import(chrome.runtime.getURL(`data/file-chunking-tests/${filename}.js`));
-	runtime.log(`${fileChunkTest.fileName}  ${fileChunkTest.content.length}`);
+	log.log(`${fileChunkTest.fileName}  ${fileChunkTest.content.length}`);
 	fileChunkTest.queries = await Promise.all(
 		fileChunkTest.queries.map(async query => ({
 			text: query,
@@ -52,7 +52,7 @@ const runChunkingEvaluation = async (threshold) => {
 			avgSentencesPerChunk: chunkResult.quality.avgSentencesPerChunk,
 			percentSingleSentenceChunks: chunkResult.quality.percentSingleSentenceChunks
 		};
-		runtime.log(`runChunkingEvaluation ${testCase.fileName}`, ret);
+		log.log(`runChunkingEvaluation ${testCase.fileName}`, ret);
 		return ret;
 	}));
 	const ret = {
@@ -63,7 +63,7 @@ const runChunkingEvaluation = async (threshold) => {
 		avgSentencesPerChunk: results.reduce((sum, r) => sum + r.avgSentencesPerChunk, 0) / results.length,
 		percentSingleSentenceChunks: results.reduce((sum, r) => sum + r.percentSingleSentenceChunks, 0) / results.length
 	};
-	runtime.log('runChunkingEvaluation total', ret);
+	log.log('runChunkingEvaluation total', ret);
 	return ret;
 };
 
@@ -76,11 +76,11 @@ const loadTestCases = async () => {
 				fileChunkTest.queries = await Promise.all(
 					fileChunkTest.queries.map(async query => ({ text: query, embedding: await runtime.call('embedding.embedText', query) }))
 				);
-				runtime.log(fileChunkTest);
+				log.log(fileChunkTest);
 			}
 			return fileChunkTest;
 		} catch (error) {
-			runtime.log(`Error loading ${filename}:`, error);
+			log.log(`Error loading ${filename}:`, error);
 		}
 	}));
 };
@@ -115,7 +115,7 @@ export const renderEvaluationDashboard = async (threshold = .3) => {
 			"results-table": buildResultsTable(results.results)
 		}
 	};
-	runtime.log('renderEvaluationDashboard', ret);
+	log.log('renderEvaluationDashboard', ret);
 	await runtime.call('ui.hidePageSpinner');
 	await runtime.call('ui.renderTree', ret);
 };

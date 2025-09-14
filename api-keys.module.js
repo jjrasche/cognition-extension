@@ -7,8 +7,8 @@ export const manifest = {
 	dependencies: ["chrome-sync"],//, "ui"],
 	actions: ["setKey", "getKey", "listKeys", "clearKeys"]
 };
-let runtime;
-export const initialize = async (rt) => (runtime = rt, verifyModuleKeys());
+let runtime, log;
+export const initialize = async (rt, l) => (runtime = rt, verifyModuleKeys());
 
 export const verifyModuleKeys = async () => {
 	// runtime.getModulesWithProperty('apiKeys').forEach(module => {

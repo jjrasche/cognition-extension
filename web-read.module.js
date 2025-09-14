@@ -15,9 +15,10 @@ export const manifest = {
 
 // todo: consider using parse5 for more robust HTML parsing if needed
 
-let runtime, readability, currentArticle;
-export const initialize = async (rt) => {
+let runtime, log, readability, currentArticle;
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	readability = (await import(chrome.runtime.getURL('libs/readability.js'))).Readability;
 };
 

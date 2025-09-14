@@ -13,8 +13,8 @@ export const manifest = {
 	]
 };
 
-let runtime, currentResults, currentQuery;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log, currentResults, currentQuery;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const searchAndShow = async (query, maxResults = 5) => {
 	currentResults = await getSearchResults(query, maxResults);

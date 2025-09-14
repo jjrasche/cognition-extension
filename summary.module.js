@@ -7,8 +7,8 @@ export const manifest = {
 	actions: ["summarize", "evaluate"]
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const summarize = async (text, options = {}) => {
 	const prompt = buildSummaryPrompt(text);
@@ -60,7 +60,7 @@ const parseSummaryResponse = (response) => {
 		};
 
 	} catch (error) {
-		runtime.logError('[Summary] JSON parse failed:', error);
+		log.error(' JSON parse failed:', error);
 		return {
 			oneSentence: 'Failed to extract',
 			keyWords: 'Failed to extract',

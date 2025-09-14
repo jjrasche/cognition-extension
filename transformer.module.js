@@ -14,11 +14,12 @@ export const manifest = {
 };
 
 const pipelineCache = new Map();
-let runtime;
+let runtime, log;
 let Transformer;
 
-export const initialize = async (rt) => {
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	await initializeEnvironment();
 	await preloadModels();
 };
@@ -40,14 +41,6 @@ const initializeEnvironment = async () => {
 		env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('onnx-runtime/');
 		env.backends.onnx.wasm.proxy = false;
 	}
-
-	// CRITICAL: Force initialize execution providers
-	// await forceInitializeExecutionProviders();
-
-	// Log available backends
-	if (env.backends?.onnx) {
-		runtime.log('[Transformer] Available ONNX backends:', Object.keys(env.backends.onnx));
-	}
 };
 const loadTransformer = async () => await import(chrome.runtime.getURL('libs/transformers.js'));
 
@@ -55,19 +48,19 @@ const preloadModels = async () => {
 	const models = [...new Set(runtime.getModulesWithProperty('localModels').flatMap(module => module.manifest.localModels))];
 	for (const model of models) {
 		try { await loadModel(model) }
-		catch (error) { runtime.logError(`[Transformer] ❌ Failed to preload ${model}:`, error) }
+		catch (error) { log.error(` ❌ Failed to preload ${model}:`, error) }
 	}
-	runtime.log(`[Transformer] Preloaded models:`, listModels());
+	log.log(` Preloaded models:`, listModels());
 };
 const loadModel = async (model) => {
 	const name = getModelName(model);
 	if (pipelineCache.has(name)) return pipelineCache.get(name);
-	runtime.log(`[Transformer] Loading model ${name}...`);
+	log.log(` Loading model ${name}...`);
 	try {
 		const pipe = await Transformer.pipeline('feature-extraction', model.name, model.options || {});
 		pipelineCache.set(name, pipe);
 	} catch (error) {
-		runtime.logError(`[Transformer] loading ${name} failed:`, {
+		log.error(` loading ${name} failed:`, {
 			message: error.message,
 			stack: error.stack,
 			modelName: model.name,

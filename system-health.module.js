@@ -7,10 +7,10 @@ export const manifest = {
 	actions: ["getSystemHealth", "getModuleHealth", "recalculateMetrics", "showHealthUI", "showModuleDetail", "updateThreshold"],
 	uiComponents: [{ name: "health dashboard", getTree: "buildTree" }],
 };
-let runtime, moduleHealthData = new Map(), debounceTimers = new Map();
+let runtime, log, moduleHealthData = new Map(), debounceTimers = new Map();
 const DEBOUNCE_DELAY = 1000;
 
-export const initialize = async (rt) => (runtime = rt, registerHealthModules(), interceptRuntimeCalls(), recalculateMetrics());
+export const initialize = async (rt, l) => (runtime = rt, registerHealthModules(), interceptRuntimeCalls(), recalculateMetrics());
 // === CORE HEALTH TRACKING ===
 const registerHealthModules = () => runtime.getModulesWithProperty('healthMetrics').forEach(module => {
 	const { name, healthMetrics = [], healthTriggers = [] } = module.manifest;
@@ -39,7 +39,7 @@ const recalculateModuleMetrics = async (moduleName) => {
 		moduleData.status = statuses.includes('critical') ? 'critical' : statuses.includes('warning') ? 'warning' : 'good';
 		moduleData.lastCalculated = new Date().toISOString();
 	} catch (error) {
-		runtime.logError(`[Health] Failed ${moduleName}:`, error);
+		log.error(` Failed ${moduleName}:`, error);
 		moduleData.status = 'critical';
 	}
 };

@@ -12,8 +12,8 @@ export const manifest = {
 	]
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 // === EXTRACTION LOGIC ===
 export const extractFromParagraph = async (paragraph) => {
@@ -66,7 +66,7 @@ const parseExtractionResponse = (responseText, originalParagraph) => {
 		}
 		return { atomicIdeas: [], error: 'No valid JSON found', success: false };
 	} catch (error) {
-		runtime.logError('[Atomic Ideas] Parse failed:', error);
+		log.error(' Parse failed:', error);
 		return { atomicIdeas: [], error: error.message, success: false };
 	}
 };
@@ -80,7 +80,7 @@ export const extractAndDisplay = async (eventData) => {
 		const result = await extractFromParagraph(paragraph.trim());
 		await buildAtomicExtractorUI(paragraph, result);
 	} catch (error) {
-		runtime.logError('[Atomic Ideas] Display error:', error);
+		log.error(' Display error:', error);
 		await buildAtomicExtractorUI(paragraph, { success: false, error: error.message });
 	}
 };

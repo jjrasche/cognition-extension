@@ -9,7 +9,7 @@ export const manifest = {
 	actions: ["startDemo", "stopDemo", "processThought", "getClusters", "setThreshold", "setMode", "handleClusterClick", "handleSynthesize"],
 };
 
-let runtime, clusters = [], isActive = false, threshold = 0.4, mode = 'view';
+let runtime, log, clusters = [], isActive = false, threshold = 0.4, mode = 'view';
 let processingDuration = 0;
 let selectedForMerge = null;
 
@@ -23,8 +23,9 @@ const thoughts = [
 	{ text: "I wonder how the clustering algorithm handles similar concepts", pause: 6000 }, // 6 sec pause - back to tech
 	{ text: "semantic similarity is fascinating", pause: 2000 } // 2 sec pause - related to clustering
 ];
-export const initialize = async (rt) => {
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	setupKeyboardListeners();
 };
 
@@ -105,7 +106,7 @@ const hierarchicalCluster = async (allThoughts, baseThreshold) => {
 
 	while (true) {
 		const bestMerge = findBestMergeCandidate(currentClusters);
-		runtime.log(`${(bestMerge.similarity * 100).toFixed(1)}% \n\t C1: "${bestMerge.cluster1.thoughts[0]?.text || 'Empty'}" (${bestMerge.cluster1.thoughts.length}) \n\t C2: "${bestMerge.cluster2.thoughts[0]?.text || 'Empty'}" (${bestMerge.cluster2.thoughts.length}) \n\t ${bestMerge.bothAreClusters ? 'Cluster-Cluster' : 'Thought-Thought'} merge`)
+		log.log(`${(bestMerge.similarity * 100).toFixed(1)}% \n\t C1: "${bestMerge.cluster1.thoughts[0]?.text || 'Empty'}" (${bestMerge.cluster1.thoughts.length}) \n\t C2: "${bestMerge.cluster2.thoughts[0]?.text || 'Empty'}" (${bestMerge.cluster2.thoughts.length}) \n\t ${bestMerge.bothAreClusters ? 'Cluster-Cluster' : 'Thought-Thought'} merge`)
 		if (!bestMerge) break;
 
 		// Use appropriate threshold based on what we're merging
@@ -207,7 +208,7 @@ const addSynthesis = async (cluster) => {
 		cluster.lastSynthesisCount = cluster.thoughts.length;
 		cluster.synthesisAt = new Date().toISOString();
 	} catch (error) {
-		runtime.logError('[Live-Chunker] Synthesis failed:', error);
+		log.error('[Live-Chunker] Synthesis failed:', error);
 		cluster.synthesis = { oneSentence: 'Synthesis failed', keyWords: '', mainTopics: '' };
 	}
 };
@@ -242,7 +243,7 @@ export const setThreshold = async (event) => {
 	}
 
 	await renderClusterUI();
-	runtime.log(`[Live-Chunker] Re-clustered with threshold: ${threshold}`);
+	log.log(`[Live-Chunker] Re-clustered with threshold: ${threshold}`);
 };
 
 export const setMode = async (eventOrMode) => {
@@ -250,7 +251,7 @@ export const setMode = async (eventOrMode) => {
 	mode = mode === newMode ? 'view' : newMode;
 	selectedForMerge = null;
 	await renderClusterUI();
-	runtime.log(`[Live-Chunker] Mode: ${mode}`);
+	log.log(`[Live-Chunker] Mode: ${mode}`);
 };
 
 export const handleClusterClick = async (event) => {
@@ -267,11 +268,11 @@ const handleMergeClick = async (clusterId) => {
 	if (!selectedForMerge) {
 		selectedForMerge = clusterId;
 		await renderClusterUI();
-		runtime.log(`[Live-Chunker] Selected cluster for merge: ${clusterId}`);
+		log.log(`[Live-Chunker] Selected cluster for merge: ${clusterId}`);
 	} else if (selectedForMerge === clusterId) {
 		selectedForMerge = null;
 		await renderClusterUI();
-		runtime.log(`[Live-Chunker] Deselected cluster`);
+		log.log(`[Live-Chunker] Deselected cluster`);
 	} else {
 		await manualMergeClusters(selectedForMerge, clusterId);
 	}
@@ -293,7 +294,7 @@ const manualMergeClusters = async (cluster1Id, cluster2Id) => {
 	selectedForMerge = null;
 	mode = 'view';
 	await renderClusterUI();
-	runtime.log(`[Live-Chunker] Manually merged clusters`);
+	log.log(`[Live-Chunker] Manually merged clusters`);
 };
 
 const deleteCluster = async (clusterId) => {
@@ -307,7 +308,7 @@ const deleteCluster = async (clusterId) => {
 
 	mode = 'view';
 	await renderClusterUI();
-	runtime.log(`[Live-Chunker] Deleted cluster and its thoughts`);
+	log.log(`[Live-Chunker] Deleted cluster and its thoughts`);
 };
 
 export const handleSynthesize = async (event) => {

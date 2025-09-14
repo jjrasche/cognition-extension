@@ -1,7 +1,7 @@
 import './dev-reload.js';
 import { initializeRuntime } from "./runtime.js";
 
-let runtime;
+let runtime, log;
 
 chrome.runtime.onInstalled.addListener(async () => {
 	try {

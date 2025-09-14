@@ -7,8 +7,8 @@ export const manifest = {
 	actions: ["set", "get", "getAll", "remove", "append", "clear", "getBytesInUse"]
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const set = async (items) => await chrome.storage.local.set(items);
 export const get = async (keys) => {

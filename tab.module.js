@@ -7,8 +7,8 @@ export const manifest = {
 	actions: ["create", "remove", "update", "get", "query", "executeScript", "executeTemp", "focusExtensionPage"]
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const create = async (options) => {
 	const tab = await chrome.tabs.create(options);
@@ -23,27 +23,27 @@ export const update = async (tabId, updateProperties) => await chrome.tabs.updat
 // Script execution
 export const executeScript = async (tab, func, args = []) => {
 	const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
-	runtime.log(`[Tab] Script executed in tab ${tab.id}`, JSON.stringify(result, null, 2));
+	log.log(` Script executed in tab ${tab.id}`, JSON.stringify(result, null, 2));
 	return result[0].result;
 }
 export const executeTemp = async (url, func, args = []) => {
 	const tab = await create({ url, active: true });
 	try { return await executeScript(tab, func, args) }
 	catch (error) {
-		runtime.logError(`[Tab] Error executing script in temp tab ${tab.id}:`, error);
+		log.error(` Error executing script in temp tab ${tab.id}:`, error);
 		throw error;
 	}
 	finally {
-		await remove(tab.id).catch(err => runtime.logError('Tab cleanup failed:', err));
+		await remove(tab.id).catch(err => log.error('Tab cleanup failed:', err));
 	}
 };
 export const focusExtensionPage = async () => {
 	try {
 		const tabId = await runtime.call('chrome-sync.get', 'extensionPageTabId');
 		if (tabId) await update(tabId, { active: true });
-		else runtime.log('[Tab] Extension page tab ID not found');
+		else log.log(' Extension page tab ID not found');
 	} catch (error) {
-		runtime.logError('[Tab] Could not focus extension page:', error);
+		log.error(' Could not focus extension page:', error);
 	}
 };
 // helpers

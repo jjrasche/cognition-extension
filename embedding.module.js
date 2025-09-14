@@ -70,9 +70,10 @@ export const manifest = {
 	apiKeys: ["jina"],
 };
 
-let runtime;
-export const initialize = async (rt) => {
+let runtime, log;
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 }
 
 export const getModelName = async (model) => await runtime.call('transformer.getModelName', model);
@@ -119,7 +120,7 @@ const embedTextCloud = async (text, modelName) => {
 		input: [text]
 	};
 
-	runtime.log(`[Embedding] Cloud request:`, { model: modelName, inputLength: text.length });
+	log.log(` Cloud request:`, { model: modelName, inputLength: text.length });
 
 	const response = await fetch('https://api.jina.ai/v1/embeddings', {
 		method: 'POST',
@@ -132,15 +133,15 @@ const embedTextCloud = async (text, modelName) => {
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		runtime.logError(`[Embedding] Jina API error ${response.status}:`, errorText);
+		log.error(` Jina API error ${response.status}:`, errorText);
 		throw new Error(`Jina API error: ${response.status} - ${errorText}`);
 	}
 
 	const result = await response.json();
 	const endTime = performance.now();
 
-	runtime.log(`[Embedding] Cloud inference completed in ${(endTime - startTime).toFixed(2)}ms`);
-	runtime.log(`[Embedding] Response structure:`, {
+	log.log(` Cloud inference completed in ${(endTime - startTime).toFixed(2)}ms`);
+	log.log(` Response structure:`, {
 		dataLength: result.data?.length,
 		embeddingLength: result.data?.[0]?.embedding?.length,
 		usage: result.usage
@@ -160,8 +161,8 @@ const embedTextCloud = async (text, modelName) => {
 export const runSpeedQualityComparison = async (params = {}) => {
 	const { includeLocal = true, includeCloud = true, runs = 3 } = params;
 
-	runtime.log(`\n🚀 EMBEDDING SPEED + QUALITY COMPARISON`);
-	runtime.log(`Running ${runs} iterations for speed testing...`);
+	log.log(`\n🚀 EMBEDDING SPEED + QUALITY COMPARISON`);
+	log.log(`Running ${runs} iterations for speed testing...`);
 
 	// Define test cases here to avoid scope issues
 	const testCases = [
@@ -199,18 +200,18 @@ export const runSpeedQualityComparison = async (params = {}) => {
 	}
 
 	if (models.length === 0) {
-		runtime.log('❌ No models available for testing');
+		log.log('❌ No models available for testing');
 		return { error: 'No models available' };
 	}
 
-	runtime.log(`Testing models: ${models.map(m => `${m.name} (${m.type})`).join(', ')}\n`);
+	log.log(`Testing models: ${models.map(m => `${m.name} (${m.type})`).join(', ')}\n`);
 
 	// Speed Test - using a standard sentence
 	const speedTestText = "communal living with shared resources reduces individual costs and workload";
 	const speedResults = [];
 
 	for (const model of models) {
-		runtime.log(`⏱️  Speed testing ${model.name}...`);
+		log.log(`⏱️  Speed testing ${model.name}...`);
 		const times = [];
 		let lastResult = null;
 
@@ -241,10 +242,10 @@ export const runSpeedQualityComparison = async (params = {}) => {
 				runs
 			});
 
-			runtime.log(`   ✅ ${model.name}: ${avgDuration}ms avg (${minDuration}-${maxDuration}ms range)`);
+			log.log(`   ✅ ${model.name}: ${avgDuration}ms avg (${minDuration}-${maxDuration}ms range)`);
 
 		} catch (error) {
-			runtime.log(`   ❌ ${model.name}: ${error.message}`);
+			log.log(`   ❌ ${model.name}: ${error.message}`);
 			speedResults.push({
 				model: model.name,
 				type: model.type,
@@ -255,7 +256,7 @@ export const runSpeedQualityComparison = async (params = {}) => {
 	}
 
 	// Display speed results table
-	runtime.log(`\n📊 SPEED COMPARISON RESULTS (${runs} runs each):`);
+	log.log(`\n📊 SPEED COMPARISON RESULTS (${runs} runs each):`);
 	const speedTable = speedResults
 		.filter(r => !r.error)
 		.sort((a, b) => a.avgDuration - b.avgDuration)
@@ -271,14 +272,14 @@ export const runSpeedQualityComparison = async (params = {}) => {
 	console.table(speedTable);
 
 	// Quality Test - using semantic similarity test cases
-	runtime.log(`\n🎯 QUALITY TESTING (Semantic Similarity):`);
+	log.log(`\n🎯 QUALITY TESTING (Semantic Similarity):`);
 	const qualityResults = [];
 
 	// Only test successful models
 	const successfulModels = speedResults.filter(r => !r.error);
 
 	for (const model of successfulModels) {
-		runtime.log(`🧠 Quality testing ${model.model}...`);
+		log.log(`🧠 Quality testing ${model.model}...`);
 
 		let totalTests = 0;
 		let passedTests = 0;
@@ -313,7 +314,7 @@ export const runSpeedQualityComparison = async (params = {}) => {
 					await new Promise(resolve => setTimeout(resolve, 50));
 
 				} catch (error) {
-					runtime.log(`   ❌ Test failed: ${error.message}`);
+					log.log(`   ❌ Test failed: ${error.message}`);
 					totalTests++;
 				}
 			}
@@ -330,11 +331,11 @@ export const runSpeedQualityComparison = async (params = {}) => {
 			testDetails
 		});
 
-		runtime.log(`   ✅ ${model.model}: ${qualityScore}% quality (${passedTests}/${totalTests} tests passed)`);
+		log.log(`   ✅ ${model.model}: ${qualityScore}% quality (${passedTests}/${totalTests} tests passed)`);
 	}
 
 	// Display quality results table
-	runtime.log(`\n🏆 QUALITY COMPARISON RESULTS:`);
+	log.log(`\n🏆 QUALITY COMPARISON RESULTS:`);
 	const qualityTable = qualityResults
 		.sort((a, b) => b.qualityScore - a.qualityScore)
 		.map(r => ({
@@ -348,7 +349,7 @@ export const runSpeedQualityComparison = async (params = {}) => {
 	console.table(qualityTable);
 
 	// Combined Rankings
-	runtime.log(`\n🥇 COMBINED RANKINGS (Speed + Quality):`);
+	log.log(`\n🥇 COMBINED RANKINGS (Speed + Quality):`);
 	const combinedResults = qualityResults.map(quality => {
 		const speed = speedResults.find(s => s.model === quality.model && !s.error);
 		return {
@@ -375,27 +376,27 @@ export const runSpeedQualityComparison = async (params = {}) => {
 	console.table(combinedTable);
 
 	// Recommendations
-	runtime.log(`\n💡 RECOMMENDATIONS:`);
+	log.log(`\n💡 RECOMMENDATIONS:`);
 	const fastest = speedResults.filter(r => !r.error).sort((a, b) => a.avgDuration - b.avgDuration)[0];
 	const highestQuality = qualityResults.sort((a, b) => b.qualityScore - a.qualityScore)[0];
 	const bestCombined = combinedResults[0];
 
-	if (fastest) runtime.log(`🚀 Fastest: ${fastest.model} (${fastest.avgDuration}ms avg)`);
-	if (highestQuality) runtime.log(`🎯 Best Quality: ${highestQuality.model} (${highestQuality.qualityScore}% accuracy)`);
-	if (bestCombined) runtime.log(`⚖️  Best Overall: ${bestCombined.model} (${bestCombined.combinedScore.toFixed(1)} combined score)`);
+	if (fastest) log.log(`🚀 Fastest: ${fastest.model} (${fastest.avgDuration}ms avg)`);
+	if (highestQuality) log.log(`🎯 Best Quality: ${highestQuality.model} (${highestQuality.qualityScore}% accuracy)`);
+	if (bestCombined) log.log(`⚖️  Best Overall: ${bestCombined.model} (${bestCombined.combinedScore.toFixed(1)} combined score)`);
 
 	// Type-based recommendations
 	const localBest = combinedResults.filter(r => r.type === 'local')[0];
 	const cloudBest = combinedResults.filter(r => r.type === 'cloud')[0];
 
 	if (localBest && cloudBest) {
-		runtime.log(`\n🏠 Best Local: ${localBest.model}`);
-		runtime.log(`☁️  Best Cloud: ${cloudBest.model}`);
+		log.log(`\n🏠 Best Local: ${localBest.model}`);
+		log.log(`☁️  Best Cloud: ${cloudBest.model}`);
 
 		if (cloudBest.combinedScore > localBest.combinedScore) {
-			runtime.log(`   → Cloud models show better overall performance`);
+			log.log(`   → Cloud models show better overall performance`);
 		} else {
-			runtime.log(`   → Local models competitive with cloud performance`);
+			log.log(`   → Local models competitive with cloud performance`);
 		}
 	}
 
@@ -415,7 +416,7 @@ export const runSpeedQualityComparison = async (params = {}) => {
 
 // Helper function for testing all models quickly
 export const testAllModels = async () => {
-	runtime.log('🔄 Testing all available models (local + cloud)...');
+	log.log('🔄 Testing all available models (local + cloud)...');
 	return await runSpeedQualityComparison({ includeLocal: true, includeCloud: true, runs: 2 });
 };
 
@@ -449,9 +450,9 @@ export const embeddingTestCases = [
 // export const runEmbeddingTests = async (params = {}) => {
 //   const { modelName } = params;
 //   if (!modelName) {
-//     runtime.log('[Embedding] Available models:');
-//     runtime.log('Local:', await runtime.call('transformer.listModels'));
-//     runtime.log('Cloud:', manifest.cloudModels);
+//     log.log(' Available models:');
+//     log.log('Local:', await runtime.call('transformer.listModels'));
+//     log.log('Cloud:', manifest.cloudModels);
 //     return { error: 'Please specify modelName parameter' };
 //   }
 

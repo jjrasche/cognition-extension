@@ -22,9 +22,9 @@ export const manifest = {
 //   try {
 //     const settings = await runtime.call('web-speech-tts.getSettings');
 //     const result = await runtime.call('tts.speak', text, settings);
-//     if (!result.success) runtime.logError('[UI] TTS failed:', result.error);
+//     if (!result.success) log.error(' TTS failed:', result.error);
 //   } catch (error) {
-//     runtime.logError('[UI] TTS error:', error);
+//     log.error(' TTS error:', error);
 //   } finally {
 //     button.textContent = '🔊';
 //   }
@@ -94,18 +94,19 @@ export const saveTTSSettings = async (event) => {
 };
 
 
-let runtime, synthesis, currentUtterance, preferredVoice;
+let runtime, log, synthesis, currentUtterance, preferredVoice;
 
-export const initialize = async (rt) => {
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	synthesis = window.speechSynthesis;
-	if (!synthesis) return runtime.logError('[TTS] Speech synthesis not supported');
+	if (!synthesis) return log.error(' Speech synthesis not supported');
 
 	preferredVoice = await loadVoicePreference();
 	setupVoiceLoadListener();
 };
 
-const setupVoiceLoadListener = () => synthesis.onvoiceschanged = () => runtime.log('[TTS] Voices loaded:', synthesis.getVoices().length);
+const setupVoiceLoadListener = () => synthesis.onvoiceschanged = () => log.log(' Voices loaded:', synthesis.getVoices().length);
 
 // Add to TTS module - enhanced speak function with controls
 export const speak = async (text, options = {}) => {

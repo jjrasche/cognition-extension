@@ -6,8 +6,8 @@ export const manifest = {
 	permissions: ["storage"],
 	actions: ["set", "get", "getAll", "remove", "clear", "getBytesInUse"]
 };
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 export const set = async (items) => await chrome.storage.sync.set(items);
 export const get = async (keys) => {
 	const result = await chrome.storage.sync.get(keys);

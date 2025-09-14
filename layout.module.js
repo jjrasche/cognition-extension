@@ -18,14 +18,15 @@ export const manifest = {
 		overlayOpacity: { type: 'number', min: 0.05, max: 0.3, value: 0.05, label: 'Mode Overlay Opacity' }
 	}
 };
-let runtime, componentStates = new Map(), layoutContainer = null, globalKeyMap = new Map();
+let runtime, log, componentStates = new Map(), layoutContainer = null, globalKeyMap = new Map();
 const Z_LAYERS = {
 	SYSTEM: 10000, PINNED: 9999, ACTIVE: 2000, NORMAL: 1000
 };
 const config = configProxy(manifest);
 let defaultState = { name: '', x: 0, y: 0, width: 30, height: 20, savedPosition: null, isSelected: false, isMaximized: false, isRendered: false, isLoading: false, moduleName: null, getTree: null, zIndex: Z_LAYERS.NORMAL, isPinned: false };
-export const initialize = async (rt) => {
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	document.body.style.cssText = document.documentElement.style.cssText = 'margin: 0; padding: 0;';
 	await discoverComponents();
 	await loadComponentStates();
@@ -46,7 +47,7 @@ export const updateComponent = async (name, stateChanges) => {
 	updateComponentZIndex(name);
 	await saveComponentStates();
 	await refreshUI('state-change', [name]);
-	runtime.log(`[Layout] Updated ${name}:`, stateChanges);
+	log.info(` Updated ${name}:`, stateChanges);
 };
 const normalizeStateChanges = (changes) => {
 	if (!changes) return {};
@@ -72,13 +73,13 @@ const discoverComponents = async () => runtime.getModulesWithProperty('uiCompone
 			const existing = componentStates.get(name);
 			Object.assign(existing, { moduleName: module.manifest.name, getTree: comp.getTree });
 		}
-		runtime.log(`[Layout] Discovered component: ${name} from module ${module.manifest.name}`);
+		log.info(` Discovered component: ${name} from module ${module.manifest.name}`);
 		runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, { func: module[comp.getTree], context: runtime.runtimeName, moduleName: module.manifest.name });
 	})
 );
 const handleModuleStateChange = async (moduleName, newState) => {
 	const changedComponents = [];
-	runtime.log(`[Layout] Module state changed: ${moduleName} is now ${newState}`);
+	log.info(` Module state changed: ${moduleName} is now ${newState}`);
 	for (const [name, state] of componentStates) {
 		if (state.moduleName === moduleName) {
 			const wasLoading = state.isLoading;
@@ -97,7 +98,7 @@ let modeOverlay = null, currentModeIndex = 0, modes = [selectMode, moveMode, exp
 export const cycleMode = async () => {
 	currentModeIndex = (currentModeIndex + 1) % modes.length;
 	await showModeOverlay();
-	runtime.log(`[Layout] Mode: ${modes[currentModeIndex].name}`);
+	log.log(` Mode: ${modes[currentModeIndex].name}`);
 };
 const showModeOverlay = async () => {
 	removeModeOverlay();
@@ -117,7 +118,7 @@ export const snapToHalf = async (key) => {
 	if (!selected) return;
 	const positions = { 'ArrowLeft': { x: 0, y: 0, width: 50, height: 100 }, 'ArrowRight': { x: 50, y: 0, width: 50, height: 100 }, 'ArrowUp': { x: 0, y: 0, width: 100, height: 50 }, 'ArrowDown': { x: 0, y: 50, width: 100, height: 50 } };
 	await updateComponent(selected.name, positions[direction]);
-	runtime.log(`[Layout] Snapped ${selected.name} to ${direction.replace('Arrow', '').toLowerCase()} half`);
+	log.log(` Snapped ${selected.name} to ${direction.replace('Arrow', '').toLowerCase()} half`);
 };
 export const contractComponent = async (key) => {
 	const selected = getSelectedComponent(), direction = key.key;
@@ -131,7 +132,7 @@ export const contractComponent = async (key) => {
 		case 'ArrowRight': newPos.width = Math.max(config.gridSize, newPos.width - contractAmount); newPos.x = Math.min(100 - newPos.width, newPos.x + contractAmount); break;
 	}
 	await updateComponent(selected.name, normalizePosition(newPos));
-	runtime.log(`[Layout] Contracted ${selected.name} ${direction}`);
+	log.log(` Contracted ${selected.name} ${direction}`);
 };
 const moveSelectedComponent = async (key) => {
 	const selected = getSelectedComponent(), direction = key.key;
@@ -188,18 +189,11 @@ export const togglePin = async (componentName) => {
 	const state = getComponentState(componentName || getSelectedComponent()?.name);
 	if (!state || state.zIndex === Z_LAYERS.SYSTEM) return;
 	await updateComponent(componentName, { isPinned: !state.isPinned });
-	runtime.log(`[Layout] ${state.isPinned ? 'Pinned' : 'Unpinned'} ${componentName}`);
+	log.log(` ${state.isPinned ? 'Pinned' : 'Unpinned'} ${componentName}`);
 };
 // === KEYBOARD HANDLER ===
 const setupKeyboardHandlers = () => { document.addEventListener('keydown', handleKeyboard); registerGlobalKeys(); };
 const handleKeyboard = async (e) => {
-	if (e.key === 'Escape') {
-		runtime.log('[Layout Debug] Escape pressed:', {
-			activeElement: document.activeElement?.tagName,
-			hasComponentPicker: componentStates.has('_component-picker'),
-			willEarlyReturn: document.activeElement?.tagName && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)
-		});
-	}
 	if (document.activeElement?.tagName && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 	if (await handleGlobalKeys(e)) return;
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent(), mode = modes[currentModeIndex].name;
@@ -207,7 +201,7 @@ const handleKeyboard = async (e) => {
 	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
 	// componentStates.has('_component-picker') && e.key === 'Escape' ? (e.preventDefault(), componentStates.delete('_component-picker'), refreshUI('component-removed')) : null;
 	if (componentStates.has('_component-picker') && e.key === 'Escape') {
-		runtime.log('[Layout Debug] Component picker deletion:', { reason: 'escape pressed' });
+		log.log(' Component picker deletion:');
 		e.preventDefault();
 		componentStates.delete('_component-picker');
 		refreshUI('component-removed');
@@ -274,7 +268,7 @@ export const removeComponent = async (name) => {
 	if (state.isSelected) { state.isSelected = false; updateComponentZIndex(name); }
 	await saveComponentStates();
 	await refreshUI('component-removed');
-	runtime.log(`[Layout] Removed component: ${name}`);
+	log.log(` Removed component: ${name}`);
 };
 export const removeSelected = async () => {
 	const selected = getSelectedComponent();
@@ -327,7 +321,6 @@ export const renderComponent = async (name) => {
 	try {
 		const tree = await getComponentTree(name);
 		await runtime.call('tree-to-dom.transform', tree, contentEl);
-		runtime.log(`[Layout] Rendered ${name}`);
 	} catch (error) {
 		contentEl.innerHTML = `<div style="padding: 10px; color: var(--danger, #ff6b6b);">Error loading ${name}: ${error.message}</div>`;
 	}
@@ -387,13 +380,13 @@ const normalizePosition = ({ x, y, width, height }) => ({ x: snapToGrid(Math.max
 // === COMPONENT PICKER ===
 export const showComponentPicker = async () => {
 	const available = getAllActiveComponents().filter(comp => !comp.isRendered && comp.moduleName);
-	if (available.length === 0) return runtime.log('[Layout] No components available');
+	if (available.length === 0) return log.log(' No components available');
 	componentStates.set('_component-picker', { ...defaultState, name: '_component-picker', x: 20, y: 20, width: 60, height: 60, isRendered: true, zIndex: Z_LAYERS.SYSTEM, moduleName: 'layout', getTree: '_component-picker' });
 	await refreshUI('component-added');
 };
 const buildComponentPickerTree = () => ({ tag: "div", style: "display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); color: white; padding: 20px;", "picker-title": { tag: "h2", text: "Add Component", style: "margin-bottom: 30px;" }, "picker-grid": { tag: "div", style: "display: grid; grid-template-columns: repeat(3, 200px); gap: 15px;", ...Object.fromEntries(getAllActiveComponents().filter(comp => !comp.isRendered && comp.moduleName).map(comp => [`add-${comp.name}`, { tag: "button", text: comp.name, class: "cognition-button-primary", style: "padding: 20px; font-size: 16px;", events: { click: "layout.addComponentFromPicker" }, "data-component": comp.name }])) }, "picker-hint": { tag: "div", text: "Press Escape to cancel", style: "margin-top: 20px; color: #888; font-size: 14px;" } });
 export const addComponentFromPicker = async (eventData) => {
-	runtime.log('[Layout Debug] Component picker deletion:', {
+	log.log(' Component picker deletion:', {
 		reason: 'component selected',
 		component: eventData.target.dataset.component,
 		hasPickerBefore: componentStates.has('_component-picker')

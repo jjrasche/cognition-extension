@@ -19,9 +19,10 @@ export let manifest = {
 	defaultModel: "claude-3-5-sonnet-20241022",
 };
 
-let runtime, apiKey;
-export const initialize = async (rt) => {
+let runtime, log, apiKey;
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	apiKey = await runtime.call("api-keys.getKey", manifest.apiKeys[0]);
 };
 

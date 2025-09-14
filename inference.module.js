@@ -16,10 +16,11 @@ export const manifest = {
 	],
 };
 
-let runtime, providers = [], config = configProxy(manifest);
+let runtime, log, providers = [], config = configProxy(manifest);
 let currentPromptText = '', currentResponse = '', isLoading = false;
-export const initialize = (rt) => {
+export const initialize = (rt, l) => {
 	runtime = rt;
+	log = l;
 	registerProviders();
 	setConfigOptions();
 };

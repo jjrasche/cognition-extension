@@ -11,9 +11,10 @@ export const manifest = {
 	uiComponents: [{ name: "module-config", getTree: "buildConfigTree" }]
 };
 
-let runtime, expandedCards = new Set();
-export const initialize = async (rt) => {
+let runtime, log, expandedCards = new Set();
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	addConfigSchemaActions();
 	registerOnChangeActions();
 	listenForCrossContextConfigChange();
@@ -27,7 +28,7 @@ const moduleDefaults = (module) => Object.fromEntries(Object.entries(module.mani
 // Validation
 const validateConfig = (schema, updates) => {
 	const errors = Object.entries(updates).map(([field, value]) => ({ field, ...validateField(value, schema[field]) })).filter(v => !v.valid);
-	if (errors.length > 0) runtime.logError(`Validation failed: ${errors.map(e => `${e.field}: ${e.error}`).join(', ')}`);
+	if (errors.length > 0) log.error(`Validation failed: ${errors.map(e => `${e.field}: ${e.error}`).join(', ')}`);
 };
 const validateField = (value, schema = {}) => {
 	if (schema.required && (value === undefined || value === null || value === '')) return { valid: false, error: 'Required field' };
@@ -68,7 +69,7 @@ const applyConfigLocal = async (module, updates) => {
 			const oldValue = module.manifest.config[field].value;
 			module.manifest.config[field].value = value;
 			const onChange = module.manifest.config[field].onChange;
-			onChange && await runtime.call(`${module.manifest.name}.${onChange}`).catch(error => runtime.logError(`[Config] onChange failed for ${field}:`, error));
+			onChange && await runtime.call(`${module.manifest.name}.${onChange}`).catch(error => log.error(` onChange failed for ${field}:`, error));
 		}
 	}
 };
@@ -78,7 +79,7 @@ const triggerOnChange = async (moduleName, fieldName, schema) => {
 		try {
 			const result = await runtime.call(`${moduleName}.${onChange}`);
 		} catch (error) {
-			runtime.logError(`[Config] Cross-context onChange failed for ${moduleName}.${fieldName}:`, error);
+			log.error(` Cross-context onChange failed for ${moduleName}.${fieldName}:`, error);
 		}
 	}
 };
@@ -102,7 +103,7 @@ export const handleFieldChange = async (eventData) => {
 		chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED', moduleName, updates: { [fieldName]: value } }).catch(() => { });
 		refreshUI();
 	} catch (error) {
-		runtime.logError(`[Config] Field change failed:`, error);
+		log.error(` Field change failed:`, error);
 	}
 };
 export const toggleCard = async (eventData) => {
@@ -155,7 +156,7 @@ const getSchemaCrossContext = async (moduleName) => {
 	try {
 		return await runtime.call(`${moduleName}.getConfigSchema`);
 	} catch (error) {
-		runtime.log(`[Config] Failed to get schema for ${moduleName}`);
+		log.log(` Failed to get schema for ${moduleName}`);
 		return {};
 	}
 };

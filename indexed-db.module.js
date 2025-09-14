@@ -7,8 +7,8 @@ export const manifest = {
 	actions: ["createDB", "addRecord", "getRecord", "getAllRecords", "removeRecord", "updateRecord", "getByIndex", "getByIndexCursor", "countRecords", "getNextId", "deleteDB", "getAllDatabases"],
 };
 
-let runtime, DBs = new Map();
-export const initialize = async (rt) => (runtime = rt, await registerModules());
+let runtime, log, DBs = new Map();
+export const initialize = async (rt, l) => (runtime = rt, await registerModules());
 
 // Database management
 const registerModules = async () => await Promise.all(runtime.getModulesWithProperty('indexeddb').map(async m => await createDB(m.manifest.indexeddb)));
@@ -66,9 +66,9 @@ const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
 export const deleteDB = (name) => {
 	return new Promise((resolve, reject) => {
 		const deleteReq = indexedDB.deleteDatabase(name);
-		deleteReq.onsuccess = () => (runtime.log(`✅ ${name} database deleted successfully`, deleteReq), resolve(true));
-		deleteReq.onerror = () => (runtime.logError(`❌ Failed to delete ${name} database:`, deleteReq.error), reject(deleteReq.error));
-		deleteReq.onblocked = () => runtime.logError(`⚠️ ${name} database deletion blocked - close all tabs using this database`);
+		deleteReq.onsuccess = () => (log.log(`✅ ${name} database deleted successfully`, deleteReq), resolve(true));
+		deleteReq.onerror = () => (log.error(`❌ Failed to delete ${name} database:`, deleteReq.error), reject(deleteReq.error));
+		deleteReq.onblocked = () => log.error(`⚠️ ${name} database deletion blocked - close all tabs using this database`);
 	});
 };
 export const getAllDatabases = async () => 'databases' in indexedDB ? (await indexedDB.databases()).map(db => ({ name: db.name, version: db.version })) : [];

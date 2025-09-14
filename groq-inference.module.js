@@ -15,9 +15,10 @@ export const manifest = {
 	defaultModel: "llama-3.1-8b-instant"
 };
 
-let runtime, apiKey;
-export const initialize = async (rt) => {
+let runtime, log, apiKey;
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	apiKey = await runtime.call("api-keys.getKey", manifest.apiKeys[0]);
 	if (!apiKey) throw new Error('GROQ API key not configured');
 };

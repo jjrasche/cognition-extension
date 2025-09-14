@@ -6,8 +6,8 @@ export const manifest = {
 	actions: ["transform"],
 };
 
-let runtime;
-export const initialize = async (rt) => runtime = rt;
+let runtime, log;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 export const transform = async (tree, container) => {
 	if (!tree || typeof tree !== 'object') throw new Error('Tree must be valid object');
@@ -73,7 +73,7 @@ const handleSelectionEvent = async (event, elementId, elements) => {
 	try {
 		await runtime.call(handler, { ...createEventData(event, element), selection: { text, elementId, range: { startOffset: selection.getRangeAt(0).startOffset, endOffset: selection.getRangeAt(0).endOffset, startContainer: selection.getRangeAt(0).startContainer.textContent } } });
 	} catch (error) {
-		runtime.logError(`Text selection handler failed: ${handler}`, error);
+		log.error(`Text selection handler failed: ${handler}`, error);
 	}
 };
 const bindNodeEvents = (id, node, elements) => {
@@ -83,7 +83,7 @@ const bindNodeEvents = (id, node, elements) => {
 		el.addEventListener(event, async (e) => {
 			if (event === 'submit') e.preventDefault();
 			try { await runtime.call(handler, createEventData(e, el)); }
-			catch (error) { runtime.logError(`Event handler failed: ${handler}`, error); }
+			catch (error) { log.error(`Event handler failed: ${handler}`, error); }
 		});
 	});
 };
@@ -102,7 +102,7 @@ const createEventData = (event, element) => {
 		focusedElement: document.activeElement?.["name"] || null,
 		...(form && { formData: serializeForm(form) })
 	};
-	if (event.type !== "keydown") runtime.log("[tree to dom] Event Data:", ret);
+	if (event.type !== "keydown") log.log(" Event Data:", ret);
 	return ret;
 };
 const serializeForm = (form) => {

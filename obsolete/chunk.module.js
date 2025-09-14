@@ -8,18 +8,19 @@ export const manifest = {
 	actions: ["chunk", "splitSentences", "calculateChunkSimilarity", "clearSentenceCache", "getSentenceCacheStats"]
 };
 
-let runtime, model = "Xenova/all-MiniLM-L6-v2-fp16-webgpu", sentenceCache = {};
+let runtime, log, model = "Xenova/all-MiniLM-L6-v2-fp16-webgpu", sentenceCache = {};
 const CACHE_KEY = 'chunk_sentence_cache';
 
-export const initialize = async (rt) => {
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	await loadSentenceCache();
 };
 
 const loadSentenceCache = async () => {
 	const cached = await runtime.call('chrome-local.get', CACHE_KEY);
 	sentenceCache = cached || {};
-	runtime.log(`[Chunk] Loaded ${Object.keys(sentenceCache).length} cached sentence embeddings`);
+	log.log(` Loaded ${Object.keys(sentenceCache).length} cached sentence embeddings`);
 };
 
 const saveSentenceCache = async () => {
@@ -80,11 +81,11 @@ export const splitSentences = async (text, options = {}) => {
 
 	// Check cache first
 	if (sentenceCache[contentHash]) {
-		runtime.log(`[Chunk] Cache hit for content hash: ${contentHash}`);
+		log.log(` Cache hit for content hash: ${contentHash}`);
 		return sentenceCache[contentHash];
 	}
 
-	runtime.log(`[Chunk] Cache miss for content hash: ${contentHash} - computing sentences`);
+	log.log(` Cache miss for content hash: ${contentHash} - computing sentences`);
 	const segmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
 	const sentences = await Promise.all(Array.from(segmenter.segment(text))
 		.map(sentence => sentence.segment.trim())
@@ -95,7 +96,7 @@ export const splitSentences = async (text, options = {}) => {
 	// Cache the result
 	sentenceCache[contentHash] = sentences;
 	await saveSentenceCache();
-	runtime.log(`[Chunk] Cached ${sentences.length} sentences for hash: ${contentHash}`);
+	log.log(` Cached ${sentences.length} sentences for hash: ${contentHash}`);
 
 	return sentences;
 };
@@ -106,7 +107,7 @@ const getEmbedding = async (text) => await runtime.call('embedding.embedText', t
 export const clearSentenceCache = async () => {
 	sentenceCache = {};
 	await runtime.call('chrome-local.remove', CACHE_KEY);
-	runtime.log('[Chunk] Sentence cache cleared');
+	log.log(' Sentence cache cleared');
 	return { success: true, message: 'Cache cleared' };
 };
 
@@ -118,7 +119,7 @@ export const getSentenceCacheStats = async () => {
 			? Object.values(sentenceCache).reduce((sum, sentences) => sum + sentences.length, 0) / Object.keys(sentenceCache).length
 			: 0
 	};
-	runtime.log('[Chunk] Cache stats:', stats);
+	log.log(' Cache stats:', stats);
 	return stats;
 };
 

@@ -15,9 +15,10 @@ export const manifest = {
 		]
 	}
 };
-let runtime, neededDirectories = [];
-export const initialize = async (rt) => {
+let runtime, log, neededDirectories = [];
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	neededDirectories = (await Promise.all(getModuleRequiredDirectories().map(async dirName => !(await hasDir(dirName)) && dirName))).filter(dir => dir);
 	if (neededDirectories.length > 0) await promptUserToInitiateFileAccess();
 };
@@ -58,7 +59,7 @@ const verifyPermission = async (name, handle) => {
 	const currentPermission = await handle.queryPermission({ mode: 'readwrite' });
 	if (currentPermission !== 'granted') {
 		const newPermission = await handle.requestPermission({ mode: 'readwrite' });
-		if (newPermission !== 'granted') runtime.logError(`Permission denied for directory '${name}'. Permission: ${newPermission}`);
+		if (newPermission !== 'granted') log.error(`Permission denied for directory '${name}'. Permission: ${newPermission}`);
 	}
 }
 // logging

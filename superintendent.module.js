@@ -10,11 +10,12 @@ export const manifest = {
 	actions: ["processSingleDistrict", "processBatch", "getStats"]
 };
 
-let runtime, stats, districts, maxProcessed = 1;
+let runtime, log, stats, districts, maxProcessed = 1;
 const inference = { provider: "claude-api", model: "claude-opus-4-20250514" }//model: "claude-3-5-sonnet-20241022" }
 const dir = 'Documents/cognition/data', filename = 'school-district-data.json';
-export const initialize = async (rt) => {
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	resetStats();
 	await loadDistricts();
 };
@@ -28,7 +29,7 @@ export const processSingleDistrict = async (idx) => {
 		if (superintendentData.firstName && superintendentData.lastName) stats.updated++;
 		else { updateDistrictData(idx, createEmptyData("no superintendent found")); stats.notFound++; }
 	} catch (error) {
-		runtime.logError(`❌ Error processing ${district.district}:`, error.message);
+		log.error(`❌ Error processing ${district.district}:`, error.message);
 		stats.errors++;
 		updateDistrictData(idx, createEmptyData(error.message));
 	}
@@ -41,11 +42,11 @@ export const processBatch = async (maxConcurrency = 1, startIndex = 0) => {
 			.map((district, idx) => ({ district, idx }))
 			// .filter(({ district }) => !hasExistingData(district))
 			.slice(startIndex, startIndex + maxProcessed);
-		runtime.log(`Processing districts:\n${districtsToProcess.map(d => d.district.district).join("\n\t-")}`);
+		log.log(`Processing districts:\n${districtsToProcess.map(d => d.district.district).join("\n\t-")}`);
 		await runtime.processWithWorkerPool(districtsToProcess.map(d => d.idx), processSingleDistrict, maxConcurrency);
 		logSummary();
 	} catch (error) {
-		runtime.logError('❌ Fatal error:', error);
+		log.error('❌ Fatal error:', error);
 	}
 };
 
@@ -59,8 +60,8 @@ export const getStats = async () => {
 		if (district.superIntendent?.sonnet35?.error) acc.errors++;
 		return acc;
 	}, { total: 0, withData: 0, missing: 0, errors: 0, mismatched: 0 });
-	runtime.log('📊 File Stats:', fileStats);
-	runtime.log('📊 Session Stats:', stats);
+	log.log('📊 File Stats:', fileStats);
+	log.log('📊 Session Stats:', stats);
 	return { file: fileStats, session: stats };
 };
 
@@ -102,7 +103,7 @@ const updateDistrictData = async (idx, data) => {
 	await saveDistricts(districts);
 };
 const createEmptyData = (errorMessage = '') => ({ firstName: "", lastName: "", email: "", phone: "", sourceUrl: "", error: errorMessage });
-const logSummary = () => runtime.log(`📊 SESSION:\nUpdated:${stats.updated}\nSkipped:${stats.skipped}\nErrors:${stats.errors}\nNot Found: ${stats.notFound}\nProcessed:${stats.processed}`);
+const logSummary = () => log.log(`📊 SESSION:\nUpdated:${stats.updated}\nSkipped:${stats.skipped}\nErrors:${stats.errors}\nNot Found: ${stats.notFound}\nProcessed:${stats.processed}`);
 const parseSuperintendentResponse = (responseText) => {
 	try {
 		const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -119,7 +120,7 @@ const parseSuperintendentResponse = (responseText) => {
 		}
 		return createEmptyData('No valid JSON response');
 	} catch (error) {
-		runtime.logError('Failed to parse superintendent response:', error);
+		log.error('Failed to parse superintendent response:', error);
 		return createEmptyData(`Parse error: ${error.message}`);
 	}
 };

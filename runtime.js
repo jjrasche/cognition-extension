@@ -15,6 +15,7 @@ class Runtime {
 		this.testUtils = { ...asserts, runUnitTest };
 		this.testResults = [];
 		this.allContextTestResults = new Map();
+		this.log = this.createModuleLogger('Runtime');
 	}
 	initialize = async () => {
 		if (this.runtimeName === 'service-worker') {
@@ -23,13 +24,13 @@ class Runtime {
 		try {
 			await this.loadModulesForContext();
 			this.registerActions();
-			this.log('🚀 Runtime initialization started');
+			this.log.log('🚀 Runtime initialization started');
 			this.setupMessageListener();
 			await this.initializeModules();
 			// await this.runTests();
-			this.log('[Runtime] Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState) });
+			this.log.log('Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState) });
 		} catch (error) {
-			this.logError(`[Runtime] Initialization failed in ${this.runtimeName}`, error);
+			this.log.error(`Initialization failed in ${this.runtimeName}`, error);
 		}
 	}
 
@@ -42,7 +43,7 @@ class Runtime {
 	registerActions = () => {
 		modules.forEach(module => {
 			try { this.getModuleActions(module).filter(action => typeof module[action] === 'function').forEach(action => this.registerAction(module, action)); }
-			catch (error) { this.logError(` Failed to register [${module.manifest.name}] actions:`, { error: error.message }); }
+			catch (error) { this.log.error(` Failed to register [${module.manifest.name}] actions:`, { error: error.message }); }
 		});
 	}
 	registerAction = (module, action) => this.actions.set(`${module.manifest.name}.${action}`, { func: module[action], context: this.runtimeName, moduleName: module.manifest.name });
@@ -57,7 +58,7 @@ class Runtime {
 			this.executeAction(message.action, ...args)
 				.then(result => sendResponse(result))
 				.catch(error => {
-					this.logError(`Action ${message.action} failed`, { error: error.message, context: this.runtimeName });
+					this.log.error(`Action ${message.action} failed`, { error: error.message, context: this.runtimeName });
 					sendResponse({ error: error.message });
 				});
 			return true;
@@ -66,7 +67,7 @@ class Runtime {
 	handletTabStabilityMessage = (message) => {
 		if (message.type === 'TAB_STABILITY') {
 			const { elapsed, networkStable, contentStable, url } = message.data;
-			this.log(`[Tab] ${url}: ${elapsed}ms | Network: ${networkStable} | Content: ${contentStable}`);
+			this.log.log(` ${url}: ${elapsed}ms | Network: ${networkStable} | Content: ${contentStable}`);
 			return true;
 		}
 	}
@@ -94,18 +95,18 @@ class Runtime {
 		const modulesWithTests = this.getModulesWithProperty("test").map(m => m.manifest.name);
 		const modulesWithResults = new Set(Array.from(this.allContextTestResults.values()).flat().map(result => result.module));
 		const ret = [...modulesWithTests].every(moduleName => modulesWithResults.has(moduleName));
-		this.log(`expected ${modulesWithTests} to be complete, got ${[...modulesWithResults]}`);
+		this.log.log(`expected ${modulesWithTests} to be complete, got ${[...modulesWithResults]}`);
 		return ret;
 	};
 
 	initializeModules = async () => {
 		await Promise.all(this.contextModules.map(async (module) => {
 			try {
-				await module.initialize?.(this);
+				await module.initialize?.(this, this.createModuleLogger(module.manifest.name));
 				this.broadcastModuleReady(module.manifest.name);
-				this.log(`[${this.runtimeName}] Module ${module.manifest.name} initialized`);
+				this.log.log(` Module ${module.manifest.name} initialized`);
 			} catch (error) {
-				this.logError(`[${this.runtimeName}] Module ${module.manifest.name} failed to initialize`, error);
+				this.log.error(`[${this.runtimeName}] Module ${module.manifest.name} failed to initialize`, error);
 				this.broadcastModuleFailed(module.manifest.name);
 			}
 		}));
@@ -115,21 +116,21 @@ class Runtime {
 		this.moduleState.set(moduleName, state);
 		await retryAsync(async () => chrome.runtime.sendMessage({ type, moduleName, fromContext: this.runtimeName }), {
 			maxAttempts: this.MODULE_INIT_TIMEOUT / this.RETRY_INTERVAL, delay: this.RETRY_INTERVAL,
-			// onRetry: (error, attempt, max) => { this.log(`[Runtime] Retry ${attempt}/${max} for ${type} message for ${moduleName}`) 
-		}).catch(() => this.logError(`[Runtime] Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
+			// onRetry: (error, attempt, max) => { this.log.log(`Retry ${attempt}/${max} for ${type} message for ${moduleName}`) 
+		}).catch(() => this.log.error(`Failed to send ${type} message for ${moduleName} in ${this.runtimeName}`));
 	};
 	broadcastModuleReady = (moduleName) => {
 		this.broadcastModuleStatus(moduleName, 'ready');
 		this.checkAllModulesInitialized();
 	}
 	broadcastModuleFailed = (moduleName) => { this.broadcastModuleStatus(moduleName, 'failed'); this.checkAllModulesInitialized(); }
-	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
+	checkAllModulesInitialized = () => this.allModulesInitialized() && this.log.log(this.allModulesReady() ? '🎉 Extension ready!' : '⚠️ Extension Failed to Load Some Modules!');
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
 	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
 	broadcastTestResults = async () => {
 		await retryAsync(async () => chrome.runtime.sendMessage({ type: 'TEST_RESULTS', context: this.runtimeName, results: this.testResults }))
-			.then(() => this.log(`[Runtime] Sent TEST_RESULTS message in ${this.runtimeName}`))
-			.catch(() => this.logError(`[Runtime] Failed to send TEST_RESULTS message in ${this.runtimeName}`));
+			.then(() => this.log.log(`Sent TEST_RESULTS message in ${this.runtimeName}`))
+			.catch(() => this.log.error(`Failed to send TEST_RESULTS message in ${this.runtimeName}`));
 	};
 
 	call = async (actionName, ...args) => {
@@ -151,7 +152,7 @@ class Runtime {
 			});
 		}, {
 			maxAttempts: this.MODULE_INIT_TIMEOUT / this.RETRY_INTERVAL, delay: this.RETRY_INTERVAL,
-			// onRetry: (error, attempt) => this.log(`[Runtime] Retry ${attempt} for ${actionName}: ${error.message}`),
+			// onRetry: (error, attempt) => this.log.log(`Retry ${attempt} for ${actionName}: ${error.message}`),
 			shouldRetry: (error) => error.message.includes('port closed') || error.message.includes('Receiving end does not exist')
 		});
 	}
@@ -173,20 +174,20 @@ class Runtime {
 		return paramNames.reduce((debugObj, paramName, index) => { if (index < args.length) debugObj[paramName] = args[index]; return debugObj; }, {});
 	};
 	// todo: make dynamic later
-	unloggedCommands = ["command.handleCommandInput"];
+	unloggedCommands = ["command.handleCommandInput", "dev.buildLogViewer", "layout.renderComponent", "tree-to-dom.transform", "api-keys.getKey"];
 	async executeAction(actionName, ...args) {
 		const action = this.getAction(actionName);
 		if (!action) Error(`Action not found: ${actionName}`);
 		const params = this.createFunctionParamsDebugObject(action, args);
 		try {
 			const result = await action.func(...args);
-			if (!this.unloggedCommands.includes(actionName)) this.log(`[Runtime] Action executed: ${actionName}`, { ...params, result });
+			if (!this.unloggedCommands.includes(actionName)) this.log.log(`Action executed: ${actionName}`, { ...params, result });
 			return result;
-		} catch (error) { this.logError(`[Runtime] Action failed: ${actionName}`, { ...params, error }); }
+		} catch (error) { this.log.error(`Action failed: ${actionName}`, { ...params, error }); }
 	}
 	getAction = (actionName) => {
 		const action = this.actions.get(actionName);
-		if (!action) this.logError(`[Runtime] Action not found: ${actionName}`, { context: this.runtimeName });
+		if (!action) this.log.error(`Action not found: ${actionName}`, { context: this.runtimeName });
 		return action;
 	}
 
@@ -215,22 +216,28 @@ class Runtime {
 		});
 		await Promise.all(workers);
 	};
-	logError = (message, data) => this.log(message, data, 'error');
-	log = (message, data, severity = 'log') => {
+
+	createModuleLogger = (moduleName) => ({
+		log: (message, data) => this.internalLog(message, moduleName, data, 'log'),
+		info: (message, data) => this.internalLog(message, moduleName, data, 'info'),
+		warn: (message, data) => this.internalLog(message, moduleName, data, 'warn'),
+		error: (message, data) => this.internalLog(message, moduleName, data, 'error')
+	});
+	internalLog = (message, moduleName, data, severity = 'log') => {
 		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // Only persistence of storage calls to avoid infinite loops
 		if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // prevents cross context message overlap		
-		this.printLog(console[severity], message, data);
-		this.persistLog(message, data).catch(err => console.warn('Log persist failed:', err));
-	}
-	printLog = async (func, message, data) => func(`[${this.runtimeName}] ${message}`, data || '');
-	persistLog = async (message, data) => {
-		await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, data));
-	}
-	createLog = (message, data) => ({
+		this.printLog(console[severity], message, moduleName, data);
+		this.persistLog(message, moduleName, data, severity).catch(err => console.warn('Log persist failed:', err));
+	};
+	printLog = async (func, message, moduleName, data) => func(`[${moduleName}] ${message}`, data || '');
+	persistLog = async (message, moduleName, data, severity) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, moduleName, data, severity));
+	createLog = (message, moduleName, data, severity = 'log') => ({
 		time: Date.now(),
 		context: this.runtimeName,
+		module: moduleName,
 		message,
-		data: data instanceof Error ? { message: data.message, stack: data.stack, name: data.name } : data ? JSON.stringify(data) : null
+		level: severity,
+		data: data instanceof Error ? { message: data.message, stack: data.stack, name: data.name } : data
 	});
 	// testing
 	runTests = async () => {
@@ -240,7 +247,7 @@ class Runtime {
 			const newTests = await this.runModuleTests(mod);
 			this.testResults = this.testResults.concat(newTests);
 		}));
-		this.log(`[${this.runtimeName}] All tests complete. Total: ${this.testResults.length}`);
+		this.log.log(`All tests complete. Total: ${this.testResults.length}`);
 		this.allContextTestResults = this.allContextTestResults.set(this.runtimeName, this.testResults);
 		this.broadcastTestResults();
 		if (this.areAllTestsComplete()) this.showTests();
@@ -262,8 +269,8 @@ class Runtime {
 		const totalTests = Object.values(moduleStats).reduce((sum, stats) => sum + stats.total, 0);
 		const totalPassed = Object.values(moduleStats).reduce((sum, stats) => sum + stats.passed, 0);
 
-		this.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed / totalTests * 100)}%)`);
-		this.log('\n=== MODULE TEST RESULTS ===');
+		this.log.log(`\nOverall: ${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed / totalTests * 100)}%)`);
+		this.log.log('\n=== MODULE TEST RESULTS ===');
 		console.table(Object.entries(moduleStats).map(([module, stats]) => ({
 			Module: module,
 			'Total Tests': stats.total,
@@ -275,7 +282,7 @@ class Runtime {
 	showTestFailures = (results) => {
 		const failedTests = results.filter(test => !test.passed);
 		if (failedTests.length > 0) {
-			this.log('\n=== FAILED TEST DETAILS ===');
+			this.log.log('\n=== FAILED TEST DETAILS ===');
 			console.table(failedTests.map((test, i) => ({
 				'Module': test.module,
 				'Test #': i + 1,
@@ -284,7 +291,7 @@ class Runtime {
 				'Assert': test?.assert?.name ?? 'N/A',
 				'Actual': truncateOrNA(test.actual)
 			})));
-			this.log(failedTests);
+			this.log.log(failedTests);
 		}
 	}
 }

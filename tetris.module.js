@@ -31,9 +31,9 @@ export const manifest = {
 	}
 };
 
-let runtime, gameState = {}, runner = null, aiRunner = null
+let runtime, log, gameState = {}, runner = null, aiRunner = null
 const config = configProxy(manifest);
-export const initialize = async (rt) => runtime = rt;
+export const initialize = async (rt, l) => { runtime = rt; log = l; }
 
 // game logic
 const runManual = () => {
@@ -235,7 +235,7 @@ const validMoves = ['left', 'right', 'down', 'rotate'];
 // ];
 // export const runModelTest = async (model, iterations = 3) => {
 // 	const results = await Promise.all(testScenarios.map((t, i) => Array(iterations).map(() => runSingleTest(model, t, i + 1))));
-// 	runtime.log(JSON.stringify(results, null, 2));
+// 	log.log(JSON.stringify(results, null, 2));
 // };
 
 // const runSingleTest = async (modelId, scenario, iteration) => {

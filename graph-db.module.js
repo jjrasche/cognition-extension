@@ -17,8 +17,8 @@ export const manifest = {
 	},
 };
 const similiarityThreshold = 0.7;
-let runtime
-export const initialize = async (rt) => (runtime = rt);
+let runtime, log;
+export const initialize = async (rt, l) => (runtime = rt);
 // handle db
 let nodesDB = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, 'nodes', ...args);
 let edgesDB = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, 'edges', ...args);

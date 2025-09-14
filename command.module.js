@@ -10,9 +10,10 @@ export const manifest = {
 	]
 };
 
-let runtime, commands = [], isExecuting = false;
-export const initialize = async (rt) => {
+let runtime, log, commands = [], isExecuting = false;
+export const initialize = async (rt, l) => {
 	runtime = rt;
+	log = l;
 	await registercommands();
 };
 
@@ -34,14 +35,14 @@ export const getRegisteredActions = async () => commands;
 export const executeCommand = async (input) => {
 	const action = await getCommand(input);
 	if (!action) throw new Error(`No command found for: ${input}`);
-	runtime.log(`[Command] Executing: ${action.name} for "${input.substring(0, 30)}${input.length > 30 ? '...' : ''}"`);
+	log.log(` Executing: ${action.name} for "${input.substring(0, 30)}${input.length > 30 ? '...' : ''}"`);
 	await refreshUI();
 	return await action.func(input);
 };
 const getCommand = async (input) => {
 	const matchingActions = commands.filter(a => a.condition(input));
 	if (matchingActions.length > 0) {
-		runtime.log(`[Command] Found ${matchingActions.length} matching actions:\n${matchingActions.map(a => `- ${a.name} (${a.module})`).join('\n')}`);
+		log.log(` Found ${matchingActions.length} matching actions:\n${matchingActions.map(a => `- ${a.name} (${a.module})`).join('\n')}`);
 	}
 	return matchingActions[0]; // Return highest priority match
 };

@@ -25,15 +25,15 @@ export const manifest = {
 	},
 	indexeddb: { name: 'SpeechAudioDB', version: 1, storeConfigs: [{ name: 'recordings', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] }] }
 };
-let runtime, recognition, mediaRecorder, audioStream, audioContext, audioBuffer;
+let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer;
 let isListening = false, isPlaying = false, currentTime = 0, playbackRate = 1.0;
 let audioStartTime = 0, recordingChunks = [], currentRecording = null, currentPlayingSource = null, highlightedChunkIndex = -1;
 const config = configProxy(manifest);
-export const initialize = async (rt) => { runtime = rt; setupAudioContext(); setupRecognition(); playbackRate = config.playbackRate; };
+export const initialize = async (rt, l) => { runtime = rt; setupAudioContext(); setupRecognition(); playbackRate = config.playbackRate; };
 // === SETUP ===
-const setupAudioContext = () => { try { audioContext = new (window.AudioContext || window["webkitAudioContext"])(); } catch (e) { runtime.logError('[STT] AudioContext:', e); } };
+const setupAudioContext = () => { try { audioContext = new (window.AudioContext || window["webkitAudioContext"])(); } catch (e) { log.error(' AudioContext:', e); } };
 const setupRecognition = () => {
-	if (!window["webkitSpeechRecognition"]) return runtime.logError('[STT] WebKit speech not supported');
+	if (!window["webkitSpeechRecognition"]) return log.error(' WebKit speech not supported');
 	recognition = new window["webkitSpeechRecognition"]();
 	Object.assign(recognition, { continuous: true, interimResults: true, lang: config.language });
 	recognition.onstart = () => handleStart();
@@ -50,7 +50,7 @@ const handleStart = async () => {
 	await runtime.call('layout.addComponent', 'transcript-viewer');
 };
 const handleEnd = async () => { isListening = false; await refreshUI(); };
-const handleError = async (e) => { isListening = false; await refreshUI(); runtime.logError('[STT] Error:', e.error); };
+const handleError = async (e) => { isListening = false; await refreshUI(); log.error(' Error:', e.error); };
 const handleResult = (event) => {
 	const currentTimeMs = performance.now() - audioStartTime;
 	for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -67,7 +67,7 @@ const handleResult = (event) => {
 	(currentRecording || isListening) && refreshTranscriptViewer();
 };
 // === RECORDING CONTROL ===
-export const startListening = async () => { if (!recognition || isListening) return; try { await startAudioRecording(); recognition.start(); } catch (e) { runtime.logError('[STT] Start failed:', e); await stopAudioRecording(); } };
+export const startListening = async () => { if (!recognition || isListening) return; try { await startAudioRecording(); recognition.start(); } catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); } };
 export const stopListening = async () => { if (!recognition || !isListening) return; recognition.stop(); await stopAudioRecording(); };
 export const toggleListening = async () => isListening ? await stopListening() : await startListening();
 // === AUDIO RECORDING ===
@@ -91,8 +91,8 @@ const finalizeRecording = async (audioBlob) => {
 		id: getId('rec-'), audioBlob, transcript: finalChunks.map(c => c.text).join(' '), goldStandard: '', chunks: finalChunks,
 		duration: finalChunks[finalChunks.length - 1].endTime, timestamp: new Date().toISOString(), language: config.language
 	};
-	try { await runtime.call('indexed-db.addRecord', 'SpeechAudioDB', 'recordings', recording); runtime.log('[STT] Saved:', recording.id); }
-	catch (error) { runtime.logError('[STT] Save failed:', error); }
+	try { await runtime.call('indexed-db.addRecord', 'SpeechAudioDB', 'recordings', recording); log.log(' Saved:', recording.id); }
+	catch (error) { log.error(' Save failed:', error); }
 };
 // === PLAYBACK ===
 export const loadRecording = async (recordingId) => {
@@ -146,7 +146,7 @@ export const getRecordings = async () => {
 	try {
 		const recordings = await runtime.call('indexed-db.getByIndexCursor', 'SpeechAudioDB', 'recordings', 'by-timestamp', 'prev', 50);
 		return recordings.map(r => ({ id: r.id, transcript: r.transcript.substring(0, 100) + (r.transcript.length > 100 ? '...' : ''), goldStandard: r.goldStandard || '', duration: r.duration, timestamp: r.timestamp, language: r.language, chunkCount: r.chunks.length }));
-	} catch (error) { runtime.logError('[STT] Get recordings failed:', error); return []; }
+	} catch (error) { log.error(' Get recordings failed:', error); return []; }
 };
 export const deleteRecording = async (recordingId) => {
 	await runtime.call('indexed-db.removeRecord', 'SpeechAudioDB', 'recordings', recordingId);
