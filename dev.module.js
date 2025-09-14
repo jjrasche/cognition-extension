@@ -6,10 +6,10 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Development utilities and shortcuts for debugging",
 	permissions: ["storage"],
-	actions: ["testEmbeddingSpeed", "quickLogs", "last20Logs"],
+	actions: ["testEmbeddingSpeed", "allLogs", "getLogs"],
 	config: {
-		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Filter Logs from Clipboard', action: "quickLogs" },
-		last20LogsKey: { type: 'globalKey', value: 'Ctrl+Shift+K', label: 'Filter Last 20 Logs from Clipboard', action: "last20Logs" }
+		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Filter Logs from Clipboard', action: "getLogs" },
+		last20LogsKey: { type: 'globalKey', value: 'Ctrl+Shift+K', label: 'Filter All Logs', action: "allLogs" }
 	}
 };
 
@@ -75,17 +75,18 @@ export const testEmbeddingSpeed = async (text, runs = 10) => {
 	return sorted;
 };
 
-export const quickLogs = async (shouldFilter) => {
+export const getLogs = async (num = 20, filter) => {
 	try {
-		const filter = shouldFilter ?? (await navigator.clipboard.readText()).trim();
-		const logs = await runtime.call('chrome-local.get', 'runtime.logs') || [];
-		const filtered = filter ? logs.filter(log => log.message.includes(filter)) : logs.slice(-20);
-		const formatted = filtered.map(log => `${log.context}: ${log.message}${log.data ? ` | ${log.data}` : ''}`);
-		await navigator.clipboard.writeText(formatted.join('\n'));
-		return `${filtered.length} logs copied (filter: "${filter || 'recent'}")`;
+		filter = filter ?? (await navigator.clipboard.readText()).trim();
+		const logs = (await runtime.call('chrome-local.get', 'runtime.logs')).sort((a, b) => a.time - b.time)
+		const start = logs[0].time;
+		const filtered = logs.filter(log => log.message.includes(filter))
+		const recent = filtered.slice(-num);
+		const formatted = recent.map(m => `(${m.time - start}ms) [${m.context}] ${m.message}${m.message.includes("failed") ? ', ' + JSON.stringify(m.data) : ''}`);
+		await navigator.clipboard.writeText(formatted.length > 0 ? formatted.join('\n') : `No logs found matching "${filter}"`);
 	} catch (error) {
 		return `Clipboard failed: ${error.message}`;
 	}
 };
 
-export const last20Logs = async () => quickLogs(false);
+export const allLogs = async () => getLogs(Infinity, '');

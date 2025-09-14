@@ -21,26 +21,18 @@ export const clear = async () => await chrome.storage.local.clear();
 export const getBytesInUse = async (keys) => await chrome.storage.local.getBytesInUse(keys);
 
 
+const pendingOperations = new Map();
+
 export const append = async (key, value, maxEntries) => {
-	console.log(`[chrome-local] append start: ${key}`);
+	const operation = (pendingOperations.get(key) || Promise.resolve())
+		.then(async () => {
+			const updated = [...(await get(key) || []), value];
+			await set({ [key]: maxEntries ? updated.slice(-maxEntries) : updated });
+			return updated.length;
+		});
 
-	try {
-		console.log(`[chrome-local] getting current value for ${key}`);
-		const current = (await get(key)) || [];
-		console.log(`[chrome-local] got current, length: ${current.length}`);
-
-		const updated = [...current, value];
-		const final = maxEntries ? updated.slice(-maxEntries) : updated;
-		console.log(`[chrome-local] setting updated value, length: ${final.length}`);
-
-		await set({ [key]: final });
-		console.log(`[chrome-local] append complete: ${key}`);
-
-		return final.length;
-	} catch (error) {
-		console.error(`[chrome-local] append failed for ${key}:`, error);
-		throw error;
-	}
+	pendingOperations.set(key, operation);
+	return operation.finally(() => pendingOperations.get(key) === operation && pendingOperations.delete(key));
 };
 
 export const test = async () => {
