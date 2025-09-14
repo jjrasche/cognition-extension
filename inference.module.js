@@ -5,7 +5,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Manages LLM inference across multiple providers",
 	dependencies: ["chrome-sync", "graph-db"],
-	actions: ["prompt", "infer"],
+	actions: ["prompt", "infer", "buildInferenceUI"],
 	commands: [{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" }],
 	config: {
 		provider: { type: 'select', value: '', label: 'AI Provider', description: 'Select your preferred AI provider', onChange: "setModelConfigOptions" },

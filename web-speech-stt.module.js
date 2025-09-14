@@ -8,7 +8,7 @@ export const manifest = {
 	dependencies: ["indexed-db"],
 	actions: ["startListening", "stopListening", "toggleListening", "getStatus", "getRecordings", "loadRecording", "deleteRecording", "seekToChunk", "seekToTime", "togglePlayback", "setPlaybackRate", "saveGoldStandard"],
 	uiComponents: [
-		{ name: "stt-indicator", getTree: "buildIndicator", zLayer: "SYSTEM" },
+		{ name: "stt-indicator", getTree: "buildIndicator", },
 		{ name: "transcript-viewer", getTree: "buildTranscriptViewer" },
 		{ name: "recording-manager", getTree: "buildRecordingManager" }
 	],

@@ -27,7 +27,6 @@ let defaultState = { name: '', x: 0, y: 0, width: 30, height: 20, savedPosition:
 export const initialize = async (rt) => {
 	runtime = rt;
 	document.body.style.cssText = document.documentElement.style.cssText = 'margin: 0; padding: 0;';
-	runtime.moduleState.addListener(handleModuleStateChange);
 	await discoverComponents();
 	await loadComponentStates();
 	await initializeLayoutContainer();
@@ -35,6 +34,7 @@ export const initialize = async (rt) => {
 	setupKeyboardHandlers();
 	const loadingEl = document.getElementById('cognition-loading');
 	loadingEl && (loadingEl.style.opacity = '0', loadingEl.style.transition = 'opacity 0.5s', setTimeout(() => loadingEl.remove(), 500));
+	runtime.moduleState.addListener(handleModuleStateChange);
 };
 // === STATE MANAGEMENT ===
 const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState, name }).get(name);
@@ -78,6 +78,7 @@ const discoverComponents = async () => runtime.getModulesWithProperty('uiCompone
 );
 const handleModuleStateChange = async (moduleName, newState) => {
 	const changedComponents = [];
+	runtime.log(`[Layout] Module state changed: ${moduleName} is now ${newState}`);
 	for (const [name, state] of componentStates) {
 		if (state.moduleName === moduleName) {
 			const wasLoading = state.isLoading;
