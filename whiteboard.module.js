@@ -131,9 +131,9 @@ const updateState = (event) => {
 };
 
 const rebuildState = (events) => {
-	const state = createEmptyState();
-	events.forEach(event => updateState.call({ currentState: state }, event));
-	return state;
+	// const state = createEmptyState();
+	// events.forEach(event => updateState.call({ currentState: state }, event));
+	// return state;
 };
 
 // === EXTRACTION FLOW ===
@@ -253,7 +253,7 @@ export const triggerAI = async (input) => {
 	});
 
 	// Show in UI for acceptance
-	await showAISuggestion(suggestion);
+	// await showAISuggestion(suggestion);
 };
 
 export const searchGraph = async (text) => {
@@ -376,7 +376,7 @@ const buildSources = () => Object.fromEntries(
 	currentState.sources.map((source, i) => [`source-${i}`, {
 		tag: "div",
 		style: `padding: 8px; margin: 5px 0; border-left: 3px solid ${source.type === 'transcript' ? '#4CAF50' :
-				source.type === 'graph' ? '#2196F3' : '#FF9800'
+			source.type === 'graph' ? '#2196F3' : '#FF9800'
 			}; background: var(--bg-tertiary); cursor: text;`,
 		"data-source-id": source.id,
 		"data-source-type": source.type,
