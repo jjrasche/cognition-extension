@@ -1,7 +1,7 @@
 import { calculateCosineSimilarity, getId } from "./helpers.js";
 export const manifest = {
 	name: "graph-db",
-	context: ["service-worker"],
+	context: ["service-worker", "extension-page", "offscreen"],
 	version: "1.0.0",
 	description: "Graph database for storing knowledge and relationships",
 	permissions: ["storage"],
