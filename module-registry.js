@@ -18,7 +18,7 @@ import * as layoutModule from './layout.module.js';
 import * as manualAtomExtractor from './manual-atom-extractor.module.js';
 import * as siteIndexModule from './site-index.module.js';
 import * as summaryModule from './summary.module.js';
-import * as superIntendentModule from './superintendent.module.js';
+// import * as superIntendentModule from './superintendent.module.js';
 import * as systemHealthModule from './system-health.module.js';
 import * as tabModule from './tab.module.js';
 import * as tetrisModule from './tetris.module.js';
@@ -49,7 +49,7 @@ export const modules = [
 	manualAtomExtractor,
 	siteIndexModule,
 	summaryModule,
-	superIntendentModule,
+	// superIntendentModule,
 	systemHealthModule,
 	tabModule,
 	tetrisModule,

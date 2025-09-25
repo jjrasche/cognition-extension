@@ -7,7 +7,30 @@ export const manifest = {
 };
 
 let runtime, log;
-export const initialize = async (rt, l) => { runtime = rt; log = l; }
+export const initialize = async (rt, l) => { 
+	runtime = rt; log = l; 
+	setupGlobalSelection();
+}
+
+const setupGlobalSelection = () => document.addEventListener('mouseup', handleGlobalSelection);
+const handleGlobalSelection = async (event) => {
+	const selection = window.getSelection();
+	if (!selection || !selection.toString().trim()) return;
+	if (event.target.closest('input, textarea, [contenteditable]')) return;
+	const sourceEl = event.target.closest('[data-source-id]');
+	if (!sourceEl) return;
+	const selectionData = { selectedText: selection.toString().trim(), sourceId: sourceEl.dataset.sourceId, sourceType: sourceEl.dataset.sourceType || 'unknown', fullSourceText: sourceEl.textContent || sourceEl.innerText, moduleOrigin: sourceEl.dataset.moduleOrigin };
+	try { await runtime.call('whiteboard.handleGlobalSelection', selectionData); }
+	catch (error) { console.log('Global selection: whiteboard module not available'); }
+};
+
+export const createSelectableSource = (content, sourceId, sourceType, moduleOrigin) => ({
+	...content,
+	"data-source-id": sourceId,
+	"data-source-type": sourceType,
+	"data-module-origin": moduleOrigin
+});
+
 
 export const transform = async (tree, container) => {
 	if (!tree || typeof tree !== 'object') throw new Error('Tree must be valid object');
