@@ -170,7 +170,7 @@ export const copyAllLogs = async () => {
 const getStartTime = () => allLogEntries.length > 0 ? Math.min(...allLogEntries.map(l => l.time)) : Date.now();
 const formatLogEntry = (log, startTime) => `${formatTime(log.time - startTime)} [${log.context}] ${log.message}\n${formatData(log.data).substring(0, dataTruncateLength)}`;
 const formatTime = (timestamp) => new Date(timestamp).toLocaleTimeString('en-US', { hour12: false });
-const formatData = (data) => { try { return JSON.stringify(data); } catch { return String(data); } };
+const formatData = (data) => data === undefined || data === null ? '' : (() => { try { return JSON.stringify(data); } catch { return String(data); } })();
 
 const refreshLogViewer = () => runtime.call('layout.renderComponent', 'log-viewer');
 const buildLogEntries = () => {
