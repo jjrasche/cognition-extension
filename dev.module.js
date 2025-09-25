@@ -11,8 +11,8 @@ export const manifest = {
 		{ name: "log-viewer", getTree: "buildLogViewer" }
 	],
 	config: {
-		quickLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+L', label: 'Filter Logs from Clipboard', action: "getLogs" },
-		last20LogsKey: { type: 'globalKey', value: 'Ctrl+Shift+K', label: 'Filter All Logs', action: "allLogs" }
+		copyLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+D', label: 'Copy All Logs', action: "copyAllLogs" },
+		clearLogsKey: { type: 'globalKey', value: 'Ctrl+Shift+K', label: 'Clear Logs', action: "clearLogs" }
 	}
 };
 
