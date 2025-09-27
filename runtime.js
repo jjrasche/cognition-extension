@@ -15,6 +15,7 @@ class Runtime {
 		this.testUtils = { ...asserts, runUnitTest };
 		this.testResults = [];
 		this.allContextTestResults = new Map();
+		this.allContextTestedModules = new Set();
 		this.log = this.createModuleLogger('Runtime');
 	}
 	initialize = async () => {
@@ -88,15 +89,29 @@ class Runtime {
 		if (message.type === 'TEST_RESULTS') {
 			this.log.log(`Received TEST_RESULTS from ${message.context} with ${message.results.length} results`);
 			this.allContextTestResults.set(message.context, message.results);
+
+			// Track tested modules even if they have no results
+			if (message.testedModules) {
+				this.allContextTestedModules = this.allContextTestedModules || new Set();
+				message.testedModules.forEach(module => this.allContextTestedModules.add(module));
+			}
+
 			if (this.areAllTestsComplete()) this.showTests();
 			return true;
 		}
 	};
 	areAllTestsComplete = () => {
 		const modulesWithTests = this.getModulesWithProperty("test").map(m => m.manifest.name);
+
+		// Check both results and tracked tested modules
 		const modulesWithResults = new Set(Array.from(this.allContextTestResults.values()).flat().map(result => result.module));
-		const ret = [...modulesWithTests].every(moduleName => modulesWithResults.has(moduleName));
-		this.log.log(`expected ${modulesWithTests} to be complete, got ${[...modulesWithResults]}`);
+		const allTestedModules = new Set([
+			...modulesWithResults,
+			...(this.allContextTestedModules || [])
+		]);
+
+		const ret = [...modulesWithTests].every(moduleName => allTestedModules.has(moduleName));
+		this.log.log(`expected ${modulesWithTests} to be complete, got ${[...allTestedModules]}`);
 		return ret;
 	};
 
@@ -129,7 +144,16 @@ class Runtime {
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
 	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
 	broadcastTestResults = async () => {
-		await retryAsync(async () => chrome.runtime.sendMessage({ type: 'TEST_RESULTS', context: this.runtimeName, results: this.testResults }))
+		const testedModules = this.contextModules
+			.filter(module => this.moduleHasProperty(module, "test"))
+			.map(module => module.manifest.name);
+
+		await retryAsync(async () => chrome.runtime.sendMessage({
+			type: 'TEST_RESULTS',
+			context: this.runtimeName,
+			results: this.testResults,
+			testedModules // Add this
+		}))
 			.then(() => this.log.log(`Sent TEST_RESULTS message in ${this.runtimeName}`))
 			.catch(() => this.log.error(`Failed to send TEST_RESULTS message in ${this.runtimeName}`));
 	};
