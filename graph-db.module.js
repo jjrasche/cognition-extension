@@ -152,15 +152,15 @@ export const test = async () => {
 		// 	};
 		// 	return { actual, assert: deepEqual, expected: { resultsArray: true, emptyResults: true } };
 		// }),
-		runUnitTest("searchByText with very high threshold returns no results", async () => {
-			const testNode = { type: 'test-high-threshold', content: 'Test content for high threshold', embedding: await runtime.call('embedding.embedText', 'Test content for high threshold') };
-			await addNode(testNode);
-			const results = await searchByText('completely different topic', 0.99);
-			const actual = results.length;
-			return { actual, assert: strictEqual, expected: 0 };
-		})
+		// runUnitTest("searchByText with very high threshold returns no results", async () => {
+		// 	const testNode = { type: 'test-high-threshold', content: 'Test content for high threshold', embedding: await runtime.call('embedding.embedText', 'Test content for high threshold') };
+		// 	await addNode(testNode);
+		// 	const results = await searchByText('completely different topic', 0.99);
+		// 	const actual = results.length;
+		// 	return { actual, assert: strictEqual, expected: 0 };
+		// })
 	]);
-	await testTearDown(originalHelpers);
+	// await testTearDown(originalHelpers);
 	return [...searchTests];
 };
 

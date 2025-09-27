@@ -27,7 +27,7 @@ class Runtime {
 			this.log.log('🚀 Runtime initialization started');
 			this.setupMessageListener();
 			await this.initializeModules();
-			// await this.runTests();
+			await this.runTests();
 			this.log.log('Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState) });
 		} catch (error) {
 			this.log.error(`Initialization failed in ${this.runtimeName}`, error);
@@ -86,6 +86,7 @@ class Runtime {
 	}
 	handleTestResultsMessage = (message) => {
 		if (message.type === 'TEST_RESULTS') {
+			this.log.log(`Received TEST_RESULTS from ${message.context} with ${message.results.length} results`);
 			this.allContextTestResults.set(message.context, message.results);
 			if (this.areAllTestsComplete()) this.showTests();
 			return true;
@@ -218,18 +219,18 @@ class Runtime {
 	};
 
 	createModuleLogger = (moduleName) => ({
-		log: (message, data) => this.internalLog(message, moduleName, data, 'log'),
 		info: (message, data) => this.internalLog(message, moduleName, data, 'info'),
+		log: (message, data) => this.internalLog(message, moduleName, data, 'log'),
 		warn: (message, data) => this.internalLog(message, moduleName, data, 'warn'),
 		error: (message, data) => this.internalLog(message, moduleName, data, 'error')
 	});
 	internalLog = (message, moduleName, data, severity = 'log') => {
 		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // Only persistence of storage calls to avoid infinite loops
-		if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // prevents cross context message overlap		
+		// if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // prevents cross context message overlap		
 		this.printLog(console[severity], message, moduleName, data);
 		this.persistLog(message, moduleName, data, severity).catch(err => console.warn('Log persist failed:', err));
 	};
-	printLog = async (func, message, moduleName, data) => func(`[${moduleName}] ${message}`, data || '');
+	printLog = async (func, message, moduleName, data) => func(`(${this.runtimeName}) [${moduleName}] ${message}`, data || '');
 	persistLog = async (message, moduleName, data, severity) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, moduleName, data, severity));
 	createLog = (message, moduleName, data, severity = 'log') => ({
 		time: Date.now(),
@@ -252,7 +253,10 @@ class Runtime {
 		this.broadcastTestResults();
 		if (this.areAllTestsComplete()) this.showTests();
 	};
-	runModuleTests = async (module) => (await module['test']()).map(test => ({ ...test, module: module.manifest.name }));
+	runModuleTests = async (module) => {
+		this.log.log(`Running tests for module: ${module.manifest.name}`);
+		return (await module['test']()).map(test => ({ ...test, module: module.manifest.name }));
+	};
 	showTests = (results) => {
 		results = results ?? Array.from(this.allContextTestResults.values()).flat();
 		this.showModuleSummary(results);

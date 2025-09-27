@@ -1,6 +1,6 @@
 import './helpers.js';
 import * as apiKeysModule from './api-keys.module.js';
-import * as atomicIdeaModule from './atomic-idea.module.js';
+// import * as atomicIdeaModule from './atomic-idea.module.js';
 import * as chromeLocalModule from './chrome-local.module.js'
 import * as chromeSyncModule from './chrome-sync.module.js';
 import * as claudeApiModule from './claude-api.module.js';
@@ -17,7 +17,7 @@ import * as inferenceModule from './inference.module.js';
 import * as layoutModule from './layout.module.js';
 import * as manualAtomExtractor from './manual-atom-extractor.module.js';
 import * as siteIndexModule from './site-index.module.js';
-import * as summaryModule from './summary.module.js';
+// import * as summaryModule from './summary.module.js';
 // import * as superIntendentModule from './superintendent.module.js';
 import * as systemHealthModule from './system-health.module.js';
 import * as tabModule from './tab.module.js';
@@ -31,7 +31,7 @@ import * as webSpeechTTSModule from './web-speech-tts.module.js';
 
 export const modules = [
 	apiKeysModule,
-	atomicIdeaModule,
+	// atomicIdeaModule,
 	chromeLocalModule,
 	chromeSyncModule,
 	claudeApiModule,
@@ -48,7 +48,7 @@ export const modules = [
 	layoutModule,
 	manualAtomExtractor,
 	siteIndexModule,
-	summaryModule,
+	// summaryModule,
 	// superIntendentModule,
 	systemHealthModule,
 	tabModule,
