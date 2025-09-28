@@ -15,6 +15,7 @@ class Runtime {
 		this.testUtils = { ...asserts, runUnitTest };
 		this.testResults = [];
 		this.allContextTestResults = new Map();
+		this.allContextTestedModules = new Set();
 		this.log = this.createModuleLogger('Runtime');
 	}
 	initialize = async () => {
@@ -27,7 +28,7 @@ class Runtime {
 			this.log.log('🚀 Runtime initialization started');
 			this.setupMessageListener();
 			await this.initializeModules();
-			// await this.runTests();
+			await this.runTests();
 			this.log.log('Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState) });
 		} catch (error) {
 			this.log.error(`Initialization failed in ${this.runtimeName}`, error);
@@ -86,16 +87,31 @@ class Runtime {
 	}
 	handleTestResultsMessage = (message) => {
 		if (message.type === 'TEST_RESULTS') {
+			this.log.log(`Received TEST_RESULTS from ${message.context} with ${message.results.length} results`);
 			this.allContextTestResults.set(message.context, message.results);
+
+			// Track tested modules even if they have no results
+			if (message.testedModules) {
+				this.allContextTestedModules = this.allContextTestedModules || new Set();
+				message.testedModules.forEach(module => this.allContextTestedModules.add(module));
+			}
+
 			if (this.areAllTestsComplete()) this.showTests();
 			return true;
 		}
 	};
 	areAllTestsComplete = () => {
 		const modulesWithTests = this.getModulesWithProperty("test").map(m => m.manifest.name);
+
+		// Check both results and tracked tested modules
 		const modulesWithResults = new Set(Array.from(this.allContextTestResults.values()).flat().map(result => result.module));
-		const ret = [...modulesWithTests].every(moduleName => modulesWithResults.has(moduleName));
-		this.log.log(`expected ${modulesWithTests} to be complete, got ${[...modulesWithResults]}`);
+		const allTestedModules = new Set([
+			...modulesWithResults,
+			...(this.allContextTestedModules || [])
+		]);
+
+		const ret = [...modulesWithTests].every(moduleName => allTestedModules.has(moduleName));
+		this.log.log(`expected ${modulesWithTests} to be complete, got ${[...allTestedModules]}`);
 		return ret;
 	};
 
@@ -128,7 +144,16 @@ class Runtime {
 	allModulesInitialized = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.has(moduleName));
 	allModulesReady = () => modules.map(m => m.manifest.name).every(moduleName => this.moduleState.get(moduleName) === 'ready');
 	broadcastTestResults = async () => {
-		await retryAsync(async () => chrome.runtime.sendMessage({ type: 'TEST_RESULTS', context: this.runtimeName, results: this.testResults }))
+		const testedModules = this.contextModules
+			.filter(module => this.moduleHasProperty(module, "test"))
+			.map(module => module.manifest.name);
+
+		await retryAsync(async () => chrome.runtime.sendMessage({
+			type: 'TEST_RESULTS',
+			context: this.runtimeName,
+			results: this.testResults,
+			testedModules // Add this
+		}))
 			.then(() => this.log.log(`Sent TEST_RESULTS message in ${this.runtimeName}`))
 			.catch(() => this.log.error(`Failed to send TEST_RESULTS message in ${this.runtimeName}`));
 	};
@@ -218,18 +243,18 @@ class Runtime {
 	};
 
 	createModuleLogger = (moduleName) => ({
-		log: (message, data) => this.internalLog(message, moduleName, data, 'log'),
 		info: (message, data) => this.internalLog(message, moduleName, data, 'info'),
+		log: (message, data) => this.internalLog(message, moduleName, data, 'log'),
 		warn: (message, data) => this.internalLog(message, moduleName, data, 'warn'),
 		error: (message, data) => this.internalLog(message, moduleName, data, 'error')
 	});
 	internalLog = (message, moduleName, data, severity = 'log') => {
 		if (message.includes('chrome-local.') || message.includes('chrome-sync.')) return; // Only persistence of storage calls to avoid infinite loops
-		if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // prevents cross context message overlap		
+		// if (message.includes("service-worker") && this.runtimeName !== "service-worker") return; // prevents cross context message overlap		
 		this.printLog(console[severity], message, moduleName, data);
 		this.persistLog(message, moduleName, data, severity).catch(err => console.warn('Log persist failed:', err));
 	};
-	printLog = async (func, message, moduleName, data) => func(`[${moduleName}] ${message}`, data || '');
+	printLog = async (func, message, moduleName, data) => func(`(${this.runtimeName}) [${moduleName}] ${message}`, data || '');
 	persistLog = async (message, moduleName, data, severity) => await this.call('chrome-local.append', 'runtime.logs', this.createLog(message, moduleName, data, severity));
 	createLog = (message, moduleName, data, severity = 'log') => ({
 		time: Date.now(),
@@ -252,7 +277,10 @@ class Runtime {
 		this.broadcastTestResults();
 		if (this.areAllTestsComplete()) this.showTests();
 	};
-	runModuleTests = async (module) => (await module['test']()).map(test => ({ ...test, module: module.manifest.name }));
+	runModuleTests = async (module) => {
+		this.log.log(`Running tests for module: ${module.manifest.name}`);
+		return (await module['test']()).map(test => ({ ...test, module: module.manifest.name }));
+	};
 	showTests = (results) => {
 		results = results ?? Array.from(this.allContextTestResults.values()).flat();
 		this.showModuleSummary(results);

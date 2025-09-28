@@ -6,7 +6,7 @@ export const manifest = {
 	description: "Component layout system with z-layers, mode overlays, and window snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponentFromPicker", "togglePin", "snapToHalf"],
+	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponent", "addComponentFromPicker", "togglePin", "snapToHalf"],
 	commands: [
 		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
