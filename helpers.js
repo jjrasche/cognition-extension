@@ -74,6 +74,10 @@ export const runUnitTest = async (name, testFn, afterFn) => {
 export const asserts = {
 	strictEqual: (a, b) => a === b,
 	looseEqual: (a, b) => a == b,
+	greaterThan: (a, b) => a > b,
+	greaterThanOrEqual: (a, b) => a >= b,
+	lessThan: (a, b) => a < b,
+	lessThanOrEqual: (a, b) => a <= b,
 	contains: (arr, item) => arr.includes(item),
 	containsAll: (arr, items) => items.every(item => arr.includes(item)),
 	deepEqual: (a, b) => {
