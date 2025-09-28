@@ -106,9 +106,12 @@ export const handleDiffModification = async (eventData) => ({});
 
 // === RED-GREEN TEST CYCLE ===
 export const test = async () => {
-  const { runUnitTest } = runtime.testUtils;
-  
+  const { runUnitTest, greaterThanOrEqual } = runtime.testUtils;
   return [
+    await runUnitTest("LLM Architecture Comprehension", async () => {
+        const results = await testArchitectureComprehension();    
+		return { actual: results.filter(r => r.passed).length, assert: greaterThanOrEqual, expected: (results.length - 1) };
+    }),
     // Stack Trace Extraction Tests - Extension Specific
     await runUnitTest("Stack trace extraction handles chrome-extension:// URLs correctly", async () => true),
     await runUnitTest("Stack trace extraction handles webpack bundle references", async () => true),
@@ -156,3 +159,24 @@ export const test = async () => {
     await runUnitTest("Multiple iterations create separate training records with progression tracking", async () => true)
   ];
 };
+
+const testArchitectureComprehension = async () => {
+	return await Promise.all([
+		{ concept: "cross-context-communication", question: "How do modules communicate across different contexts (service-worker, extension-page, offscreen)?", options: ["A: Direct function calls", "B: runtime.call() with action routing", "C: Chrome message passing directly", "D: Shared global variables"], correct: "B", },
+		{ concept: "module-design-patterns", question: "When should you create a NEW module vs extending an existing one?", options: ["A: Always create new modules", "B: For distinct features with own state/actions", "C: Only when file gets too large", "D: Never create new modules"], correct: "B", },
+		{ concept: "context-restrictions", question: "Which context can render UI components?",  options: ["A: service-worker only", "B: extension-page only", "C: offscreen only", "D: Any context"], correct: "B", },
+		{ concept: "action-routing", question: "What happens when runtime.call() targets an action in a different context?", options: ["A: Throws an error immediately", "B: Auto-routes via message passing", "C: Times out silently", "D: Falls back to local execution"], correct: "B",  },
+		{ concept: "dependency-management", question: "How are module dependencies handled during initialization?", options: ["A: Parallel initialization", "B: Dependency order with waiting", "C: Manual dependency management", "D: Random initialization order"], correct: "B", },
+		{ concept: "storage-architecture", question: "What's the difference between chrome-local and chrome-sync modules?", options: ["A: No difference, same API", "B: Local is faster, sync persists across devices", "C: Local is temporary, sync is permanent", "D: Local is for settings, sync for data"], correct: "B", },
+		{ concept: "ui-architecture", question: "How should UI components be structured in this architecture?", options: ["A: Direct DOM manipulation", "B: Tree structures transformed by tree-to-dom", "C: React components only", "D: HTML templates"], correct: "B",  },
+		{ concept: "error-resilience", question: "What happens if a module fails to initialize?", options: ["A: Entire extension crashes", "B: Module marked as 'failed', others continue", "C: Automatic retry until success", "D: Silent failure"], correct: "B", }
+	].map(async q => questionLLM(q)));
+};
+const questionLLM = async (q) => {
+    try {
+        const prompt = `Answer this multiple choice question:\n${q.question}\n${q.options.join('\n')}.\nRespond with ONLY the letter (A, B, C, or D) of the correct answer.`;
+        const llmAnswer = (await runtime.call('inference.prompt', { query: prompt })).trim().toUpperCase()
+        const isCorrect = llmAnswer === q.correct;
+        return{ concept: q.concept, question: q.question, correctAnswer: q.correct, llmAnswer: llmAnswer, passed: isCorrect, explanation: isCorrect ? "✅ Correct" : `❌ Expected ${q.correct}, got ${llmAnswer}` };
+    } catch (error) { return { concept: q.concept,  passed: false, error: error.message }; }
+}
