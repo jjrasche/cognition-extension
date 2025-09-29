@@ -23,7 +23,7 @@ export const initialize = async (rt, l) => {
 	if (!apiKey) throw new Error('GROQ API key not configured');
 };
 
-export const makeRequest = async (model, messages) => {
+export const makeRequest = async (model, messages, webSearch, responseFormat) => {
 	const systemMessage = messages.find(m => m.role === 'system');
 	const chatMessages = messages.filter(m => m.role !== 'system');
 	const requestBody = {
@@ -31,7 +31,8 @@ export const makeRequest = async (model, messages) => {
 		messages: systemMessage ? [systemMessage, ...chatMessages] : chatMessages,
 		temperature: 0.7,
 		max_tokens: Math.min(model.maxOutput || 4096, 4096),
-		stream: false
+		stream: false,
+        ...(responseFormat && { response_format: responseFormat })
 	};
 	const req = { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) };
 	return await fetch('https://api.groq.com/openai/v1/chat/completions', req);

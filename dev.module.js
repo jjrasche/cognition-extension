@@ -82,7 +82,7 @@ export const testEmbeddingSpeed = async (text, runs = 10) => {
 
 // === LOG VIEWER ===
 const LOG_LEVELS = { info: 0, log: 1, warn: 2, error: 3 };
-let searchTimeout = null, dataTruncateLength = 100;
+let searchTimeout = null, dataTruncateLength = 10000;
 export const searchLogs = async (eventData) => {
 	const searchTerm = eventData.target.value.toLowerCase();
 	clearTimeout(searchTimeout);

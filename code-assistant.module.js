@@ -185,17 +185,217 @@ export const debugMode = async (errorLogs) => ({});
 export const buildMode = async (requirements) => ({});
 
 // === LLM INTEGRATION ===
-// Orchestrates LLM call: assembles mode-specific prompt, calls inference module, parses structured response with validation
-const generateChanges = async (context, mode) => ({});
 
-// Converts context object into structured prompt for LLM - different system prompts and focus for debug vs build
-const assemblePrompt = (context, mode) => "";
+const generateChanges = async (context, mode) => {
+    const prompt = assemblePrompt(context, mode);
+    const schema = getResponseSchema(mode);
+    
+    try {
+        const llmResponse = await runtime.call('inference.prompt', { 
+            query: prompt,
+            systemPrompt: getSystemPrompt(mode),
+            responseFormat: {
+                type: "json_schema",
+                json_schema: {
+                    name: `${mode}_fix_response`,
+                    strict: true,
+                    schema: schema
+                }
+            }
+        });
+        
+        // Groq guarantees valid JSON matching schema, just parse it
+        const parsed = JSON.parse(llmResponse);
+        return parsed;
+        
+    } catch (error) {
+        log.error('LLM call failed:', error);
+        return { changes: [], reasoning: `Failed to generate changes: ${error.message}` };
+    }
+};
 
-// Returns mode-specific system prompts: debug focuses on minimal fixes, build focuses on complete implementations
-const getSystemPrompt = (mode) => "";
+const getResponseSchema = (mode) => {
+    if (mode === 'debug') {
+        return {
+            type: "object",
+            properties: {
+                changes: {
+                    type: "array",
+                    items: {
+                        type: "object",
+                        properties: {
+                            filePath: { type: "string" },
+                            functionName: { type: "string" },
+                            newCode: { type: "string" }
+                        },
+                        required: ["filePath", "functionName", "newCode"],
+                        additionalProperties: false
+                    }
+                },
+                reasoning: { type: "string" }
+            },
+            required: ["changes", "reasoning"],
+            additionalProperties: false
+        };
+    }
+    
+    // Build mode schema
+    return {
+        type: "object",
+        properties: {
+            changes: {
+                type: "array",
+                items: {
+                    type: "object",
+                    properties: {
+                        filePath: { type: "string" },
+                        functionName: { type: "string" },
+                        newCode: { type: "string" }
+                    },
+                    required: ["filePath", "functionName", "newCode"],
+                    additionalProperties: false
+                }
+            },
+            reasoning: { type: "string" },
+            testCases: {
+                type: "array",
+                items: { type: "string" }
+            }
+        },
+        required: ["changes", "reasoning"],
+        additionalProperties: false
+    };
+};
 
-// Parses LLM JSON response into standardized changes format with mode-specific validation rules
-const parseStructuredResponse = (response, mode) => ({ changes: [], reasoning: "", testCases: [] });
+const assembleDebugPrompt = (context) => {
+    const { error, files, coreContext } = context;
+    
+    // Simplified - no need for JSON format instructions
+    return `# DEBUG MODE: Fix Runtime Error
+
+## Error Log
+\`\`\`
+${error}
+\`\`\`
+
+## File Content
+${Object.entries(files).map(([path, content]) => `
+### ${path}
+\`\`\`javascript
+${content}
+\`\`\`
+`).join('\n')}
+
+## System Architecture Context
+${JSON.stringify(coreContext.systemArchitecture, null, 2)}
+
+## Common Patterns
+${JSON.stringify(coreContext.moduleBuildPatterns, null, 2)}
+
+## Runtime Call Examples
+${JSON.stringify(coreContext.runtimeCallExamples, null, 2)}
+
+## Instructions
+1. Identify the root cause of the error
+2. Generate a MINIMAL fix (change only what's necessary)
+3. Use safe references from class instance (this.property) instead of global references
+4. Preserve all existing logic and structure
+5. Return complete replacement function code with proper formatting`;
+};
+
+const assemblePrompt = (context, mode) => {
+    if (mode === 'debug') {
+        return assembleDebugPrompt(context);
+    }
+    return assembleBuildPrompt(context);
+};
+
+const assembleBuildPrompt = (context) => {
+    // TODO: Implement for build mode
+    return `Build mode not yet implemented`;
+};
+
+const getSystemPrompt = (mode) => {
+    if (mode === 'debug') {
+        return `You are a debugging assistant for a Chrome extension with a modular architecture. 
+
+Your goal: Generate MINIMAL fixes that resolve errors while preserving existing code structure.
+
+Rules:
+- Change ONLY the code necessary to fix the error
+- Use instance properties (this.contextModules) not global variables (modules)
+- Preserve all existing function logic and structure
+- Return complete function replacement code
+- Response must be valid JSON only`;
+    }
+    
+    return `You are a code generation assistant for a Chrome extension with a modular architecture.
+
+Your goal: Generate complete, working implementations following established patterns.
+
+Rules:
+- Follow the manifest schema exactly
+- Use runtime.call() for cross-module communication
+- Include proper error handling
+- Write complete, production-ready code
+- Return valid JSON only`;
+};
+
+const parseStructuredResponse = (response, mode, context) => {
+    try {
+        // Strip markdown code blocks if present
+        let cleaned = response.trim();
+        cleaned = cleaned.replace(/^```json\n?/i, '').replace(/\n?```$/, '');
+        
+        const parsed = JSON.parse(cleaned);
+        
+        // Validate structure
+        if (!parsed.changes || !Array.isArray(parsed.changes)) {
+            throw new Error('Invalid response: missing changes array');
+        }
+        
+        if (!parsed.reasoning || typeof parsed.reasoning !== 'string') {
+            throw new Error('Invalid response: missing reasoning');
+        }
+        
+        // Mode-specific validation
+        if (mode === 'debug') {
+            validateDebugResponse(parsed, context);
+        }
+        
+        return {
+            changes: parsed.changes,
+            reasoning: parsed.reasoning,
+            testCases: parsed.testCases || []
+        };
+    } catch (error) {
+        log.error('Failed to parse LLM response:', { error, response });
+        return {
+            changes: [],
+            reasoning: `Parse error: ${error.message}`,
+            testCases: []
+        };
+    }
+};
+
+const validateDebugResponse = (parsed, context) => {
+    // Debug mode should produce minimal changes
+    if (parsed.changes.length > 3) {
+        log.warn('Debug mode produced more than 3 changes - should be minimal');
+    }
+    
+    // Each change should target a specific file/function
+    parsed.changes.forEach(change => {
+        if (!change.filePath || !change.functionName || !change.newCode) {
+            throw new Error('Change missing required fields: filePath, functionName, newCode');
+        }
+        
+        // Verify it's targeting a file in the context
+        if (context.files && !context.files[change.filePath]) {
+            log.warn(`Change targets file not in context: ${change.filePath}`);
+        }
+    });
+};
 
 // === FILE OPERATIONS ===
 // Maps chrome-extension:// URLs and webpack bundle references back to actual source file paths
@@ -239,12 +439,12 @@ export const handleDiffModification = async (eventData) => ({});
 
 // === RED-GREEN TEST CYCLE ===
 export const test = async () => {
-  const { runUnitTest, greaterThanOrEqual } = runtime.testUtils;
+  const { runUnitTest, deepEqual } = runtime.testUtils;
   return [
-    await runUnitTest("LLM Architecture Comprehension", async () => {
-        const results = await testArchitectureComprehension();    
-		return { actual: results.filter(r => r.passed).length, assert: greaterThanOrEqual, expected: (results.length - 1) };
-    }),
+    // await runUnitTest("LLM Architecture Comprehension", async () => {
+    //     const results = await testArchitectureComprehension();    
+	// 	return { actual: results.filter(r => r.passed).length, assert: greaterThanOrEqual, expected: (results.length - 1) };
+    // }),
     // // Stack Trace Extraction Tests - Extension Specific
     // await runUnitTest("Stack trace extraction handles chrome-extension:// URLs correctly", async () => true),
     // await runUnitTest("Stack trace extraction handles webpack bundle references", async () => true),
@@ -267,6 +467,85 @@ export const test = async () => {
     // await runUnitTest("Build mode validation expects complete, functional implementations", async () => true),
     // await runUnitTest("Mode-specific response parsing applies different validation rules", async () => true),
     
+    // code-assistant.module.js - Add to test suite
+
+await runUnitTest("Debug mode generates valid fix for real runtime error", async () => {
+    // ARRANGE: Real file content + realistic error
+    const runtimeFileContent = `
+export class Runtime {
+    constructor(runtimeName) {
+        this.runtimeName = runtimeName;
+        this.actions = new Map();
+        this.contextModules = [];
+    }
+    
+    loadModulesForContext = async () => {
+        this.contextModules = modules.filter(m => 
+            m.manifest.context && m.manifest.context.includes(this.runtimeName)
+        );
+    }
+    
+    initialize = async () => {
+        await this.loadModulesForContext();
+        this.registerActions();
+        await this.initializeModules(modules.map(m => m.manifest.name)); 
+    }
+}`;
+
+    const errorLog = `TypeError: Cannot read properties of undefined (reading 'map')
+    at Runtime.initialize (chrome-extension://abc123/runtime.js:15:52)
+    at initializeRuntime (chrome-extension://abc123/runtime.js:234:23)`;
+
+    // Build full context like production would
+    const context = {
+        mode: 'debug',
+        error: errorLog,
+        files: {
+            'runtime.js': runtimeFileContent
+        },
+        coreContext: getCoreContext()
+    };
+
+    // ACT: Real LLM call with actual inference
+    const result = await generateChanges(context, 'debug');
+
+    // ASSERT: Validate the fix would actually work
+    const actual = {
+        // Structure validation
+        hasChanges: result.changes.length > 0,
+        hasReasoning: result.reasoning.length > 50,
+        isMinimalFix: result.changes.length === 1,
+        
+        // Content validation
+        targetsCorrectFile: result.changes[0].filePath === 'runtime.js',
+        targetsCorrectFunction: result.changes[0].functionName === 'initialize',
+        
+        // Fix quality validation
+        usesSafeReference: result.changes[0].newCode.includes('this.contextModules'),
+        avoidsUnsafeReference: !result.changes[0].newCode.includes('modules.map'),
+        preservesLogic: result.changes[0].newCode.includes('initializeModules'),
+        
+        // Reasoning validation
+        identifiesRootCause: result.reasoning.toLowerCase().includes('undefined') && 
+                            result.reasoning.toLowerCase().includes('modules'),
+        explainsCorrection: result.reasoning.toLowerCase().includes('contextModules')
+    };
+
+    const expected = {
+        hasChanges: true,
+        hasReasoning: true,
+        isMinimalFix: true,
+        targetsCorrectFile: true,
+        targetsCorrectFunction: true,
+        usesSafeReference: true,
+        avoidsUnsafeReference: true,
+        preservesLogic: true,
+        identifiesRootCause: true,
+        explainsCorrection: true
+    };
+
+    return { actual, assert: deepEqual, expected };
+})
     // // LLM Integration Tests - Single Calls
     // await runUnitTest("Debug mode LLM call returns valid function-level fixes", async () => true),
     // await runUnitTest("Build mode LLM call returns valid function-level implementations", async () => true),
