@@ -29,7 +29,7 @@ export const waitFor = (condition, interval = 100, timeout = 10000) => new Promi
 });
 
 // string
-export const truncateOrNA = (value, maxLength = 50) => {
+export const truncateOrNA = (value, maxLength = 500) => {
 	if (value == null) return 'N/A';
 	const str = JSON.stringify(value);
 	return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;

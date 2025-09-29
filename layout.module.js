@@ -6,7 +6,7 @@ export const manifest = {
 	description: "Component layout system with z-layers, mode overlays, and window snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponent", "addComponentFromPicker", "togglePin", "snapToHalf"],
+	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponent", "addComponentFromPicker", "togglePin", "snapToHalf", "maximizeSelected", "restoreMaximized"],
 	commands: [
 		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
@@ -162,13 +162,13 @@ const expandSelectedComponent = async (key) => {
 };
 // === MAXIMIZE/RESTORE ===
 const maximizedState = { x: 0, y: 0, width: 100, height: 100, isMaximized: true };
-const maximizeSelected = async () => {
+export const maximizeSelected = async () => {
 	const selected = getSelectedComponent();
 	if (!selected || selected.isMaximized) return;
 	selected.savedPosition = { x: selected.x, y: selected.y, width: selected.width, height: selected.height };
 	await updateComponent(selected.name, maximizedState);
 };
-const restoreMaximized = async () => {
+export const restoreMaximized = async () => {
 	const maximized = getMaximizedComponent();
 	if (maximized?.savedPosition) {
 		await updateComponent(maximized.name, { ...maximized.savedPosition, isMaximized: false, savedPosition: null });
@@ -197,15 +197,14 @@ const handleKeyboard = async (e) => {
 	if (document.activeElement?.tagName && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 	if (await handleGlobalKeys(e)) return;
 	const maximized = getMaximizedComponent(), selected = getSelectedComponent(), mode = modes[currentModeIndex].name;
-	if (handleLayoutKeys(e, mode, maximized, selected)) return;
-	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
-	// componentStates.has('_component-picker') && e.key === 'Escape' ? (e.preventDefault(), componentStates.delete('_component-picker'), refreshUI('component-removed')) : null;
 	if (componentStates.has('_component-picker') && e.key === 'Escape') {
 		log.log(' Component picker deletion:');
 		e.preventDefault();
 		componentStates.delete('_component-picker');
-		refreshUI('component-removed');
+		return refreshUI('component-removed');
 	}
+	if (handleLayoutKeys(e, mode, maximized, selected)) return;
+	if (maximized && (await handleComponentKeys(maximized.name, e))) return;
 };
 const handleGlobalKeys = async (e) => {
 	const keyCombo = buildKeyCombo(e);
@@ -280,7 +279,8 @@ const cycleSelection = async () => {
 	const active = getAllActiveComponents().filter(comp => !comp.name.startsWith('_') && comp.isRendered);
 	if (active.length === 0) return;
 	const currentIndex = active.findIndex(comp => comp.isSelected);
-	const nextName = active[(currentIndex + 1) % active.length].name;
+	const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % active.length;
+	const nextName = active[nextIndex].name;
 	for (const [name, state] of componentStates) {
 		const wasSelected = state.isSelected;
 		state.isSelected = (name === nextName);
