@@ -12,7 +12,7 @@ export const manifest = {
 };
 
 let runtime, log, currentContext = null, currentChanges = null, currentIteration = null;
-
+const model = "meta-llama/llama-4-scout-17b-16e-instruct";
 export const initialize = async (rt, l) => { runtime = rt; log = l; };
 
 // === CORE CONTEXT ASSEMBLY ===
@@ -187,26 +187,14 @@ export const buildMode = async (requirements) => ({});
 // === LLM INTEGRATION ===
 
 const generateChanges = async (context, mode) => {
-    const prompt = assemblePrompt(context, mode);
+    const query = assemblePrompt(context, mode);
     const schema = getResponseSchema(mode);
-    
     try {
-        const llmResponse = await runtime.call('inference.prompt', { 
-            query: prompt,
+        const llmResponse = await runtime.call('inference.prompt', { query, model,
             systemPrompt: getSystemPrompt(mode),
-            responseFormat: {
-                type: "json_schema",
-                json_schema: {
-                    name: `${mode}_fix_response`,
-                    strict: true,
-                    schema: schema
-                }
-            }
+            responseFormat: { type: "json_schema", json_schema: { name: `${mode}_fix_response`, strict: true, schema: schema } }
         });
-        
-        // Groq guarantees valid JSON matching schema, just parse it
-        const parsed = JSON.parse(llmResponse);
-        return parsed;
+        return JSON.parse(llmResponse);
         
     } catch (error) {
         log.error('LLM call failed:', error);
