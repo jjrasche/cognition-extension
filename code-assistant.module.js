@@ -5,14 +5,18 @@ export const manifest = {
 	description: "AI-powered code generation and debugging with context-aware LLM integration",
 	dependencies: ["file", "inference", "layout"],
 	requiredDirectories: ["cognition-extension"],
-	actions: ["debugMode", "buildMode", "applyChanges", "rateIteration"],
+	actions: ["debugMode", "requirementsMode", "refineRequirements", "updatePurpose", "clearRequirements", "startImplementation", "applyChanges"],
 	uiComponents: [
 		{ name: "code-diff-viewer", getTree: "buildDiffViewer" },
 		{ name: "context-panel", getTree: "buildContextPanel" },
+		{ name: "requirements-ui", getTree: "buildRequirementsUI" },
 	],
+	config: {
+		requirementsKey: { type: 'globalKey', value: 'Alt+Shift+R', label: 'Open Requirements', action: "requirementsMode" }
+	}
 };
 
-let runtime, log, currentContext = null, currentChanges = null, currentIteration = null;
+let runtime, log, currentContext = null, currentChanges = null, currentIteration = null
 const model = "meta-llama/llama-4-scout-17b-16e-instruct";
 export const initialize = async (rt, l) => {
 	runtime = rt; log = l;
@@ -21,9 +25,6 @@ export const initialize = async (rt, l) => {
 const extractFilesFromStackTrace = (errorLog) => [...new Set([...errorLog.matchAll(/chrome-extension:\/\/[a-z0-9]+\/([a-zA-Z0-9._-]+\.js)/g)].map((m) => m[1]))];
 const loadContextFiles = async (filePaths) => Object.fromEntries(await Promise.all(filePaths.map(async (filename) => [filename, await fetch(chrome.runtime.getURL(filename)).then((r) => r.text()).catch((e) => (log.error(`Failed to load ${filename}:`, e), ""))])));
 // === DEBUG MODE ORCHESTRATOR ===
-export const buildMode = async (requirements) => ({}); // Build mode: takes requirements, gathers target context with LLM-selected examples, generates new code implementations
-const gatherRequirements = async (userInput) => ({}); // Interactive requirements gathering - converts user input into structured requirements AND suggests relevant modules for context
-const selectRelevantModules = async (requirements) => []; // LLM-powered context selection: analyzes requirements to determine which existing modules to include as examples
 export const debugMode = async (errorLog) => {
 	const filePaths = extractFilesFromStackTrace(errorLog);
 	if (filePaths.length === 0) throw new Error("No files found in stack trace");
@@ -33,6 +34,66 @@ export const debugMode = async (errorLog) => {
 	await runtime.call("layout.addComponent", "code-diff-viewer");
 	return { context: currentContext, changes: currentChanges };
 };
+// === REQUIREMENTS MODE ===
+let currentRequirements = { purpose: "", userStories: [] };
+export const requirementsMode = async () => await runtime.call("layout.addComponent", "requirements-ui", { width: 100, height: 100, isMaximized: true });
+const refreshRequirementsUI = () => runtime.call('layout.renderComponent', 'requirements-ui');
+export const buildRequirementsUI = () => ({
+	"requirements-ui": {
+		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
+		"header": { tag: "h2", text: "Requirements Mode", style: "margin: 0;" },
+		"purpose-section": {
+			tag: "div", style: "display: flex; flex-direction: column; gap: 8px;",
+			"purpose-label": { tag: "label", text: "Purpose:", style: "font-weight: 500;" },
+			"purpose-field": { tag: "textarea", value: currentRequirements.purpose || '', placeholder: "What should this feature do?", style: "padding: 12px; border: 1px solid var(--border-primary); border-radius: 4px; min-height: 80px; resize: vertical; background: var(--bg-input);", events: { change: "code-assistant.updatePurpose" } }
+		},
+		"requirements-section": {
+			tag: "div", style: "flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0;",
+			"requirements-label": { tag: "label", text: `User Stories (${currentRequirements.userStories?.length || 0}):`, style: "font-weight: 500;" },
+			"requirements-list": buildUserStories()
+		},
+		"refinement-section": {
+			tag: "div",
+			style: "display: flex; flex-direction: column; gap: 8px;",
+			"refinement-label": { tag: "label", text: "Refine requirements (Shift+Enter):", style: "font-weight: 500;" },
+			"refinement-input": { tag: "textarea", placeholder: "Add details, ask questions, or refine existing requirements...", style: "padding: 12px; border: 1px solid var(--border-primary); border-radius: 4px; min-height: 100px; resize: vertical; background: var(--bg-input);", events: { keydown: "code-assistant.refineRequirements" } }
+		},
+		"actions": {
+			tag: "div", style: "display: flex; gap: 10px;",
+			"clear-btn": { tag: "button", text: "Clear", class: "cognition-button-secondary", events: { click: "code-assistant.clearRequirements" } }
+		}
+	}
+});
+const buildUserStories = () => currentRequirements.userStories?.length ? userStoriesUI() : noStoriesMessage();
+const noStoriesMessage = () => ({ "empty-state": { tag: "div", text: "No requirements yet. Start by describing what you want to build...", style: "color: var(--text-muted); padding: 20px; text-align: center;" } });
+const userStoriesUI = () => ({
+	"stories-container": {
+		tag: "div", style: "flex: 1; overflow-y: auto; border: 1px solid var(--border-primary); border-radius: 4px; padding: 10px; background: var(--bg-secondary);",
+		...Object.fromEntries(currentRequirements.userStories.map((story, i) => [`story-${i}`, { tag: "div", style: "padding: 8px; margin-bottom: 8px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid var(--accent-primary);", text: story }]))
+	}
+});
+export const updatePurpose = async (eventData) => currentRequirements.purpose = eventData.target.value;
+export const clearRequirements = async () => { currentRequirements = { purpose: "", userStories: [] }; await refreshRequirementsUI(); };
+export const refineRequirements = async (eventData) => {
+	if (eventData.key !== 'Enter' || !eventData.shiftKey) return;
+	const userInput = eventData.target.value.trim();
+	if (!userInput) return;
+	eventData.preventDefault();
+	eventData.target.value = '';
+	try {
+		const llmResponse = await callRequirementsLLM(assembleRequirementsPrompt(userInput), model, getRequirementsSystemPrompt());
+		const response = JSON.parse(llmResponse);
+		currentRequirements = response;
+		await refreshRequirementsUI();
+	} catch (error) { log.error("Requirements refinement failed:", error); }
+};
+const callRequirementsLLM = async (query, model, systemPrompt) => await runtime.call("inference.prompt", { query, model, systemPrompt, responseFormat: { type: "json_schema", json_schema: { name: "requirements_response", strict: true, schema: getRequirementsResponseSchema() } } });
+const assembleRequirementsPrompt = (userInput) => `Current Requirements:\nPurpose: ${currentRequirements.purpose || 'Not defined'}\nUser Stories: ${JSON.stringify(currentRequirements.userStories || [])}\n\nUser Input: ${userInput}\n\nUpdate the requirements based on this input. Add, refine, or clarify user stories.`;
+const getRequirementsSystemPrompt = () => `You are a requirements analyst for a Chrome extension project.\n\nYour goal: Help users articulate clear, actionable requirements as user stories.\n\nRules:\n- Ask clarifying questions when needed\n- Break vague requests into specific user stories\n- Use format: "As a user, I want to... so that..."\n- Keep stories small and testable\n- Update purpose if user provides new context\n- Return valid JSON only`;
+const getRequirementsResponseSchema = () => ({ type: "object", required: ["purpose", "userStories"], additionalProperties: false, properties: { purpose: { type: "string" }, userStories: { type: "array", items: { type: "string" } } } });
+
+// === IMPLEMENTATION MODE ===
+export const buildMode = async (requirements) => ({}); // Build mode: takes requirements, gathers target context with LLM-selected examples, generates new code implementations
 // === CHANGE FILES ===
 export const applyChanges = async () => !currentChanges?.changes ? (log.error("No changes to apply"), false)
 	: Promise.all(currentChanges.changes.map(applyFileChange)).then(onApply).catch((error) => (log.error("Failed to apply changes:", error), false));
