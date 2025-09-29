@@ -165,8 +165,8 @@ const maximizedState = { x: 0, y: 0, width: 100, height: 100, isMaximized: true 
 export const maximizeSelected = async () => {
 	const selected = getSelectedComponent();
 	if (!selected || selected.isMaximized) return;
-	selected.savedPosition = { x: selected.x, y: selected.y, width: selected.width, height: selected.height };
-	await updateComponent(selected.name, maximizedState);
+	const savedPosition = { x: selected.x, y: selected.y, width: selected.width, height: selected.height };
+	await updateComponent(selected.name, { ...maximizedState, savedPosition });
 };
 export const restoreMaximized = async () => {
 	const maximized = getMaximizedComponent();
@@ -398,6 +398,7 @@ export const addComponentFromPicker = async (eventData) => {
 export const test = async () => {
 	const { runUnitTest, strictEqual, deepEqual } = runtime.testUtils;
 	const originalStates = new Map([...componentStates]), originalMode = currentModeIndex, originalDefaultState = defaultState;
+	componentStates.clear();
 	defaultState = { ...defaultState, isRendered: true, moduleName: 'test-module', getTree: 'testTree' };
 	const results = [];
 	results.push(await runUnitTest("addComponent creates with correct defaults", async () => {
@@ -524,6 +525,7 @@ export const test = async () => {
 	}, cleanupTestComponents));
 	results.push(await runUnitTest("component picker full workflow: show, select, render, and escape", async () => {
 		componentStates.set('test-picker-component', { ...defaultState, name: 'test-picker-component', moduleName: 'test-module', isRendered: false });
+		componentStates.set('test-picker-component-2', { ...defaultState, name: 'test-picker-component-2', moduleName: 'test-module', isRendered: false });
 		await showComponentPicker();
 		const pickerInitiallyShown = componentStates.has('_component-picker') && getComponentState('_component-picker').isRendered;
 		await addComponentFromPicker({ target: { dataset: { component: 'test-picker-component' } } });

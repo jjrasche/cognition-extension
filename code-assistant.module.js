@@ -3,7 +3,7 @@ export const manifest = {
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "AI-powered code generation and debugging with context-aware LLM integration",
-	dependencies: ["file", "inference", "layout"],
+	dependencies: ["file", "inference", "layout", "chrome-sync"],
 	requiredDirectories: ["cognition-extension"],
 	actions: ["debugMode", "requirementsMode", "refineRequirements", "updatePurpose", "clearRequirements", "startImplementation", "applyChanges"],
 	uiComponents: [
@@ -16,10 +16,11 @@ export const manifest = {
 	}
 };
 
-let runtime, log, currentContext = null, currentChanges = null, currentIteration = null
+let runtime, log, currentContext, currentChanges, currentIteration, currentRequirements;
 const model = "meta-llama/llama-4-scout-17b-16e-instruct";
 export const initialize = async (rt, l) => {
 	runtime = rt; log = l;
+	currentRequirements = await runtime.call('chrome-sync.get', 'code-assistant.requirements') || defaultRequirements;
 };
 
 const extractFilesFromStackTrace = (errorLog) => [...new Set([...errorLog.matchAll(/chrome-extension:\/\/[a-z0-9]+\/([a-zA-Z0-9._-]+\.js)/g)].map((m) => m[1]))];
@@ -35,7 +36,6 @@ export const debugMode = async (errorLog) => {
 	return { context: currentContext, changes: currentChanges };
 };
 // === REQUIREMENTS MODE ===
-let currentRequirements = { purpose: "", userStories: [] };
 export const requirementsMode = async () => await runtime.call("layout.addComponent", "requirements-ui", { width: 100, height: 100, isMaximized: true });
 const refreshRequirementsUI = () => runtime.call('layout.renderComponent', 'requirements-ui');
 export const buildRequirementsUI = () => ({
@@ -45,7 +45,7 @@ export const buildRequirementsUI = () => ({
 		"purpose-section": {
 			tag: "div", style: "display: flex; flex-direction: column; gap: 8px;",
 			"purpose-label": { tag: "label", text: "Purpose:", style: "font-weight: 500;" },
-			"purpose-field": { tag: "textarea", value: currentRequirements.purpose || '', placeholder: "What should this feature do?", style: "padding: 12px; border: 1px solid var(--border-primary); border-radius: 4px; min-height: 80px; resize: vertical; background: var(--bg-input);", events: { change: "code-assistant.updatePurpose" } }
+			"purpose-field": { tag: "textarea", class: "cognition-input", value: currentRequirements.purpose || '', placeholder: "What should this feature do?", style: "padding: 12px; border: 1px solid var(--border-primary); border-radius: 4px; min-height: 80px; resize: vertical; background: var(--bg-input);", events: { change: "code-assistant.updatePurpose" } }
 		},
 		"requirements-section": {
 			tag: "div", style: "flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0;",
@@ -56,10 +56,11 @@ export const buildRequirementsUI = () => ({
 			tag: "div",
 			style: "display: flex; flex-direction: column; gap: 8px;",
 			"refinement-label": { tag: "label", text: "Refine requirements (Shift+Enter):", style: "font-weight: 500;" },
-			"refinement-input": { tag: "textarea", placeholder: "Add details, ask questions, or refine existing requirements...", style: "padding: 12px; border: 1px solid var(--border-primary); border-radius: 4px; min-height: 100px; resize: vertical; background: var(--bg-input);", events: { keydown: "code-assistant.refineRequirements" } }
+			"refinement-input": { tag: "textarea", class: "cognition-input", placeholder: "Add details, ask questions, or refine existing requirements...", style: "padding: 12px; border: 1px solid var(--border-primary); border-radius: 4px; min-height: 100px; resize: vertical; background: var(--bg-input);", events: { keydown: "code-assistant.refineRequirements" } }
 		},
 		"actions": {
 			tag: "div", style: "display: flex; gap: 10px;",
+			"refine-btn": { tag: "button", text: "Refine with AI", class: "cognition-button-primary", events: { click: "code-assistant.refineRequirements" } },
 			"clear-btn": { tag: "button", text: "Clear", class: "cognition-button-secondary", events: { click: "code-assistant.clearRequirements" } }
 		}
 	}
@@ -72,8 +73,16 @@ const userStoriesUI = () => ({
 		...Object.fromEntries(currentRequirements.userStories.map((story, i) => [`story-${i}`, { tag: "div", style: "padding: 8px; margin-bottom: 8px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid var(--accent-primary);", text: story }]))
 	}
 });
-export const updatePurpose = async (eventData) => currentRequirements.purpose = eventData.target.value;
-export const clearRequirements = async () => { currentRequirements = { purpose: "", userStories: [] }; await refreshRequirementsUI(); };
+const defaultRequirements = { purpose: "", userStories: [] };
+export const updatePurpose = async (eventData) => {
+	currentRequirements.purpose = eventData.target.value;
+	await runtime.call('chrome-sync.set', { 'code-assistant.requirements': currentRequirements });
+}
+export const clearRequirements = async () => {
+	currentRequirements = defaultRequirements;
+	await runtime.call('chrome-sync.remove', 'code-assistant.requirements');
+	await refreshRequirementsUI();
+};
 export const refineRequirements = async (eventData) => {
 	if (eventData.key !== 'Enter' || !eventData.shiftKey) return;
 	const userInput = eventData.target.value.trim();
@@ -85,8 +94,10 @@ export const refineRequirements = async (eventData) => {
 		const response = JSON.parse(llmResponse);
 		currentRequirements = response;
 		await refreshRequirementsUI();
+		await runtime.call('chrome-sync.set', { 'code-assistant.requirements': currentRequirements });
 	} catch (error) { log.error("Requirements refinement failed:", error); }
 };
+
 const callRequirementsLLM = async (query, model, systemPrompt) => await runtime.call("inference.prompt", { query, model, systemPrompt, responseFormat: { type: "json_schema", json_schema: { name: "requirements_response", strict: true, schema: getRequirementsResponseSchema() } } });
 const assembleRequirementsPrompt = (userInput) => `Current Requirements:\nPurpose: ${currentRequirements.purpose || 'Not defined'}\nUser Stories: ${JSON.stringify(currentRequirements.userStories || [])}\n\nUser Input: ${userInput}\n\nUpdate the requirements based on this input. Add, refine, or clarify user stories.`;
 const getRequirementsSystemPrompt = () => `You are a requirements analyst for a Chrome extension project.\n\nYour goal: Help users articulate clear, actionable requirements as user stories.\n\nRules:\n- Ask clarifying questions when needed\n- Break vague requests into specific user stories\n- Use format: "As a user, I want to... so that..."\n- Keep stories small and testable\n- Update purpose if user provides new context\n- Return valid JSON only`;
