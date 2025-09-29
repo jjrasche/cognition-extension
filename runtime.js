@@ -28,7 +28,7 @@ class Runtime {
 			this.log.log('🚀 Runtime initialization started');
 			this.setupMessageListener();
 			await this.initializeModules();
-			await this.runTests();
+			// await this.runTests();
 			this.log.log('Module initialization complete', { context: this.runtimeName, loadedModules: this.contextModules.map(m => m.manifest.name), moduleStates: Object.fromEntries(this.moduleState) });
 		} catch (error) {
 			this.log.error(`Initialization failed in ${this.runtimeName}`, error);

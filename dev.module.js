@@ -41,6 +41,7 @@ const addModuleActionsToConsole = () => {
 	for (let [name] of runtime.getActions().entries()) {
 		const [moduleName, actionName] = name.split('.');
 		const camelModuleName = kebabToCamel(moduleName);
+		console.log(` Adding console shortcut: ${camelModuleName}.${actionName}()`);
 		globalThis[camelModuleName] ??= {};
 		globalThis[camelModuleName][actionName] = (...args) => runtime.call(name, ...args)
 			.then(res => (log.log(` ${camelModuleName}.${actionName} →`, res), res))

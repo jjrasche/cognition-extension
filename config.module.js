@@ -68,6 +68,7 @@ const applyConfigLocal = async (module, updates) => {
 		if (module.manifest.config[field]) {
 			const oldValue = module.manifest.config[field].value;
 			module.manifest.config[field].value = value;
+			log.info(` Applied config for ${module.manifest.name}.${field}:`, { oldValue, newValue: value });
 			const onChange = module.manifest.config[field].onChange;
 			onChange && await runtime.call(`${module.manifest.name}.${onChange}`).catch(error => log.error(` onChange failed for ${field}:`, error));
 		}

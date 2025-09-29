@@ -5,7 +5,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Manages LLM inference across multiple providers",
 	dependencies: ["chrome-sync", "graph-db"],
-	actions: ["prompt", "infer", "buildInferenceUI"],
+	actions: ["prompt", "infer", "buildInferenceUI", "getSelectedProvider", "getSelectedModel"],
 	commands: [{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" }],
 	config: {
 		provider: { type: 'select', value: '', label: 'AI Provider', description: 'Select your preferred AI provider', onChange: "setModelConfigOptions" },
@@ -29,9 +29,15 @@ const registerProviders = () => providers = runtime.getModulesWithProperty('infe
 const setConfigOptions = () => { setProviderConfigOptions(); setModelConfigOptions(); };
 const setProviderConfigOptions = () => manifest.config.provider.options = [{ value: '', text: 'Select a provider...' }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
 export const setModelConfigOptions = () => {
-	manifest.config.model["options"] = [{ value: '', text: 'Select a model...' },
-	...(getSelectedProvider()?.manifest?.inferenceModels || []).map(m => ({ value: m.id, text: `${m.name} - ${m.bestFor?.slice(0, 2).join(', ') || 'General'}` }))];
-	manifest.config.model.value = '';
+	const currentModel = manifest.config.model.value;
+	const validModels = getSelectedProvider()?.manifest?.inferenceModels || [];
+		manifest.config.model.options = [
+		{ value: '', text: 'Select a model...' },
+		...validModels.map(m => ({ value: m.id, text: `${m.name}...` }))
+	];
+	if (!validModels.some(m => m.id === currentModel)) {
+		manifest.config.model.value = '';
+	}
 }
 export const infer = async (query) => await prompt({ query });
 export const prompt = async (params) => {
@@ -45,8 +51,8 @@ export const prompt = async (params) => {
 	loadSource && await runtime.call('manual-atom-extractor.loadSource', inferenceSourceTree(query, content), { sourceId: await addInferenceNode(query, messages, content, model.id, provider.manifest.name), type: "inference interaction" });
 	return content;
 };
-const getSelectedProvider = () => providers.find(p => p.manifest.name === config.provider);
-const getSelectedModel = () => getSelectedProvider()?.manifest.inferenceModels?.find(m => m.id === config.model);
+export const getSelectedProvider = () => providers.find(p => p.manifest.name === config.provider);
+export const getSelectedModel = () => getSelectedProvider()?.manifest.inferenceModels?.find(m => m.id === config.model);
 const addInferenceNode = async (query, prompt, response, model, context) => runtime.call('graph-db.addNode', { type: 'inference', query, prompt, response, model, context, timestamp: new Date().toISOString() });
 const inferenceSourceTree = (query, content) => ({
 	tag: "div", style: "flex: 1; padding: 15px; overflow-y: auto; line-height: 1.6;", data: { textSelectionHandler: "manual-atom-extractor.handleSelection" },

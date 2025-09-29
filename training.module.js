@@ -1,5 +1,5 @@
 export const manifest = {
-  name: "training-data-collector",
+  name: "training",
   context: ["service-worker", "extension-page"],
   version: "1.0.0",
   description: "Auto-discovers training data needs, creates automation configs, and manages artifact deployment",

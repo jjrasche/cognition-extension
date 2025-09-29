@@ -28,9 +28,13 @@ import * as webReadModule from './web-read.module.js';
 import * as webSearchModule from './web-search.module.js';
 import * as webSpeechSTTModule from './web-speech-stt.module.js';
 import * as webSpeechTTSModule from './web-speech-tts.module.js';
+import * as codeAssistantModule from './code-assistant.module.js';
+import * as trainingModule from './training.module.js';
 
 export const modules = [
 	apiKeysModule,
+	codeAssistantModule,
+	trainingModule,
 	// atomicIdeaModule,
 	chromeLocalModule,
 	chromeSyncModule,
