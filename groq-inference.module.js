@@ -11,10 +11,10 @@ export const manifest = {
 		{ "id": "meta-llama/llama-guard-4-12b", "name": "Llama Guard 4 12B", "family": "llama-guard-4", "developer": "Meta", "releaseDate": "2025-04-05", "capabilities": ["content moderation", "safety classification", "structured output"], "inputTypes": ["text", "image"], "outputTypes": ["text"], "bestFor": ["multimodal content filtering", "safety analysis"], "contextWindow": 131072, "maxOutput": 1024, "maxFileSize": 20971520, "pricing": { "input": 0.20, "output": 0.20 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
 		{ "id": "whisper-large-v3", "name": "Whisper Large v3", "family": "whisper-large", "developer": "OpenAI", "releaseDate": "2023-11-08", "capabilities": ["speech-to-text"], "inputTypes": ["audio"], "outputTypes": ["text"], "bestFor": ["high-accuracy transcription", "multilingual ASR"], "contextWindow": null, "maxOutput": null, "maxFileSize": 104857600, "pricing": { "input": 0.111, "output": 0.111 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
 		{ "id": "whisper-large-v3-turbo", "name": "Whisper Large v3 Turbo", "family": "whisper-large", "developer": "OpenAI", "releaseDate": "2024-10-01", "capabilities": ["speech-to-text"], "inputTypes": ["audio"], "outputTypes": ["text"], "bestFor": ["real-time transcription", "low-latency speech recognition"], "contextWindow": null, "maxOutput": null, "maxFileSize": 104857600, "pricing": { "input": 0.04, "output": 0.04 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
-				// Structured Output Models
+		// Structured Output Models
 		{ "id": "meta-llama/llama-4-scout-17b-16e-instruct", "name": "Llama 4 Scout", "family": "llama-4", "developer": "Meta", "releaseDate": "2025-04-07", "capabilities": ["text generation", "image understanding", "reasoning", "code generation", "tool use", "json_schema", "multimodal"], "inputTypes": ["text", "image"], "outputTypes": ["text"], "bestFor": ["structured output", "multimodal tasks", "cost-effective inference", "image analysis"], "contextWindow": 131072, "maxOutput": 8192, "maxFileSize": null, "pricing": { "input": 0.11, "output": 0.34 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
 		{ "id": "meta-llama/llama-4-maverick-17b-128e-instruct", "name": "Llama 4 Maverick", "family": "llama-4", "developer": "Meta", "releaseDate": "2025-04-07", "capabilities": ["text generation", "image understanding", "reasoning", "code generation", "tool use", "json_schema", "multimodal"], "inputTypes": ["text", "image"], "outputTypes": ["text"], "bestFor": ["structured output", "high-quality reasoning", "creative writing", "complex multimodal tasks"], "contextWindow": 131072, "maxOutput": 8192, "maxFileSize": null, "pricing": { "input": 0.50, "output": 0.77 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
-	
+
 	],
 	defaultModel: "llama-3.1-8b-instant"
 };
@@ -31,12 +31,12 @@ export const makeRequest = async (model, messages, webSearch, responseFormat) =>
 	const systemMessage = messages.find(m => m.role === 'system');
 	const chatMessages = messages.filter(m => m.role !== 'system');
 	const requestBody = {
-		model: model.id,
+		model: model.id || model,
 		messages: systemMessage ? [systemMessage, ...chatMessages] : chatMessages,
 		temperature: 0.7,
 		max_tokens: Math.min(model.maxOutput || 4096, 4096),
 		stream: false,
-        ...(responseFormat && { response_format: responseFormat })
+		...(responseFormat && { response_format: responseFormat })
 	};
 	const req = { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) };
 	return await fetch('https://api.groq.com/openai/v1/chat/completions', req);

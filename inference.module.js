@@ -31,7 +31,7 @@ const setProviderConfigOptions = () => manifest.config.provider.options = [{ val
 export const setModelConfigOptions = () => {
 	const currentModel = manifest.config.model.value;
 	const validModels = getSelectedProvider()?.manifest?.inferenceModels || [];
-		manifest.config.model.options = [
+	manifest.config.model.options = [
 		{ value: '', text: 'Select a model...' },
 		...validModels.map(m => ({ value: m.id, text: `${m.name}...` }))
 	];
