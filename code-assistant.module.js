@@ -25,7 +25,9 @@ let runtime, log, workflowState = { phase: 'idle', spec: null, skeleton: null };
 let currentSpec = { what: '', why: '', architecture: { dependencies: [], persistence: 'none', context: [] } };
 let pendingChanges = new Map(), transcriptHistory = [], isListening = false;
 let lastSpeechTime = 0, lastInterjectionTime = 0, lastSuggestion = null, interjectionTimer = null, historyVisible = false;
-export const initialize = async (rt, l) => (runtime = rt, log = l, runtime.actions.set('code-assistant.onTranscript', { func: handleTranscript, context: runtime.runtimeName, moduleName: manifest.name }));
+export const initialize = async (rt, l) => {
+	runtime = rt; log = l;
+}
 // ============ SPEC MODE ============
 export const startSpecMode = async () => {
 	workflowState.phase = 'spec';
@@ -34,11 +36,17 @@ export const startSpecMode = async () => {
 	transcriptHistory = [];
 	isListening = true;
 	lastSpeechTime = Date.now();
-	await runtime.call('web-speech-stt.startListening');
-	await runtime.call('layout.addComponent', 'spec-builder', { width: 100, height: 100, isMaximized: true });
+	await runtime.call('web-speech-stt.startListening', handleTranscript);
+	await runtime.call('layout.addComponent', 'spec-builder', { x: 0, y: 0, width: 100, height: 100, isMaximized: true });
 	scheduleSpecInterjection();
 }
-const scheduleSpecInterjection = () => workflowState.phase !== 'spec' ? null : (interjectionTimer = setTimeout(async () => (isListening && await shouldInterjectSpec() && await injectSpecSuggestion(), scheduleSpecInterjection()), config.interjectionInterval * 1000));
+const scheduleSpecInterjection = () => {
+	if (workflowState.phase !== 'spec') return;
+	interjectionTimer = setTimeout(async () => {
+		if (isListening && await shouldInterjectSpec()) await injectSpecSuggestion();
+		scheduleSpecInterjection();
+	}, config.interjectionInterval * 1000);
+};
 const shouldInterjectSpec = async () => {
 	const timeSinceLastSpeech = Date.now() - lastSpeechTime, specIncomplete = !currentSpec.what || !currentSpec.why;
 	const recentText = transcriptHistory.slice(-5).map(t => t.text).join(' '), hasUncertainty = /\b(um|uh|maybe|I think|not sure|probably)\b/i.test(recentText);
@@ -51,7 +59,14 @@ const predictInterjectionSuccess = (records, ctx) => {
 	const successRate = similar.filter(r => r.userFeedback.action === 'accepted' || r.userFeedback.rightTiming === true).length / similar.length;
 	return { shouldInterject: successRate > 0.6, confidence: successRate };
 };
-const injectSpecSuggestion = async () => (await runtime.call('web-speech-stt.stopListening'), lastSuggestion = await generateSpecSuggestion(), lastInterjectionTime = Date.now(), pendingChanges.set(lastSuggestion.field, { current: currentSpec[lastSuggestion.field], proposed: lastSuggestion.content, type: lastSuggestion.type }), await refreshSpecUI(), await runtime.call('web-speech-stt.startListening'));
+const injectSpecSuggestion = async () => {
+	await runtime.call('web-speech-stt.stopListening');
+	lastSuggestion = await generateSpecSuggestion();
+	lastInterjectionTime = Date.now();
+	pendingChanges.set(lastSuggestion.field, { current: currentSpec[lastSuggestion.field], proposed: lastSuggestion.content, type: lastSuggestion.type });
+	await refreshSpecUI();
+	await runtime.call('web-speech-stt.startListening');
+};
 const generateSpecSuggestion = async () => JSON.parse(await runtime.call('inference.prompt', { query: `Current spec:\nWhat: ${currentSpec.what || 'Not defined'}\nWhy: ${currentSpec.why || 'Not defined'}\nArchitecture: ${JSON.stringify(currentSpec.architecture)}\n\nRecent: "${transcriptHistory.slice(-30).map(t => t.text).join(' ')}"\n\nGenerate ONE suggestion (modify/add/question).`, model, systemPrompt: getSpecSystemPrompt(), responseFormat: { type: 'json_schema', json_schema: { name: 'spec_suggestion', strict: true, schema: { type: 'object', required: ['type', 'field', 'content'], additionalProperties: false, properties: { type: { type: 'string', enum: ['modify', 'add', 'question'] }, field: { type: 'string', enum: ['what', 'why', 'architecture'] }, content: { type: 'string' } } } } } }));
 const getSpecSystemPrompt = () => `You help developers articulate clear specifications.\n\nRules:\n- Ask clarifying questions when vague\n- Suggest specific technical decisions\n- Keep suggestions concise\n- Focus on WHAT and WHY before HOW`;
 export const acceptSpecChange = async (eventData) => {
@@ -59,14 +74,43 @@ export const acceptSpecChange = async (eventData) => {
 	currentSpec[field] = change.proposed, pendingChanges.delete(field);
 	await logSpecTraining('accepted', true), await refreshSpecUI();
 };
-export const rejectSpecChange = async (eventData) => (pendingChanges.delete(eventData.target.dataset.field), await logSpecTraining('rejected', null), await refreshSpecUI());
-export const markWrongTiming = async () => (await logSpecTraining('ignored', false), pendingChanges.clear(), await refreshSpecUI());
-const logSpecTraining = async (action, rightTiming) => lastSuggestion && await runtime.call('graph-db.addNode', { type: 'spec-training', timestamp: new Date().toISOString(), context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-30).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime, lastAIInterjection: Date.now() - lastInterjectionTime }, aiResponse: lastSuggestion, userFeedback: { action, rightTiming } });
-export const completeSpec = async () => !currentSpec.what || !currentSpec.why ? log.log('Spec incomplete - need what and why') : (clearTimeout(interjectionTimer), workflowState.phase = 'skeleton', workflowState.spec = { ...currentSpec }, await runtime.call('web-speech-stt.stopListening'), await runtime.call('layout.removeComponent', 'spec-builder'), await startSkeletonMode());
+export const rejectSpecChange = async (eventData) => {
+	pendingChanges.delete(eventData.target.dataset.field);
+	await logSpecTraining('rejected', null);
+	await refreshSpecUI();
+};
+export const markWrongTiming = async () => {
+	await logSpecTraining('ignored', false);
+	pendingChanges.clear();
+	await refreshSpecUI();
+};
+const logSpecTraining = async (action, rightTiming) => {
+	if (!lastSuggestion) return;
+	await runtime.call('graph-db.addNode', { type: 'spec-training', timestamp: new Date().toISOString(), context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-30).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime, lastAIInterjection: Date.now() - lastInterjectionTime }, aiResponse: lastSuggestion, userFeedback: { action, rightTiming } });
+};
+export const completeSpec = async () => {
+	if (!currentSpec.what || !currentSpec.why) return;
+	clearTimeout(interjectionTimer);
+	workflowState.phase = 'skeleton';
+	workflowState.spec = { ...currentSpec };
+	await runtime.call('web-speech-stt.stopListening');
+	await runtime.call('layout.removeComponent', 'spec-builder');
+	await startSkeletonMode();
+};
 export const stopListening = async () => (isListening = false, await runtime.call('web-speech-stt.stopListening'), await refreshSpecUI());
 export const toggleHistory = async () => (historyVisible = !historyVisible, await refreshSpecUI());
-const handleTranscript = (transcriptData) => (transcriptHistory.push({ text: transcriptData.text, timestamp: Date.now(), isFinal: transcriptData.isFinal }), transcriptData.isFinal && (lastSpeechTime = Date.now(), updateSpecFromTranscript(transcriptData.text)));
-const updateSpecFromTranscript = (text) => (/^(I want to|I need to|Build|Create)/i.test(text) ? currentSpec.what = (currentSpec.what + ' ' + text).trim() : /^(because|so that|to enable)/i.test(text) && (currentSpec.why = (currentSpec.why + ' ' + text).trim()), refreshSpecUI());
+const handleTranscript = (transcriptData) => {
+	transcriptHistory.push({ text: transcriptData.text, timestamp: Date.now(), isFinal: transcriptData.isFinal });
+	if (transcriptData.isFinal) {
+		lastSpeechTime = Date.now();
+		updateSpecFromTranscript(transcriptData.text);
+	}
+};
+const updateSpecFromTranscript = (text) => {
+	if (/^(I want to|I need to|Build|Create)/i.test(text)) currentSpec.what = (currentSpec.what + ' ' + text).trim();
+	else if (/^(because|so that|to enable)/i.test(text)) currentSpec.why = (currentSpec.why + ' ' + text).trim();
+	refreshSpecUI();
+};
 const refreshSpecUI = () => runtime.call('layout.renderComponent', 'spec-builder');
 export const buildSpecUI = () => ({
 	"spec-builder": {
@@ -95,8 +139,7 @@ const buildSpecFields = () => Object.fromEntries(['what', 'why', 'architecture']
 }));
 const buildHistoryPanel = () => ({ "history": { tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px; overflow-y: auto;", "history-title": { tag: "h4", text: "Transcript History", style: "margin: 0 0 10px 0;" }, "entries": { tag: "div", style: "font-size: 12px; color: var(--text-muted);", ...Object.fromEntries(transcriptHistory.slice(-20).map((t, i) => [`entry-${i}`, { tag: "div", text: `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.text}`, style: "margin-bottom: 4px;" }])) } } });
 // ============ SKELETON MODE ============
-export const startSkeletonMode = async () => (workflowState.phase = 'skeleton', workflowState.skeleton = await generateSkeleton(workflowState.spec), await runtime.call('layout.addComponent', 'skeleton-viewer', { width: 100, height: 100, isMaximized: true }));
-const generateSkeleton = async (spec) => await runtime.call('inference.prompt', { query: `Generate module skeleton for:\n${JSON.stringify(spec, null, 2)}\n\nInclude:\n1. Function signatures with JSDoc\n2. Test case descriptions\n3. UI component tree`, model, systemPrompt: getSkeletonSystemPrompt() });
+export const startSkeletonMode = async () => (workflowState.phase = 'skeleton', workflowState.skeleton = await generateSkeleton(workflowState.spec), await runtime.call('layout.addComponent', 'skeleton-viewer', { x: 0, y: 0, width: 100, height: 100, isMaximized: true }));
 const getSkeletonSystemPrompt = () => `You generate module skeletons following this pattern:\n- manifest with name, actions, dependencies\n- Function signatures with clear parameter types\n- Test descriptions: "test name" → expected behavior\n- UI tree: nested objects with events`;
 export const completeSkeleton = async () => (workflowState.phase = 'development', await runtime.call('layout.removeComponent', 'skeleton-viewer'), await startDevelopment());
 export const buildSkeletonUI = () => ({ "skeleton-viewer": { tag: "div", style: "padding: 20px;", "skeleton-display": { tag: "pre", text: workflowState.skeleton || 'Generating...', style: "white-space: pre-wrap;" }, "complete-btn": { tag: "button", text: "Complete Skeleton → Development", class: "cognition-button-primary", events: { click: "code-assistant.completeSkeleton" } } } });

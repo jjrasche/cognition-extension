@@ -27,7 +27,7 @@ export const manifest = {
 	},
 	indexeddb: { name: 'SpeechAudioDB', version: 1, storeConfigs: [{ name: 'recordings', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] }] }
 };
-let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer;
+let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer, onTranscript;
 let isListening = false, isPlaying = false, currentTime = 0, playbackRate = 1.0;
 let audioStartTime = 0, recordingChunks = [], currentRecording = null, currentPlayingSource = null, highlightedChunkIndex = -1;
 const config = configProxy(manifest);
@@ -66,11 +66,17 @@ const handleResult = (event) => {
 		};
 		const existingIndex = recordingChunks.findIndex(c => result.isFinal ? (!c.isFinal && Math.abs(c.timestamp - currentTimeMs) < 1000) : !c.isFinal);
 		existingIndex >= 0 ? recordingChunks[existingIndex] = chunk : recordingChunks.push(chunk);
+		onTranscript(chunk);
 	}
 	(currentRecording || isListening) && refreshTranscriptViewer();
 };
 // === RECORDING CONTROL ===
-export const startListening = async () => { if (!recognition || isListening) return; try { await startAudioRecording(); recognition.start(); } catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); } };
+export const startListening = async (onTranscript) => {
+	if (!recognition || isListening) return;
+	onTranscript = onTranscript || (() => { });
+	try { await startAudioRecording(); recognition.start(); }
+	catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); }
+};
 export const stopListening = async () => { if (!recognition || !isListening) return; recognition.stop(); await stopAudioRecording(); };
 export const toggleListening = async () => isListening ? await stopListening() : await startListening();
 // === AUDIO RECORDING ===
