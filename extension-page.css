@@ -43,10 +43,6 @@
 	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.7);
 	--shadow-accent: 0 0 20px var(--accent-glow);
 
-	/* Transitions */
-	--transition-fast: 0.15s ease;
-	--transition-normal: 0.25s ease;
-	--transition-slow: 0.35s ease;
 }
 
 /* === RESET & BASE === */
@@ -125,7 +121,6 @@ body {
 	background: rgba(0, 0, 0, 0.7);
 	z-index: 999998;
 	backdrop-filter: blur(8px) saturate(180%);
-	animation: fadeIn var(--transition-normal);
 }
 
 @keyframes fadeIn {
@@ -154,7 +149,6 @@ body {
 	max-width: 520px;
 	max-height: 80vh;
 	overflow-y: auto;
-	animation: modalSlideIn var(--transition-normal);
 }
 
 @keyframes modalSlideIn {
@@ -203,7 +197,6 @@ body {
 	font-family: inherit;
 	background: var(--bg-input);
 	color: var(--text-primary);
-	transition: all var(--transition-fast);
 	outline: none;
 }
 
@@ -240,7 +233,6 @@ body {
 	font-size: 14px;
 	font-weight: 500;
 	cursor: pointer;
-	transition: all var(--transition-fast);
 	border: none;
 	font-family: inherit;
 	display: inline-flex;
@@ -275,7 +267,6 @@ body {
 	width: 100%;
 	height: 100%;
 	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-	transition: left 0.5s;
 }
 
 .cognition-button-primary:hover:before {
@@ -313,7 +304,6 @@ body {
 	padding: 24px;
 	margin-bottom: 16px;
 	backdrop-filter: blur(10px);
-	transition: all var(--transition-fast);
 }
 
 .cognition-card:hover {
@@ -403,7 +393,6 @@ body {
 	background: var(--bg-glass);
 	color: var(--text-primary);
 	backdrop-filter: blur(10px);
-	transition: all var(--transition-normal);
 	box-shadow: var(--shadow-sm);
 }
 
@@ -444,7 +433,6 @@ body {
 	border: 1px solid var(--border-primary);
 	border-radius: 12px;
 	cursor: pointer;
-	transition: all var(--transition-fast);
 	background: var(--bg-glass);
 	backdrop-filter: blur(10px);
 	position: relative;
@@ -467,7 +455,6 @@ body {
 	height: 100%;
 	background: var(--accent-primary);
 	opacity: 0;
-	transition: opacity var(--transition-fast);
 }
 
 .search-result:hover:before {
@@ -480,7 +467,6 @@ body {
 	font-size: 18px;
 	line-height: 1.3;
 	font-weight: 500;
-	transition: color var(--transition-fast);
 }
 
 .search-result:hover .result-title {
@@ -615,7 +601,6 @@ body {
 .cognition-markdown-content a {
 	color: var(--accent-primary);
 	text-decoration: none;
-	transition: color var(--transition-fast);
 }
 
 .cognition-markdown-content a:hover {
@@ -637,7 +622,6 @@ body {
 ::-webkit-scrollbar-thumb {
 	background: var(--border-hover);
 	border-radius: 4px;
-	transition: background var(--transition-fast);
 }
 
 ::-webkit-scrollbar-thumb:hover {

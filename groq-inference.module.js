@@ -59,6 +59,7 @@ export const makeRequest = async (model, messages, webSearch, responseFormat) =>
 //   return { content: data.choices[0]?.message?.content || 'No response', usage: data.usage };
 // };
 export const getContent = async (response) => {
+	log.info(`GROQ response status`, response);
 	const data = await response.json();
 	const content = data.choices?.[0]?.message?.content;
 	return content;

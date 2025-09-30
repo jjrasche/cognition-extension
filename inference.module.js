@@ -41,15 +41,13 @@ export const setModelConfigOptions = () => {
 }
 export const infer = async (query) => await prompt({ query });
 export const prompt = async (params) => {
-	let { query, systemPrompt, webSearch, loadSource = false, provider, model } = params;
+	let { query, systemPrompt, webSearch, loadSource = false, provider, model, responseFormat } = params;
 	provider = provider ?? getSelectedProvider(), model = model ?? getSelectedModel();
 	if (!provider || !model) throw new Error("Inference provider/model not configured");
 	const messages = await runtime.call("context.assemble", query, systemPrompt);
-	const response = await provider.makeRequest(model, messages, webSearch);
+	const response = await provider.makeRequest(model, messages, webSearch, responseFormat);
 	if (!response.ok) throw new Error(`${provider.manifest.name} API error: ${response.status}`);
-	const content = await provider.getContent(response);
-	loadSource && await runtime.call('manual-atom-extractor.loadSource', inferenceSourceTree(query, content), { sourceId: await addInferenceNode(query, messages, content, model.id, provider.manifest.name), type: "inference interaction" });
-	return content;
+	return await provider.getContent(response);
 };
 export const getSelectedProvider = () => providers.find(p => p.manifest.name === config.provider);
 export const getSelectedModel = () => getSelectedProvider()?.manifest.inferenceModels?.find(m => m.id === config.model);
