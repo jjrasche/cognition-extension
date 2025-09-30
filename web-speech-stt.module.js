@@ -10,8 +10,8 @@ export const manifest = {
 	actions: ["startListening", "stopListening", "toggleListening", "getStatus", "getRecordings", "loadRecording", "deleteRecording", "seekToChunk", "seekToTime", "togglePlayback", "setPlaybackRate", "saveGoldStandard"],
 	uiComponents: [
 		// { name: "stt-indicator", getTree: "buildIndicator", },
-		{ name: "transcript-viewer", getTree: "buildTranscriptViewer" },
-		{ name: "recording-manager", getTree: "buildRecordingManager" }
+		// { name: "transcript-viewer", getTree: "buildTranscriptViewer" },
+		// { name: "recording-manager", getTree: "buildRecordingManager" }
 	],
 	config: {
 		language: {
@@ -49,8 +49,8 @@ const handleStart = async () => {
 	isListening = true;
 	audioStartTime = performance.now();
 	recordingChunks = [];
-	await refreshUI();
-	await runtime.call('layout.addComponent', 'transcript-viewer');
+	// await refreshUI();
+	// await runtime.call('layout.addComponent', 'transcript-viewer');
 };
 const handleEnd = async () => { isListening = false; await refreshUI(); };
 const handleError = async (e) => { isListening = false; await refreshUI(); log.error(' Error:', e.error); };
@@ -190,10 +190,10 @@ const buildTranscriptContent = () => ({ "transcript-content": { tag: "div", styl
 const getChunks = () => isListening ? recordingChunks : currentRecording?.chunks || [];
 const buildChunksUI = () => config.sourceMode ? buildTranscriptSource() : buildTranscriptChunks();
 const buildTranscriptSource = () => createSelectableSource(
-  { tag: "div", text: getChunks().map(chunk => chunk.text).join(' '), style: "cursor: text; line-height: 1.6; padding: 15px;" },
-  `transcript-${currentRecording?.id || 'live'}`,
-  "transcript",
-  "web-speech-stt"
+	{ tag: "div", text: getChunks().map(chunk => chunk.text).join(' '), style: "cursor: text; line-height: 1.6; padding: 15px;" },
+	`transcript-${currentRecording?.id || 'live'}`,
+	"transcript",
+	"web-speech-stt"
 );
 const buildTranscriptChunks = () => Object.fromEntries(
 	getChunks().map((chunk, index) => [`chunk-${index}`, {
