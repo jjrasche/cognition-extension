@@ -79,7 +79,7 @@ export const startListening = async (onTranscript = (chunk) => { }) => {
 	catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); }
 };
 export const stopListening = async () => { if (!recognition || !isListening) return; recognition.stop(); await stopAudioRecording(); };
-export const toggleListening = async () => isListening ? await stopListening() : await startListening();
+export const toggleListening = async (onTranscript) => isListening ? await stopListening() : await startListening(onTranscript);
 // === AUDIO RECORDING ===
 const startAudioRecording = async () => {
 	const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
