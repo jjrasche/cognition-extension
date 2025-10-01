@@ -26,6 +26,7 @@ export const initialize = async (rt, l) => {
 	apiKey = await runtime.call("api-keys.getKey", manifest.apiKeys[0]);
 	if (!apiKey) throw new Error('GROQ API key not configured');
 };
+const getResponseFormat = (responseFormat) => responseFormat == "JSON" ? { "type": "json_object" } : (() => { throw new Error(`Unsupported response format: ${responseFormat}`) })();
 
 export const makeRequest = async (model, messages, webSearch, responseFormat) => {
 	const systemMessage = messages.find(m => m.role === 'system');
@@ -36,7 +37,7 @@ export const makeRequest = async (model, messages, webSearch, responseFormat) =>
 		temperature: 0.7,
 		max_tokens: Math.min(model.maxOutput || 4096, 4096),
 		stream: false,
-		...(responseFormat && { response_format: responseFormat })
+		...((responseFormat && { response_format: getResponseFormat(responseFormat) }))
 	};
 	const req = { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) };
 	return await fetch('https://api.groq.com/openai/v1/chat/completions', req);

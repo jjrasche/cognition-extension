@@ -27,7 +27,8 @@ export const manifest = {
 	},
 	indexeddb: { name: 'SpeechAudioDB', version: 1, storeConfigs: [{ name: 'recordings', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] }] }
 };
-let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer, onTranscript;
+let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer
+let onTranscript = (chunk) => { }; // todo: might need a list of callbacks
 let isListening = false, isPlaying = false, currentTime = 0, playbackRate = 1.0;
 let audioStartTime = 0, recordingChunks = [], currentRecording = null, currentPlayingSource = null, highlightedChunkIndex = -1;
 const config = configProxy(manifest);
@@ -71,9 +72,9 @@ const handleResult = (event) => {
 	(currentRecording || isListening) && refreshTranscriptViewer();
 };
 // === RECORDING CONTROL ===
-export const startListening = async (onTranscript) => {
+export const startListening = async (onTranscript = (chunk) => { }) => {
 	if (!recognition || isListening) return;
-	onTranscript = onTranscript || (() => { });
+	onTranscript = onTranscript;
 	try { await startAudioRecording(); recognition.start(); }
 	catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); }
 };
