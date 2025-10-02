@@ -63,15 +63,12 @@ const handleResult = (event) => {
 			text: transcript.trim(), startTime: Math.max(0, currentTimeMs - estimatedDurationMs) / 1000, endTime: currentTimeMs / 1000,
 			confidence: result[0].confidence || 0, isFinal: result.isFinal, timestamp: currentTimeMs
 		};
-		const chunkId = `${i}-${currentTimeMs}`;
-		onTranscript(chunk);
-		if (result.isFinal && finalizationDelay > 0) {
-			pendingFinalizations.set(chunkId, setTimeout(() => {
-				onTranscript({ ...chunk, finalizedAt: Date.now() });
-				pendingFinalizations.delete(chunkId);
-			}, finalizationDelay));
-		} else if (result.isFinal) {
-			onTranscript({ ...chunk, finalizedAt: Date.now() });
+		onTranscript(chunk); // Send immediately (Web Speech API already accumulated)
+		if (result.isFinal) {
+			const chunkId = `${i}-${currentTimeMs}`;
+			finalizationDelay > 0 
+			? pendingFinalizations.set(chunkId, setTimeout(() => { onTranscript({ ...chunk, finalizedAt: Date.now() }); pendingFinalizations.delete(chunkId); }, finalizationDelay))
+			: onTranscript({ ...chunk, finalizedAt: Date.now() });
 		}
 	}
 	(currentRecording || isListening) && refreshTranscriptViewer();

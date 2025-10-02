@@ -170,8 +170,13 @@ const handleTranscript = async (chunk) => {
 		await saveTranscripts(chunk);
 		if (/what do you think/i.test(chunk.text)) await injectSpecSuggestion();
 		await renderUI();
-	} else { liveTranscript = chunk.text; await renderUI(); }
+	} else { 
+		liveTranscript = chunk.text;
+		console.log('interim:', JSON.stringify(chunk));
+		// await renderUI();
+	}
 };
+
 const saveTranscripts = async (chunk) => await updateWorkflow({ transcriptHistory: [...workflowState.transcriptHistory, chunk.text] });
 // todo: standardize all style using css classes
 const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(field => {
