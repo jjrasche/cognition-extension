@@ -27,7 +27,7 @@ export const manifest = {
 	},
 	indexeddb: { name: 'SpeechAudioDB', version: 1, storeConfigs: [{ name: 'recordings', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] }] }
 };
-let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer, finalizationDelay = 0, pendingFinalizations = new Map();
+let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer, finalizationDelay = 0, pendingFinalizations = new Map(), finalizationTimer;
 let onTranscript = (chunk) => { }; // todo: might need a list of callbacks
 let isListening = false, isPlaying = false, currentTime = 0, playbackRate = 1.0;
 let audioStartTime = 0, recordingChunks = [], currentRecording = null, currentPlayingSource = null, highlightedChunkIndex = -1;
@@ -57,22 +57,16 @@ const handleEnd = async () => { isListening = false; await refreshUI(); };
 const handleError = async (e) => { isListening = false; await refreshUI(); log.error(' Error:', e.error); };
 const handleResult = (event) => {
 	const currentTimeMs = performance.now() - audioStartTime;
-	for (let i = event.resultIndex; i < event.results.length; i++) {
-		const result = event.results[i], transcript = result[0].transcript, estimatedDurationMs = transcript.length * 100;
-		const chunk = {
-			text: transcript.trim(), startTime: Math.max(0, currentTimeMs - estimatedDurationMs) / 1000, endTime: currentTimeMs / 1000,
-			confidence: result[0].confidence || 0, isFinal: result.isFinal, timestamp: currentTimeMs
-		};
-		onTranscript(chunk); // Send immediately (Web Speech API already accumulated)
-		if (result.isFinal) {
-			const chunkId = `${i}-${currentTimeMs}`;
-			finalizationDelay > 0 
-			? pendingFinalizations.set(chunkId, setTimeout(() => { onTranscript({ ...chunk, finalizedAt: Date.now() }); pendingFinalizations.delete(chunkId); }, finalizationDelay))
-			: onTranscript({ ...chunk, finalizedAt: Date.now() });
-		}
-	}
+	onTranscript({ text: getInterimText(event), isFinal: false, timestamp: currentTimeMs });
+	clearTimeout(finalizationTimer);
+	finalizationTimer = setTimeout(() => {
+		recordingChunks.push({ text: getFinalText(event), timestamp: currentTimeMs });
+		onTranscript({ text: getFinalText(event), finalizedAt: Date.now() });
+	}, finalizationDelay);
 	(currentRecording || isListening) && refreshTranscriptViewer();
 };
+const getInterimText = (event) => Array.from(event.results).map(r => r[0].transcript).join(' ').trim();
+const getFinalText = (event) => Array.from(event.results).filter(r => r.isFinal).map(r => r[0].transcript).join(' ').trim();
 // === RECORDING CONTROL ===
 export const startListening = async (callback = () => {}, delay = 0) => {
 	if (!recognition || isListening) return;

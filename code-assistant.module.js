@@ -173,7 +173,7 @@ const handleTranscript = async (chunk) => {
 	} else { 
 		liveTranscript = chunk.text;
 		console.log('interim:', JSON.stringify(chunk));
-		// await renderUI();
+		await renderUI();
 	}
 };
 
