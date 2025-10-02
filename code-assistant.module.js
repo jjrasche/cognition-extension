@@ -8,7 +8,7 @@ export const manifest = {
 	description: "AI-powered development: spec → skeleton → develop. Prioritizing operating in the voice-first intent layer and test driven development",
 	dependencies: ["file", "inference", "layout", "chrome-sync", "web-speech-stt", "graph-db"],
 	requiredDirectories: ["cognition-extension"],
-	actions: ["renderUI", "toggleListening", "toggleLiveTranscript", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
+	actions: ["renderUI", "handleWorkflowSelect", "toggleListening", "toggleLiveTranscript", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
 	uiComponents: [{ name: "code-assistant", getTree: "buildUI" }],
 	config: {
 		historyAutoClose: { type: 'number', min: 5, max: 60, value: 15, label: 'History Auto-close (seconds)' },
@@ -149,7 +149,7 @@ const logSpecTraining = async (action, rightTiming) => { }
 // 	context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-5).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime },
 // });
 // ============ SPEC MODE ============
-let pendingChanges = new Map(), transcriptHistory = [], isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = false, liveTranscriptVisible = false;
+let pendingChanges = new Map(), transcriptHistory = [], isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = false, liveTranscriptVisible = true;
 phases.spec.start = async () => { pendingChanges.clear(); transcriptHistory = []; isListening = true; lastSpeechTime = Date.now(); };
 phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); isListening = false; };
 phases.spec.canComplete = () => !!(workflowState.spec.what && workflowState.spec.why);
@@ -158,7 +158,8 @@ export const toggleHistory = async () => (historyVisible = !historyVisible, awai
 export const toggleListening = async () => {
 	isListening = !isListening;
 	if (!isListening) liveTranscript = '';
-	await runtime.call('web-speech-stt.toggleListening', handleTranscript, 1500);
+	await runtime.call('web-speech-stt.toggleListening', handleTranscript, 8000);
+	renderUI();
 };
 const handleTranscript = async (chunk) => {
 	if (chunk.finalizedAt) {

@@ -69,7 +69,7 @@ const setFormProps = (el, node) => {
 		el.value = node.value;
 		setTimeout(() => { el.value = node.value; }, 0);
 	} else if (node.value !== undefined) el.value = node.value;
-
+	
 	if ('disabled' in node) el.disabled = node.disabled;
 };
 const setDataProps = (el, node) => node.data && Object.entries(node.data).forEach(([key, value]) => el.setAttribute(`data-${key.toLowerCase()}`, value));
@@ -139,31 +139,56 @@ const serializeForm = (form) => {
 	return data;
 };
 const preserveScrollDuringTransform = async (tree, container, transformFn) => {
-	const scrollableElements = container.querySelectorAll('*');
-	const scrollState = Array.from(scrollableElements)
-		.filter(el => el.scrollTop > 0 || el.scrollLeft > 0)
-		.map(el => ({
-			selector: getElementSelector(el),
-			scrollTop: el.scrollTop,
-			scrollLeft: el.scrollLeft
-		}));
-
-	await transformFn();
-
-	// Restore scroll positions synchronously with async retry
-	await Promise.all(scrollState.map(async ({ selector, scrollTop, scrollLeft }) => {
-		const el = container.querySelector(selector);
-		if (el) {
-			el.scrollTop = scrollTop;
-			el.scrollLeft = scrollLeft;
-			// Async retry if needed
-			await new Promise(resolve => setTimeout(() => {
-				if (el.scrollTop !== scrollTop) el.scrollTop = scrollTop;
-				if (el.scrollLeft !== scrollLeft) el.scrollLeft = scrollLeft;
-				resolve();
-			}, 0));
-		}
+	// Capture scroll state with paths
+	const scrollState = Array.from(container.querySelectorAll('*'))
+	.filter(el => el.scrollTop > 0 || el.scrollLeft > 0)
+	.map(el => ({
+		path: getElementPath(el, container),
+		scrollTop: el.scrollTop,
+		scrollLeft: el.scrollLeft
 	}));
+	
+	// Update DOM
+	await transformFn();
+	
+	// Wait for DOM to settle (standard approach from search results)
+	await new Promise(resolve => setTimeout(() => {
+		scrollState.forEach(({ path, scrollTop, scrollLeft }) => {
+			const el = getElementByPath(path, container);
+			if (el && el.scrollHeight > scrollTop) {
+				el.scrollTop = scrollTop;
+				el.scrollLeft = scrollLeft;
+			}
+		});
+		resolve();
+	}, 50)); // 50ms delay is common in production apps
+};
+
+// Create unique path from container to element
+const getElementPath = (element, container) => {
+	const path = [];
+	let current = element;
+	while (current && current !== container) {
+		const parent = current.parentElement;
+		if (!parent) break;
+		const index = Array.from(parent.children).indexOf(current);
+		path.unshift({ tag: current.tagName.toLowerCase(), index });
+		current = parent;
+	}
+	return path;
+};
+
+// Reconstruct element from path
+const getElementByPath = (path, container) => {
+	let current = container;
+	for (const { tag, index } of path) {
+		const children = Array.from(current.children).filter(child => 
+			child.tagName.toLowerCase() === tag
+		);
+		if (index >= children.length) return null;
+		current = children[index];
+	}
+	return current;
 };
 const getElementSelector = (element) => {
 	if (element.id) return `#${element.id}`;
@@ -175,14 +200,14 @@ const getElementSelector = (element) => {
 // todo: need DOM isolation
 // // testing
 // export const test = async () => {
-// 	const { runUnitTest } = runtime.testUtils;
+	// 	const { runUnitTest } = runtime.testUtils;
 // 	let runtimeCalls = [];
 // 	const origRuntimeCall = runtime.call;
 // 	const origRuntimeLog = runtime.log;
 
 // 	// Mock all runtime methods that could interfere with tests
 // 	const mockRuntimeCall = async (action, ...args) => {
-// 		runtimeCalls.push({ action, data: args[0] });
+	// 		runtimeCalls.push({ action, data: args[0] });
 // 		return {}; // Return empty object to prevent errors
 // 	};
 // 	runtime.call = mockRuntimeCall;
@@ -191,39 +216,39 @@ const getElementSelector = (element) => {
 // 	const results = (await Promise.all([
 // 		// basic element creation tests
 // 		runUnitTest("Simple element creation", async () => {
-// 			const divObj = { tag: "div", id: "div-1", class: "test-class", text: "Hello World" };
+	// 			const divObj = { tag: "div", id: "div-1", class: "test-class", text: "Hello World" };
 // 			const tree = { [divObj.id]: divObj };
 // 			return await testDOMStructure(tree, [divObj]);
 // 		}),
 // 		runUnitTest("Multiple independent elements", async () => {
-// 			const divObj = { tag: "div", id: "parent-div", class: "container", text: "Parent" };
+	// 			const divObj = { tag: "div", id: "parent-div", class: "container", text: "Parent" };
 // 			const spanObj = { tag: "span", id: "child-span", text: "Child" };
 // 			const tree = { [divObj.id]: divObj, [spanObj.id]: spanObj };
 // 			return await testDOMStructure(tree, [divObj, spanObj]);
 // 		}),
 // 		runUnitTest("Form input element", async () => {
-// 			const inputObj = { tag: "input", id: "username-input", type: "text", name: "username", value: "test-value" };
+	// 			const inputObj = { tag: "input", id: "username-input", type: "text", name: "username", value: "test-value" };
 // 			const tree = { [inputObj.id]: inputObj };
 // 			return await testDOMStructure(tree, [inputObj]);
 // 		}),
 // 		runUnitTest("Select element basic", async () => {
-// 			const selectObj = { tag: "select", id: "country-select", name: "country" };
+	// 			const selectObj = { tag: "select", id: "country-select", name: "country" };
 // 			const tree = { [selectObj.id]: selectObj };
 // 			return await testDOMStructure(tree, [selectObj]);
 // 		}),
 // 		runUnitTest("Elements with no class or text", async () => {
-// 			const inputObj = { tag: "input", id: "email-field", type: "email" };
+	// 			const inputObj = { tag: "input", id: "email-field", type: "email" };
 // 			const buttonObj = { tag: "button", id: "submit-btn" };
 // 			const tree = { [inputObj.id]: inputObj, [buttonObj.id]: buttonObj };
 // 			return await testDOMStructure(tree, [inputObj, buttonObj]);
 // 		}),
 // 		runUnitTest("Textarea element", async () => {
-// 			const textareaObj = { tag: "textarea", id: "message-area", class: "form-control", text: "Default text" };
+	// 			const textareaObj = { tag: "textarea", id: "message-area", class: "form-control", text: "Default text" };
 // 			const tree = { [textareaObj.id]: textareaObj };
 // 			return await testDOMStructure(tree, [textareaObj]);
 // 		}),
 // 		runUnitTest("Mixed form elements", async () => {
-// 			const inputObj = { tag: "input", id: "name-input", class: "required", type: "text" };
+	// 			const inputObj = { tag: "input", id: "name-input", class: "required", type: "text" };
 // 			const selectObj = { tag: "select", id: "age-select", class: "dropdown" };
 // 			const buttonObj = { tag: "button", id: "save-btn", class: "btn-primary", text: "Save" };
 // 			const tree = { [inputObj.id]: inputObj, [selectObj.id]: selectObj, [buttonObj.id]: buttonObj };
@@ -231,13 +256,13 @@ const getElementSelector = (element) => {
 // 		}),
 // 		// hierarchy tests
 // 		runUnitTest("Simple parent-child nesting", async () => {
-// 			const parentObj = { tag: "div", id: "parent", class: "wrapper" };
+	// 			const parentObj = { tag: "div", id: "parent", class: "wrapper" };
 // 			const childObj = { tag: "span", id: "child", text: "Child text" };
 // 			const tree = { [parentObj.id]: { ...parentObj, [childObj.id]: childObj } };
 // 			return await testDOMStructure(tree, [parentObj, childObj]);
 // 		}),
 // 		runUnitTest("Multiple children same parent", async () => {
-// 			const listObj = { tag: "ul", id: "list" };
+	// 			const listObj = { tag: "ul", id: "list" };
 // 			const item1Obj = { tag: "li", id: "item1", text: "First" };
 // 			const item2Obj = { tag: "li", id: "item2", text: "Second" };
 // 			const item3Obj = { tag: "li", id: "item3", text: "Third" };
@@ -245,7 +270,7 @@ const getElementSelector = (element) => {
 // 			return await testDOMStructure(tree, [listObj, item1Obj, item2Obj, item3Obj]);
 // 		}),
 // 		runUnitTest("Deep nesting hierarchy", async () => {
-// 			const mainObj = { tag: "section", id: "main" };
+	// 			const mainObj = { tag: "section", id: "main" };
 // 			const contentObj = { tag: "div", id: "content" };
 // 			const postObj = { tag: "article", id: "post" };
 // 			const titleObj = { tag: "h2", id: "title", text: "Post Title" };
@@ -254,7 +279,7 @@ const getElementSelector = (element) => {
 // 			return await testDOMStructure(tree, [mainObj, contentObj, postObj, titleObj, bodyObj]);
 // 		}),
 // 		runUnitTest("Form with nested structure", async () => {
-// 			const formObj = { tag: "form", id: "signup-form" };
+	// 			const formObj = { tag: "form", id: "signup-form" };
 // 			const fieldsetObj = { tag: "fieldset", id: "personal-info" };
 // 			const legendObj = { tag: "legend", id: "legend", text: "Personal Information" };
 // 			const groupObj = { tag: "div", id: "name-group" };
@@ -264,7 +289,7 @@ const getElementSelector = (element) => {
 // 			return await testDOMStructure(tree, [formObj, fieldsetObj, legendObj, groupObj, labelObj, fieldObj]);
 // 		}),
 // 		runUnitTest("Mixed content hierarchy", async () => {
-// 			const containerObj = { tag: "div", id: "container", text: "Some text before" };
+	// 			const containerObj = { tag: "div", id: "container", text: "Some text before" };
 // 			const boldObj = { tag: "strong", id: "bold", text: "bold text" };
 // 			const italicObj = { tag: "em", id: "italic", text: "italic text" };
 // 			const tree = { [containerObj.id]: { ...containerObj, [boldObj.id]: boldObj, [italicObj.id]: italicObj } };
@@ -274,7 +299,7 @@ const getElementSelector = (element) => {
 
 // 	// Event binding tests with proper mocking
 // 	results.push(await runUnitTest("Event Binding: Form submit with serialization and preventDefault", async () => {
-// 		const formObj = { tag: "form", id: "test-form", events: { submit: "test.handleSubmit" } };
+	// 		const formObj = { tag: "form", id: "test-form", events: { submit: "test.handleSubmit" } };
 // 		const nameInputObj = { tag: "input", name: "username", value: "testuser", type: "text" };
 // 		const emailInputObj = { tag: "input", name: "email", value: "test@example.com", type: "email" };
 // 		const submitBtnObj = { tag: "button", type: "submit", text: "Submit" };
@@ -287,7 +312,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Event Binding: Click calls action", async () => {
-// 		const buttonObj = { tag: "button", id: "test-btn", events: { click: "test.handleClick" } };
+	// 		const buttonObj = { tag: "button", id: "test-btn", events: { click: "test.handleClick" } };
 // 		const tree = { [buttonObj.id]: buttonObj };
 // 		runtimeCalls = [];
 // 		await initiateEventOnTestDom(tree, [[`#${buttonObj.id}`, new Event('click')]]);
@@ -297,7 +322,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Event Binding: Input change passes value", async () => {
-// 		const inputObj = { tag: "input", id: "test-input", name: "testField", events: { change: "test.handleChange" } };
+	// 		const inputObj = { tag: "input", id: "test-input", name: "testField", events: { change: "test.handleChange" } };
 // 		const tree = { [inputObj.id]: inputObj };
 // 		runtimeCalls = [];
 // 		await initiateEventOnTestDom(tree, [[`#${inputObj.id}`, new Event('change'), "newValue"]]);
@@ -307,7 +332,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Event Binding: Multiple events same element", async () => {
-// 		const buttonObj = { tag: "button", id: "multi-btn", events: { click: "test.click", focus: "test.focus" } };
+	// 		const buttonObj = { tag: "button", id: "multi-btn", events: { click: "test.click", focus: "test.focus" } };
 // 		const tree = { [buttonObj.id]: buttonObj };
 // 		runtimeCalls = [];
 // 		await initiateEventOnTestDom(tree, [[`#${buttonObj.id}`, new Event('click')], [`#${buttonObj.id}`, new Event('focus')]]);
@@ -317,7 +342,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Event Binding: Event data structure", async () => {
-// 		const inputObj = { tag: "input", id: "data-input", name: "dataField", events: { change: "test.dataCheck" } };
+	// 		const inputObj = { tag: "input", id: "data-input", name: "dataField", events: { change: "test.dataCheck" } };
 // 		const tree = { [inputObj.id]: inputObj };
 // 		runtimeCalls = [];
 // 		await initiateEventOnTestDom(tree, [[`#${inputObj.id}`, new Event('change')]]);
@@ -328,7 +353,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Event Binding: Invalid action graceful error", async () => {
-// 		const buttonObj = { tag: "button", id: "error-btn", events: { click: "nonexistent.action" } };
+	// 		const buttonObj = { tag: "button", id: "error-btn", events: { click: "nonexistent.action" } };
 // 		const tree = { [buttonObj.id]: buttonObj };
 // 		runtimeCalls = [];
 // 		await initiateEventOnTestDom(tree, [[`#${buttonObj.id}`, new Event('click')]]);
@@ -338,7 +363,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Event Binding: Nested element events work (UI search input bug)", async () => {
-// 		const layoutObj = { tag: "div", id: "main-layout" };
+	// 		const layoutObj = { tag: "div", id: "main-layout" };
 // 		const searchBarObj = { tag: "div", id: "search-bar" };
 // 		const searchInputObj = { tag: "input", id: "search-input", type: "text", placeholder: "Search...", events: { keydown: "testHandler" } };
 // 		const tree = { [layoutObj.id]: { ...layoutObj, [searchBarObj.id]: { ...searchBarObj, [searchInputObj.id]: searchInputObj } } };
@@ -350,7 +375,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Form serialization handles all input types", async () => {
-// 		const formObj = { tag: "form", id: "mixed-form", events: { submit: "test.handleSubmit" } };
+	// 		const formObj = { tag: "form", id: "mixed-form", events: { submit: "test.handleSubmit" } };
 // 		const textInputObj = { tag: "input", name: "username", value: "testuser", type: "text" };
 // 		const emailInputObj = { tag: "input", name: "email", value: "test@example.com", type: "email" };
 // 		const checkboxObj = { tag: "input", name: "newsletter", type: "checkbox" };
@@ -377,12 +402,12 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Text Selection: mouseup calls textSelection handler with selection data", async () => {
-// 		const divObj = { tag: "div", id: "selectable-content", data: { textSelectionHandler: "test.handleTextSelection" }, text: "This is selectable text content for testing purposes." };
+	// 		const divObj = { tag: "div", id: "selectable-content", data: { textSelectionHandler: "test.handleTextSelection" }, text: "This is selectable text content for testing purposes." };
 // 		const tree = { [divObj.id]: divObj };
 // 		// Mock window.getSelection with rangeCount
 // 		const originalGetSelection = window.getSelection;
 // 		window.getSelection = () => ({
-// 			toString: () => "selected text",
+	// 			toString: () => "selected text",
 // 			rangeCount: 1,
 // 			getRangeAt: () => ({ startOffset: 5, endOffset: 18, startContainer: { textContent: "This is selectable text content for testing purposes." } })
 // 		});
@@ -399,7 +424,7 @@ const getElementSelector = (element) => {
 // 	}));
 
 // 	results.push(await runUnitTest("Scroll preservation during transform", async () => {
-// 		const scrollTree = { "scroll-container": { tag: "div", id: "scroll-test", style: "height: 100px; overflow-y: auto;", "content": { tag: "div", style: "height: 500px;", text: "Tall content" } } };
+	// 		const scrollTree = { "scroll-container": { tag: "div", id: "scroll-test", style: "height: 100px; overflow-y: auto;", "content": { tag: "div", style: "height: 500px;", text: "Tall content" } } };
 // 		const container = createTestContainer();
 // 		await transform(scrollTree, container);
 // 		const scrollEl = container.querySelector('#scroll-test');
@@ -421,9 +446,9 @@ const getElementSelector = (element) => {
 // };
 
 // const initiateEventOnTestDom = async (tree, events) => {
-// 	const container = await createTestDOM(tree);
+	// 	const container = await createTestDOM(tree);
 // 	events.forEach(([selector, event, newValue]) => {
-// 		const element = container.querySelector(selector);
+	// 		const element = container.querySelector(selector);
 // 		if (element) {
 // 			if (newValue && element.tagName.toLowerCase() === 'input') element.value = newValue;
 // 			element.dispatchEvent(event);
@@ -433,15 +458,15 @@ const getElementSelector = (element) => {
 // };
 
 // const createTestDOM = async (tree) => {
-// 	const container = createTestContainer();
+	// 	const container = createTestContainer();
 // 	await transform(tree, container);
 // 	return container;
 // };
 
 // const testDOMStructure = async (tree, elements) => {
-// 	const container = await createTestDOM(tree);
+	// 	const container = await createTestDOM(tree);
 // 	const actual = elements.map(el => {
-// 		const domEl = container.querySelector(`#${el.id}`);
+	// 		const domEl = container.querySelector(`#${el.id}`);
 // 		return { hasElement: !!domEl, id: domEl?.id, class: el.class ? domEl?.className : undefined, text: el.text ? getDirectText(domEl) : undefined };
 // 	});
 // 	const expected = elements.map(el => ({ hasElement: true, id: el.id, class: el.class, text: el.text }));
@@ -453,9 +478,9 @@ const getElementSelector = (element) => {
 // const getDirectText = (element) => Array.from(element.childNodes).filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join('');
 // const createTestContainer = () => (container => (document.body.appendChild(container), container))(Object.assign(document.createElement('div'), { className: 'test-container' }));
 // const cleanupTestContainer = (container) => {
-//   // Remove all event listeners by cloning elements
+	//   // Remove all event listeners by cloning elements
 //   container.querySelectorAll('*').forEach(el => {
-//     if (el.onclick || Object.keys(el.dataset).some(key => key.includes('test'))) {
+	//     if (el.onclick || Object.keys(el.dataset).some(key => key.includes('test'))) {
 //       const clone = el.cloneNode(true);
 //       el.parentNode?.replaceChild(clone, el);
 //     }
