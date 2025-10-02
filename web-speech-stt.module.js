@@ -27,7 +27,7 @@ export const manifest = {
 	},
 	indexeddb: { name: 'SpeechAudioDB', version: 1, storeConfigs: [{ name: 'recordings', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] }] }
 };
-let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer
+let runtime, log, recognition, mediaRecorder, audioStream, audioContext, audioBuffer, finalizationDelay = 0, pendingFinalizations = new Map();
 let onTranscript = (chunk) => { }; // todo: might need a list of callbacks
 let isListening = false, isPlaying = false, currentTime = 0, playbackRate = 1.0;
 let audioStartTime = 0, recordingChunks = [], currentRecording = null, currentPlayingSource = null, highlightedChunkIndex = -1;
@@ -58,28 +58,38 @@ const handleError = async (e) => { isListening = false; await refreshUI(); log.e
 const handleResult = (event) => {
 	const currentTimeMs = performance.now() - audioStartTime;
 	for (let i = event.resultIndex; i < event.results.length; i++) {
-		const result = event.results[i];
-		const transcript = result[0].transcript;
-		const estimatedDurationMs = transcript.length * 100;
+		const result = event.results[i], transcript = result[0].transcript, estimatedDurationMs = transcript.length * 100;
 		const chunk = {
 			text: transcript.trim(), startTime: Math.max(0, currentTimeMs - estimatedDurationMs) / 1000, endTime: currentTimeMs / 1000,
 			confidence: result[0].confidence || 0, isFinal: result.isFinal, timestamp: currentTimeMs
 		};
-		const existingIndex = recordingChunks.findIndex(c => result.isFinal ? (!c.isFinal && Math.abs(c.timestamp - currentTimeMs) < 1000) : !c.isFinal);
-		existingIndex >= 0 ? recordingChunks[existingIndex] = chunk : recordingChunks.push(chunk);
+		const chunkId = `${i}-${currentTimeMs}`;
 		onTranscript(chunk);
+		if (result.isFinal && finalizationDelay > 0) {
+			pendingFinalizations.set(chunkId, setTimeout(() => {
+				onTranscript({ ...chunk, finalizedAt: Date.now() });
+				pendingFinalizations.delete(chunkId);
+			}, finalizationDelay));
+		} else if (result.isFinal) {
+			onTranscript({ ...chunk, finalizedAt: Date.now() });
+		}
 	}
 	(currentRecording || isListening) && refreshTranscriptViewer();
 };
 // === RECORDING CONTROL ===
-export const startListening = async (callback = (chunk) => { }) => {
+export const startListening = async (callback = () => {}, delay = 0) => {
 	if (!recognition || isListening) return;
-	onTranscript = callback;
+	onTranscript = callback; finalizationDelay = delay; pendingFinalizations.clear();
 	try { await startAudioRecording(); recognition.start(); }
 	catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); }
 };
-export const stopListening = async () => { if (!recognition || !isListening) return; recognition.stop(); await stopAudioRecording(); };
-export const toggleListening = async (callback) => isListening ? await stopListening() : await startListening(callback);
+export const stopListening = async () => { 
+	if (!recognition || !isListening) return; 
+	recognition.stop(); 
+	pendingFinalizations.forEach(timer => clearTimeout(timer)); pendingFinalizations.clear();
+	await stopAudioRecording(); 
+};
+export const toggleListening = async (callback, delay = 0) => isListening ? await stopListening() : await startListening(callback, delay);
 // === AUDIO RECORDING ===
 const startAudioRecording = async () => {
 	const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });

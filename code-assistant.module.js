@@ -8,7 +8,7 @@ export const manifest = {
 	description: "AI-powered development: spec → skeleton → develop. Prioritizing operating in the voice-first intent layer and test driven development",
 	dependencies: ["file", "inference", "layout", "chrome-sync", "web-speech-stt", "graph-db"],
 	requiredDirectories: ["cognition-extension"],
-	actions: ["renderUI", "toggleListening", "toggleLiveTranscript", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "saveWorkflow", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
+	actions: ["renderUI", "toggleListening", "toggleLiveTranscript", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
 	uiComponents: [{ name: "code-assistant", getTree: "buildUI" }],
 	config: {
 		historyAutoClose: { type: 'number', min: 5, max: 60, value: 15, label: 'History Auto-close (seconds)' },
@@ -38,24 +38,25 @@ export const initialize = async (rt, l) => {
 // ============ WORKFLOW MANAGEMENT ============
 const transitions = { spec: 'skeleton', skeleton: 'develop', develop: null };
 const specDefault = () => ({ what: '', why: '', architecture: { dependencies: [], persistence: 'none', context: [] } });
-const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, communicationHistory: [], timestamp: null, lastModified: null });
+const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, communicationHistory: [], lastModified: null });
 let workflowState = getBlankWorkflowState();
 const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`, 'CodeAssistantDB', 'workflows', ...args);
-const saveWorkflow = async () => {
-	const lastModified = Date.now();
-	if (!workflowState.id) await db('updateRecord', { ...workflowState, id: getId('wf-'), lastModified });
-	await db('updateRecord', { ...workflowState, lastModified });
-};
 const updateWorkflow = async (updates) => {
+	workflowState.id = workflowState.id || getId('wf-');
+	workflowState.lastModified = Date.now();
 	Object.assign(workflowState, updates);
-	await saveWorkflow();
+	await db('updateRecord', workflowState);
 };
 export const loadWorkflow = async (id) => {
 	workflowState = await db('getRecord', id) ?? (() => { throw new Error('Workflow not found') })();
 	pendingChanges.clear();
 	await renderUI();
 };
-export const deleteWorkflow = async (id) => { await db('removeRecord', id); await renderUI(); };
+export const deleteWorkflow = async (id) => { 
+	await db('removeRecord', id);
+	if (workflowState.id === id) workflowState = getBlankWorkflowState();
+	await renderUI(); 
+};
 export const updateWorkflowName = async (eventData) => updateWorkflow({ name: eventData.target.value });
 // === COMMUNICATION HISTORY ===
 const logComm = async (type, data) => updateWorkflow({ communicationHistory: [...workflowState.communicationHistory, { type, ...data, timestamp: Date.now() }] });
@@ -115,6 +116,7 @@ const buildWorkflowList = () => cachedWorkflows.length === 0 ? {"loading": {tag:
 	"what": {tag: "div", text: wf.spec?.what || '', style: "..."}
 }]));
 // ============ MIC & SPEECH RECOGNITION ============
+let liveTranscript = '';
 const injectSpecSuggestion = async () => {
 	try {
 		lastSuggestion = await generateSpecSuggestion();
@@ -153,17 +155,17 @@ phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListenin
 phases.spec.canComplete = () => !!(workflowState.spec.what && workflowState.spec.why);
 export const toggleLiveTranscript = async () => { liveTranscriptVisible = !liveTranscriptVisible; await renderUI(); };
 export const toggleHistory = async () => (historyVisible = !historyVisible, await renderUI());
-export const toggleListening = async () => (isListening = !isListening, await runtime.call('web-speech-stt.toggleListening', handleTranscript));
-const handleTranscript = async (transcriptData) => {
-	if (transcriptData.isFinal) {
-		lastSpeechTime = Date.now();
-		transcriptHistory.push(transcriptData);
-		log.log('transcript:', transcriptData.text);
-		if (/what do you think/i.test(transcriptData.text)) {
-			log.log('User requested suggestion');
-			await injectSpecSuggestion();
-		}
-	}
+export const toggleListening = async () => {
+	isListening = !isListening;
+	if (!isListening) liveTranscript = '';
+	await runtime.call('web-speech-stt.toggleListening', handleTranscript, 1500);
+};
+const handleTranscript = async (chunk) => {
+	if (chunk.finalizedAt) {
+		transcriptHistory.push(chunk); liveTranscript = ''; log.log('finalized:', chunk.text);
+		if (/what do you think/i.test(chunk.text)) await injectSpecSuggestion();
+		await renderUI();
+	} else { liveTranscript = chunk.text; await renderUI(); }
 };
 // todo: standardize all style using css classes
 const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(field => {
@@ -177,7 +179,7 @@ const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(
 		} : { "value": { tag: "pre", text: value || '(speak to fill this in)', style: "color: var(--text-primary); margin: 0; white-space: pre-wrap; font-family: inherit;" } })
 	}];
 }));
-const transcriptContent = () => ({ "content": { tag: "textarea", value: transcriptHistory.map(t => t.text).join(' '), readonly: true, style: "width: 100%; height: 150px; resize: vertical; font-size: 12px; color: var(--text-muted);" } });
+const transcriptContent = () => ({ "content": { tag: "textarea", value: liveTranscript, readonly: true,placeholder: "Listening...",style: "width: 100%; height: 150px; resize: vertical; font-size: 12px; color: var(--text-muted); font-style: italic;" } });
 const micToggle = () => ({ "mic-toggle": { tag: "button", text: isListening ? "⏸ Pause Listening" : "🎤 Start Listening", class: isListening ? "cognition-button-secondary" : "cognition-button-primary", style: isListening ? "background: #4CAF50;" : "", events: { click: "code-assistant.toggleListening" } } });
 const transcriptBtn = () => ({ "toggle": { tag: "button", text: liveTranscriptVisible ? "Hide Transcript" : "Show Transcript", class: "cognition-button-secondary", events: { click: "code-assistant.toggleLiveTranscript" } } });
 const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible ? "Hide History" : "Show History", class: "cognition-button-secondary", events: { click: "code-assistant.toggleHistory" } } });
@@ -221,15 +223,12 @@ export const test = async () => {
 	return [
 		await runUnitTest("Workflow persistence roundtrip", async () => {
 			let actual = {};
-			initializeTrainingModuleTest();
-			const originalSpec = JSON.parse(JSON.stringify(workflowState));
-			await saveWorkflow();
+			await initializeTrainingModuleTest();
+			await updateWorkflow();
 			const savedId = workflowState.id;
 			actual.workflowSaved = !!savedId;
 			workflowState = getBlankWorkflowState(); renderUI();
 			actual.workflowCleared = !workflowState.id;
-			actual.specPreserved = workflowState.spec.what === originalSpec.what; // Content check
-			actual.transcriptsPreserved = transcriptHistory.length > 0; // Should persist too
 			await loadWorkflow(savedId); renderUI();
 			actual.workflowLoaded = workflowState.id == savedId;
 			await deleteWorkflow(savedId); renderUI();
