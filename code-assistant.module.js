@@ -8,7 +8,7 @@ export const manifest = {
 	description: "AI-powered development: spec → skeleton → develop. Prioritizing operating in the voice-first intent layer and test driven development",
 	dependencies: ["file", "inference", "layout", "chrome-sync", "web-speech-stt", "graph-db"],
 	requiredDirectories: ["cognition-extension"],
-	actions: ["toggleListening", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "saveWorkflow", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
+	actions: ["renderUI", "toggleListening", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "saveWorkflow", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
 	uiComponents: [{ name: "code-assistant", getTree: "buildUI" }],
 	config: {
 		historyAutoClose: { type: 'number', min: 5, max: 60, value: 15, label: 'History Auto-close (seconds)' },
@@ -36,6 +36,7 @@ export const initialize = async (rt, l) => {
 };
 
 // ============ WORKFLOW MANAGEMENT ============
+const transitions = { spec: 'skeleton', skeleton: 'develop', develop: null };
 const specDefault = () => ({ what: '', why: '', architecture: { dependencies: [], persistence: 'none', context: [] } });
 const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, communicationHistory: [], timestamp: null, lastModified: null });
 let workflowState = getBlankWorkflowState();
@@ -44,39 +45,39 @@ const saveWorkflow = async () => {
 	if (!workflowState.id) workflowState.id = getId('wf-');
 	await db('updateRecord', { ...workflowState, timestamp: Date.now() });
 };
+const updateWorkflow = async (updates) => {
+	Object.assign(workflowState, updates, { lastModified: Date.now() });
+	await saveWorkflow();
+};
 export const loadWorkflow = async (id) => {
 	workflowState = await db('getRecord', id) ?? (() => { throw new Error('Workflow not found') })();
 	pendingChanges.clear();
-	await refreshUI();
+	await renderUI();
 };
-export const deleteWorkflow = async (id) => { await db('removeRecord', id); await refreshUI(); };
-export const updateWorkflowName = async (eventData) => { workflowState.name = eventData.target.value; await saveWorkflow(); };
+export const deleteWorkflow = async (id) => { await db('removeRecord', id); await renderUI(); };
+export const updateWorkflowName = async (eventData) => updateWorkflow({ name: eventData.target.value });
 // === COMMUNICATION HISTORY ===
-const logComm = async (type, data) => {
-	workflowState.communicationHistory.push({ type, ...data, timestamp: Date.now() });
-	await saveWorkflow();
-};
+const logComm = async (type, data) => updateWorkflow({ communicationHistory: [...workflowState.communicationHistory, { type, ...data, timestamp: Date.now() }] });
 // === SHARED UI ===
 const getPhase = () => phases[workflowState.phase]
 const workflowPickerBtn = () => ({ "picker-btn": { tag: "button", text: "📁 Workflows", class: "cognition-button-secondary", events: { click: "code-assistant.showWorkflowPicker" } } });
 const nameInput = () => ({ "name-input": { tag: "input", type: "text", value: workflowState.name, placeholder: "Workflow name...", class: "cognition-input", style: "flex: 1; max-width: 300px;", events: { change: "code-assistant.updateWorkflowName" } } });
-const disableCompleteBtn = () => getPhase() === phases.spec ? !workflowState.spec.what || !workflowState.spec.why : true
-const completeBtn = () => ({ "complete-btn": { tag: "button", text: "Complete Spec → Skeleton", class: "cognition-button-primary", events: { click: "code-assistant.complete" }, disabled: disableCompleteBtn() } });
+const completeBtn = () => ({ "complete-btn": { tag: "button", text: `Complete ${getPhase().title}`, class: "cognition-button-primary", events: { click: "code-assistant.complete" }, disabled: getPhase().canComplete() } });
 const modeHeaderAndTitle = () => ({ tag: "div", style: "display: flex; justify-content: space-between; align-items: center; gap: 10px;", "title": { tag: "h2", text: getPhase().title, style: "margin: 0;" } });
 const modeBody = () => ({ [getPhase().ui]: { tag: "div", style: "flex: 1; display: flex; flex-direction: column; gap: 20px; overflow-y: auto;", ...getPhase().body() } });
 const actionsBar = () => ({ tag: "div", style: "display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid var(--border-primary);", ...Object.assign({}, ...getPhase().actions.map(a => a())) });
-// todo make generic complete
-export const start = async () => {
-	// todo: where will this be used?
-	getPhase().start();
-	// todo: what else needs to be done here?
-};
+export const start = async () => getPhase().start();
 export const complete = async () => {
-	// todo: validate current phase can be completed and transition to next phase
-	workflowState.phase = 'skeleton';
-	await refreshUI();
+	const phase = getPhase();
+	if (!phase.canComplete()) return;
+	await phase.stop?.();
+	const nextPhase = transitions[workflowState.phase];
+	if (!nextPhase) return log.info('Workflow complete!');
+	await updateWorkflow({ phase: nextPhase, lastModified: Date.now() });
+	await getPhase().start?.();
+	await renderUI();
 };
-const refreshUI = async () => await runtime.call('layout.renderComponent', "code-assistant");
+export const renderUI = async () => await runtime.call('layout.renderComponent', "code-assistant");
 export const buildUI = () => ({[getPhase().ui]: {
 	tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
 	"header": { ...modeHeaderAndTitle(), ...nameInput(), ...workflowPickerBtn(), ...getPhase()?.additionalHeader() ?? {} },
@@ -97,9 +98,9 @@ export const searchWorkflows = async (query) => {
 		(wf.communicationHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
 	})).filter(wf => wf.score > 0).sort((a, b) => b.score - a.score);
 };
-export const handleSearchInput = async (eventData) => { const results = await searchWorkflows(eventData.target.value); await refreshUI(); };
-export const showWorkflowPicker = async () => { workflowPickerVisible = !workflowPickerVisible; await refreshUI(); };
-export const handleWorkflowSelect = async (eventData) => { await loadWorkflow(eventData.target.closest('[data-workflow-id]').dataset.workflowId); refreshUI(); }
+export const handleSearchInput = async (eventData) => { const results = await searchWorkflows(eventData.target.value); await renderUI(); };
+export const showWorkflowPicker = async () => { workflowPickerVisible = !workflowPickerVisible; await renderUI(); };
+export const handleWorkflowSelect = async (eventData) => { await loadWorkflow(eventData.target.closest('[data-workflow-id]').dataset.workflowId); renderUI(); }
 const buildWorkflowPickerUI = () => ({ "workflow-drawer": {
 	tag: "div", style: "position: absolute; top: 60px; right: 20px; width: 300px; max-height: 400px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column;",
 	"picker-header": { tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary);", ...searchInput() },
@@ -114,9 +115,11 @@ const buildWorkflowList = () => cachedWorkflows.length === 0 ? {"loading": {tag:
 }]));
 // ============ MIC & SPEECH RECOGNITION ============
 const injectSpecSuggestion = async () => {
-	lastSuggestion = await generateSpecSuggestion();
-	pendingChanges.set(lastSuggestion.field, { current: workflowState.spec[lastSuggestion.field], proposed: lastSuggestion.content, type: lastSuggestion.type });
-	await refreshUI();
+	try {
+		lastSuggestion = await generateSpecSuggestion();
+		pendingChanges.set(lastSuggestion.field, { current: workflowState.spec[lastSuggestion.field], proposed: lastSuggestion.content, type: lastSuggestion.type });
+		await renderUI();
+	} catch (error) { log.error('Failed to generate spec suggestion:', error); }
 };
 const generateSpecSuggestion = async () => {
 	try { return JSON.parse(await runtime.call('inference.prompt', { query: `${JSON.stringify(workflowState.spec)}\n\n${transcriptHistory.slice(-10).map(t => t.text).join(' ')}`, model, systemPrompt: getSpecSystemPrompt(), structuredOutput: 'JSON' })); }
@@ -125,16 +128,17 @@ const generateSpecSuggestion = async () => {
 const getSpecSystemPrompt = () => `You extract and refine software specifications from conversational transcripts.\n\nInput: JSON spec state + recent transcript text\nOutput: ONE suggestion as JSON: {"type": "modify|add|question", "field": "what|why|architecture", "content": "..."}\n\nRules:\n- Extract WHAT (feature/capability) and WHY (user need/goal) from natural speech\n- Suggest specific technical decisions when architecture is vague\n- Ask clarifying questions when requirements are unclear\n- Keep suggestions concise and actionable\n- Focus on WHAT and WHY before architectural HOW`;
 export const acceptSpecChange = async (eventData) => {
 	const field = eventData.target.dataset.field, change = pendingChanges.get(field);
-	workflowState.spec[field] = change.proposed; pendingChanges.delete(field);
-	await logSpecTraining('accepted', true); await refreshUI();
+	await updateWorkflow({ spec: { ...workflowState.spec, [field]: change.proposed } });
+	pendingChanges.delete(field);
+	await logSpecTraining('accepted', true); await renderUI();
 };
 export const rejectSpecChange = async (eventData) => {
 	pendingChanges.delete(eventData.target.dataset.field);
-	await logSpecTraining('rejected', null); await refreshUI();
+	await logSpecTraining('rejected', null); await renderUI();
 };
 export const markWrongTiming = async () => {
 	await logSpecTraining('ignored', false);
-	pendingChanges.clear(); await refreshUI();
+	pendingChanges.clear(); await renderUI();
 };
 const logSpecTraining = async (action, rightTiming) => { }
 // lastSuggestion && await runtime.call('graph-db.addNode', {
@@ -144,7 +148,8 @@ const logSpecTraining = async (action, rightTiming) => { }
 // ============ SPEC MODE ============
 let pendingChanges = new Map(), transcriptHistory = [], isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = false
 phases.spec.start = async () => { pendingChanges.clear(); transcriptHistory = []; isListening = true; lastSpeechTime = Date.now(); };
-phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); };
+phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); isListening = false; };
+phases.spec.canComplete = () => !!(workflowState.spec.what && workflowState.spec.why);
 export const toggleListening = async () => (isListening = !isListening, await runtime.call('web-speech-stt.toggleListening', handleTranscript));
 const handleTranscript = async (transcriptData) => {
 	transcriptHistory.push(transcriptData);
@@ -153,7 +158,7 @@ const handleTranscript = async (transcriptData) => {
 		if (/what do you think/i.test(transcriptData.text)) await injectSpecSuggestion();
 	}
 };
-export const toggleHistory = async () => (historyVisible = !historyVisible, await refreshUI());
+export const toggleHistory = async () => (historyVisible = !historyVisible, await renderUI());
 const micBtn = () => ({ "mic-btn": { tag: "button", text: isListening ? "⏸ Pause" : "🎤 Start", class: "cognition-button-primary", events: { click: "code-assistant.toggleListening" } } });
 const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible ? "Hide History" : "Show History", class: "cognition-button-secondary", events: { click: "code-assistant.toggleHistory" } } });
 const status = () => ({ "status": { tag: "div", text: isListening ? "🎤 Listening" : "⏸ Paused", style: `color: ${isListening ? '#4CAF50' : '#666'}; font-weight: 500;` } });
@@ -183,13 +188,17 @@ const wrongTimingBtn = (field) => ({ "timing": { tag: "button", text: "⏰ Too E
 // ============ SKELETON MODE ============
 phases.skeleton.start = async () => { };
 phases.skeleton.stop = async () => { };
+phases.skeleton.canComplete = () => false; // TODO: check skeleton files exist
 const getSkeletonSystemPrompt = () => `You generate module skeletons following this pattern:\n- manifest with name, actions, dependencies\n- Function signatures with clear parameter types\n- Test descriptions: "test name" → expected behavior\n- UI tree: nested objects with events`;
 phases.skeleton.body = () => ({})
 phases.skeleton.actions = [completeBtn];
 // ============ DEVELOP MODE ============
 phases.develop.start = async () => { };
 phases.develop.stop = async () => { };
-export const startDevelopment = async () => (workflowState.phase = 'development', await runtime.call('layout.addComponent', 'dev-viewer'));
+phases.develop.canComplete = () => false; // TODO: check tests pass
+export const startDevelopment = async () => {
+	await updateWorkflow({ phase: 'development' });
+}
 export const applyChanges = async () => ({});
 phases.develop.body = () => ({})
 phases.develop.actions = [completeBtn];
