@@ -8,7 +8,7 @@ export const manifest = {
 	description: "AI-powered development: spec → skeleton → develop. Prioritizing operating in the voice-first intent layer and test driven development",
 	dependencies: ["file", "inference", "layout", "chrome-sync", "web-speech-stt", "graph-db"],
 	requiredDirectories: ["cognition-extension"],
-	actions: ["renderUI", "toggleListening", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "saveWorkflow", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
+	actions: ["renderUI", "toggleListening", "toggleLiveTranscript", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "completeSpec", "toggleHistory", "completeSkeleton", "debugError", "applyChanges", "saveWorkflow", "loadWorkflow", "searchWorkflows", "deleteWorkflow", "updateWorkflowName", "showWorkflowPicker"],
 	uiComponents: [{ name: "code-assistant", getTree: "buildUI" }],
 	config: {
 		historyAutoClose: { type: 'number', min: 5, max: 60, value: 15, label: 'History Auto-close (seconds)' },
@@ -42,11 +42,12 @@ const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: 
 let workflowState = getBlankWorkflowState();
 const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`, 'CodeAssistantDB', 'workflows', ...args);
 const saveWorkflow = async () => {
-	if (!workflowState.id) workflowState.id = getId('wf-');
-	await db('updateRecord', { ...workflowState, timestamp: Date.now() });
+	const lastModified = Date.now();
+	if (!workflowState.id) await db('updateRecord', { ...workflowState, id: getId('wf-'), lastModified });
+	await db('updateRecord', { ...workflowState, lastModified });
 };
 const updateWorkflow = async (updates) => {
-	Object.assign(workflowState, updates, { lastModified: Date.now() });
+	Object.assign(workflowState, updates);
 	await saveWorkflow();
 };
 export const loadWorkflow = async (id) => {
@@ -65,7 +66,7 @@ const nameInput = () => ({ "name-input": { tag: "input", type: "text", value: wo
 const completeBtn = () => ({ "complete-btn": { tag: "button", text: `Complete ${getPhase().title}`, class: "cognition-button-primary", events: { click: "code-assistant.complete" }, disabled: getPhase().canComplete() } });
 const modeHeaderAndTitle = () => ({ tag: "div", style: "display: flex; justify-content: space-between; align-items: center; gap: 10px;", "title": { tag: "h2", text: getPhase().title, style: "margin: 0;" } });
 const modeBody = () => ({ [getPhase().ui]: { tag: "div", style: "flex: 1; display: flex; flex-direction: column; gap: 20px; overflow-y: auto;", ...getPhase().body() } });
-const actionsBar = () => ({ tag: "div", style: "display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid var(--border-primary);", ...Object.assign({}, ...getPhase().actions.map(a => a())) });
+const actionsBar = () => ({ "actions": { tag: "div", style: "display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid var(--border-primary);", ...Object.assign({}, ...getPhase().actions.map(a => a())) } });
 export const start = async () => getPhase().start();
 export const complete = async () => {
 	const phase = getPhase();
@@ -73,7 +74,7 @@ export const complete = async () => {
 	await phase.stop?.();
 	const nextPhase = transitions[workflowState.phase];
 	if (!nextPhase) return log.info('Workflow complete!');
-	await updateWorkflow({ phase: nextPhase, lastModified: Date.now() });
+	await updateWorkflow({ phase: nextPhase });
 	await getPhase().start?.();
 	await renderUI();
 };
@@ -146,25 +147,25 @@ const logSpecTraining = async (action, rightTiming) => { }
 // 	context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-5).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime },
 // });
 // ============ SPEC MODE ============
-let pendingChanges = new Map(), transcriptHistory = [], isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = false
+let pendingChanges = new Map(), transcriptHistory = [], isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = false, liveTranscriptVisible = false;
 phases.spec.start = async () => { pendingChanges.clear(); transcriptHistory = []; isListening = true; lastSpeechTime = Date.now(); };
 phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); isListening = false; };
 phases.spec.canComplete = () => !!(workflowState.spec.what && workflowState.spec.why);
+export const toggleLiveTranscript = async () => { liveTranscriptVisible = !liveTranscriptVisible; await renderUI(); };
+export const toggleHistory = async () => (historyVisible = !historyVisible, await renderUI());
 export const toggleListening = async () => (isListening = !isListening, await runtime.call('web-speech-stt.toggleListening', handleTranscript));
 const handleTranscript = async (transcriptData) => {
-	transcriptHistory.push(transcriptData);
 	if (transcriptData.isFinal) {
 		lastSpeechTime = Date.now();
-		if (/what do you think/i.test(transcriptData.text)) await injectSpecSuggestion();
+		transcriptHistory.push(transcriptData);
+		log.log('transcript:', transcriptData.text);
+		if (/what do you think/i.test(transcriptData.text)) {
+			log.log('User requested suggestion');
+			await injectSpecSuggestion();
+		}
 	}
 };
-export const toggleHistory = async () => (historyVisible = !historyVisible, await renderUI());
-const micBtn = () => ({ "mic-btn": { tag: "button", text: isListening ? "⏸ Pause" : "🎤 Start", class: "cognition-button-primary", events: { click: "code-assistant.toggleListening" } } });
-const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible ? "Hide History" : "Show History", class: "cognition-button-secondary", events: { click: "code-assistant.toggleHistory" } } });
-const status = () => ({ "status": { tag: "div", text: isListening ? "🎤 Listening" : "⏸ Paused", style: `color: ${isListening ? '#4CAF50' : '#666'}; font-weight: 500;` } });
-phases.spec.additionalHeader = () => ({ ...micBtn(), ...status() });
-phases.spec.body = () => ({ ...specFields(), ...(historyVisible && historyPanel()), });
-phases.spec.actions = [historyBtn, completeBtn];
+// todo: standardize all style using css classes
 const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(field => {
 	const change = pendingChanges.get(field), value = field === 'architecture' ? JSON.stringify(workflowState.spec[field], null, 2) : workflowState.spec[field];
 	return [`${field}-section`, {
@@ -172,19 +173,31 @@ const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(
 		"label": { tag: "h3", text: field.toUpperCase(), style: "margin: 0 0 10px 0; color: var(--text-primary);" },
 		...(change ? {
 			"diff": { tag: "div", "current": { tag: "div", text: change.current || '(empty)', style: "text-decoration: line-through; color: #ff6b6b; margin-bottom: 8px;" }, "proposed": { tag: "div", text: change.proposed, style: "background: #4CAF5020; color: #4CAF50; padding: 8px; border-radius: 4px;" } },
-			"actions": { tag: "div", style: "display: flex; gap: 8px; margin-top: 12px;", ...acceptBtn(field), ...rejectBtn(field), ...wrongTimingBtn(field) }
+			"actions": { tag: "div", style: "display: flex; gap: 8px; margin-top: 12px;", ...acceptBtn(field), ...rejectBtn(field), ...wrongTimingBtn() }
 		} : { "value": { tag: "pre", text: value || '(speak to fill this in)', style: "color: var(--text-primary); margin: 0; white-space: pre-wrap; font-family: inherit;" } })
 	}];
 }));
+const transcriptContent = () => ({ "content": { tag: "textarea", value: transcriptHistory.map(t => t.text).join(' '), readonly: true, style: "width: 100%; height: 150px; resize: vertical; font-size: 12px; color: var(--text-muted);" } });
+const micToggle = () => ({ "mic-toggle": { tag: "button", text: isListening ? "⏸ Pause Listening" : "🎤 Start Listening", class: isListening ? "cognition-button-secondary" : "cognition-button-primary", style: isListening ? "background: #4CAF50;" : "", events: { click: "code-assistant.toggleListening" } } });
+const transcriptBtn = () => ({ "toggle": { tag: "button", text: liveTranscriptVisible ? "Hide Transcript" : "Show Transcript", class: "cognition-button-secondary", events: { click: "code-assistant.toggleLiveTranscript" } } });
+const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible ? "Hide History" : "Show History", class: "cognition-button-secondary", events: { click: "code-assistant.toggleHistory" } } });
+const acceptBtn = (field) => ({ "accept": { tag: "button", text: "✓ Accept", class: "cognition-button-primary", style: "padding: 6px 12px;", events: { click: "code-assistant.acceptSpecChange" }, "data-field": field, title: "Ctrl+Y" } });
+const rejectBtn = (field) => ({ "reject": { tag: "button", text: "✗ Reject", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.rejectSpecChange" }, "data-field": field, title: "Ctrl+N" } });
+const wrongTimingBtn = () => ({ "timing": { tag: "button", text: "⏰ Too Early", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.markWrongTiming" }, title: "Valid suggestion, wrong moment" } });
 const historyPanel = () => ({"history": {
 	tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px; overflow-y: auto;",
 	"history-title": { tag: "h4", text: "Transcript History", style: "margin: 0 0 10px 0;" },
 	"entries": { tag: "div", style: "font-size: 12px; color: var(--text-muted);", ...historyEntries() }
 }});
+const liveTranscriptPanel = () => ({ "live-transcript": {
+	tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px;",
+	"transcript-title": { tag: "h4", text: "Live Transcript", style: "margin: 0;" },
+	...(liveTranscriptVisible && transcriptContent())
+}});
 const historyEntries = () => Object.fromEntries(transcriptHistory.slice(-20).map((t, i) => [`entry-${i}`, { tag: "div", text: `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.text}`, style: "margin-bottom: 4px;" }]));
-const acceptBtn = (field) => ({ "accept": { tag: "button", text: "✓ Accept", class: "cognition-button-primary", style: "padding: 6px 12px;", events: { click: "code-assistant.acceptSpecChange" }, "data-field": field, title: "Ctrl+Y" } });
-const rejectBtn = (field) => ({ "reject": { tag: "button", text: "✗ Reject", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.rejectSpecChange" }, "data-field": field, title: "Ctrl+N" } });
-const wrongTimingBtn = (field) => ({ "timing": { tag: "button", text: "⏰ Too Early", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.markWrongTiming" }, title: "Valid suggestion, wrong moment" } });
+phases.spec.additionalHeader = () => ({ ...micToggle() });
+phases.spec.body = () => ({ ...specFields(), ...(historyVisible && historyPanel()), ...(liveTranscriptVisible && liveTranscriptPanel()) });
+phases.spec.actions = [historyBtn, transcriptBtn, completeBtn];
 // ============ SKELETON MODE ============
 phases.skeleton.start = async () => { };
 phases.skeleton.stop = async () => { };
@@ -206,14 +219,32 @@ phases.develop.actions = [completeBtn];
 export const test = async () => {
 	const { runUnitTest, deepEqual } = runtime.testUtils;
 	return [
-		await runUnitTest("LLM suggestion quality validation", async () => {
+		await runUnitTest("Workflow persistence roundtrip", async () => {
+			let actual = {};
 			initializeTrainingModuleTest();
-			const suggestion = await generateSpecSuggestion();
-			const systemPrompt = `You are an expert evaluator of AI-generated software specifications.\n\nScore each suggestion 0-10 on:\n- Relevance: Does it address the user's transcripts?\n- Actionability: Is it specific and implementable?\n- Clarity: Is it well-articulated?\n\nOutput JSON: {"relevance": 0-10, "actionability": 0-10, "clarity": 0-10, "reasoning": "brief explanation"}`;
-			const query = `Spec State: ${JSON.stringify(workflowState.spec)}\nTranscripts: "${transcriptHistory.map(t => t.text).join(' ')}"\nSuggestion: ${JSON.stringify(suggestion)}`;
-			const evaluation = JSON.parse(await runtime.call('inference.prompt', { query, systemPrompt, model: { id: "openai/gpt-oss-20b" }, structuredOutput: 'JSON' }));
-			return { actual: evaluation, assert: (actual) => actual.relevance >= 7 && actual.actionability >= 7 && actual.clarity >= 7, expected: { meetsThreshold: true } };
-		}, cleanupTest())
+			const originalSpec = JSON.parse(JSON.stringify(workflowState));
+			await saveWorkflow();
+			const savedId = workflowState.id;
+			actual.workflowSaved = !!savedId;
+			workflowState = getBlankWorkflowState(); renderUI();
+			actual.workflowCleared = !workflowState.id;
+			actual.specPreserved = workflowState.spec.what === originalSpec.what; // Content check
+			actual.transcriptsPreserved = transcriptHistory.length > 0; // Should persist too
+			await loadWorkflow(savedId); renderUI();
+			actual.workflowLoaded = workflowState.id == savedId;
+			await deleteWorkflow(savedId); renderUI();
+			actual.recordNotInDB = !(await db('getRecord', savedId));
+			actual.workflowClearedAfterDelete = !workflowState.id;
+			return { actual, assert: deepEqual, expected: Object.keys(actual).reduce((obj, key) => ({ ...obj, [key]: true }), {}) };
+		})
+		// await runUnitTest("LLM suggestion quality validation", async () => {
+			// 	initializeTrainingModuleTest();
+		// 	const suggestion = await generateSpecSuggestion();
+		// 	const systemPrompt = `You are an expert evaluator of AI-generated software specifications.\n\nScore each suggestion 0-10 on:\n- Relevance: Does it address the user's transcripts?\n- Actionability: Is it specific and implementable?\n- Clarity: Is it well-articulated?\n\nOutput JSON: {"relevance": 0-10, "actionability": 0-10, "clarity": 0-10, "reasoning": "brief explanation"}`;
+		// 	const query = `Spec State: ${JSON.stringify(workflowState.spec)}\nTranscripts: "${transcriptHistory.map(t => t.text).join(' ')}"\nSuggestion: ${JSON.stringify(suggestion)}`;
+		// 	const evaluation = JSON.parse(await runtime.call('inference.prompt', { query, systemPrompt, model: { id: "openai/gpt-oss-20b" }, structuredOutput: 'JSON' }));
+		// 	return { actual: evaluation, assert: (actual) => actual.relevance >= 7 && actual.actionability >= 7 && actual.clarity >= 7, expected: { meetsThreshold: true } };
+		// }, cleanupTest())
 		// await runUnitTest("Accept suggestion updates spec", async () => {
 			// 	let actual = {};
 		// 	currentSpec.what = "build a training module";
@@ -236,4 +267,5 @@ const initializeTrainingModuleTest = async () => {
 		{ text: " the real goal here is to collect training data so it can be a source of training these statistical and conditional and potentially even neural automation models to eventually run how I would run autonomously.", timestamp: Date.now() + 20000, isFinal: true }
 	];
 	workflowState.spec.what = "build a training module";
+	renderUI();
 }

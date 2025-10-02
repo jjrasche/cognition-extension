@@ -72,14 +72,14 @@ const handleResult = (event) => {
 	(currentRecording || isListening) && refreshTranscriptViewer();
 };
 // === RECORDING CONTROL ===
-export const startListening = async (onTranscript = (chunk) => { }) => {
+export const startListening = async (callback = (chunk) => { }) => {
 	if (!recognition || isListening) return;
-	onTranscript = onTranscript;
+	onTranscript = callback;
 	try { await startAudioRecording(); recognition.start(); }
 	catch (e) { log.error(' Start failed:', e); await stopAudioRecording(); }
 };
 export const stopListening = async () => { if (!recognition || !isListening) return; recognition.stop(); await stopAudioRecording(); };
-export const toggleListening = async (onTranscript) => isListening ? await stopListening() : await startListening(onTranscript);
+export const toggleListening = async (callback) => isListening ? await stopListening() : await startListening(callback);
 // === AUDIO RECORDING ===
 const startAudioRecording = async () => {
 	const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -207,16 +207,16 @@ const buildTranscriptChunks = () => Object.fromEntries(
 		tag: "span",
 		style: `cursor: pointer; padding: 2px 4px; margin: 0 1px; border-radius: 3px; 
 			${isListening ?
-				(chunk.isFinal ? 'opacity: 1;' : 'opacity: 0.6; font-style: italic;') :
-				(index === highlightedChunkIndex ? 'background: var(--accent-primary);' : '')
-			}`,
-		text: chunk.text + ' ',
-		...(isListening ? {} : {
-			events: { click: "web-speech-stt.handleChunkClick" },
-			"data-chunk-index": index,
-			title: `${formatTime(chunk.startTime)} - ${formatTime(chunk.endTime)}`
-		})
-	}])
+		(chunk.isFinal ? 'opacity: 1;' : 'opacity: 0.6; font-style: italic;') :
+		(index === highlightedChunkIndex ? 'background: var(--accent-primary);' : '')
+	}`,
+	text: chunk.text + ' ',
+	...(isListening ? {} : {
+		events: { click: "web-speech-stt.handleChunkClick" },
+		"data-chunk-index": index,
+		title: `${formatTime(chunk.startTime)} - ${formatTime(chunk.endTime)}`
+	})
+}])
 );
 const buildGoldStandardEditor = () => (isListening || !currentRecording) ? {} : ({
 	"gold-standard": {
