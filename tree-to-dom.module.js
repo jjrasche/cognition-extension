@@ -110,9 +110,24 @@ const bindNodeEvents = (id, node, elements) => {
 		});
 	});
 };
+const collectAncestorData = (element) => {
+	const collected = {};
+	let current = element;
+	
+	// Walk up tree collecting data attributes (closest wins)
+	while (current && current !== document.body) {
+		Object.entries(current.dataset).forEach(([key, value]) => {
+			if (!(key in collected)) collected[key] = value;
+		});
+		current = current.parentElement;
+	}
+	
+	return collected;
+};
+
 const createEventData = (event, element) => {
 	const form = element.tagName === 'FORM' ? element : element.closest('form');
-	const ret = {
+	return {
 		type: event.type,
 		key: event.key,
 		target: {
@@ -122,11 +137,10 @@ const createEventData = (event, element) => {
 			value: element.value,
 			dataset: { ...element.dataset }
 		},
+		ancestorData: collectAncestorData(element),  // All data-* up the tree
 		focusedElement: document.activeElement?.["name"] || null,
 		...(form && { formData: serializeForm(form) })
 	};
-	if (event.type !== "keydown") log.log(" Event Data:", ret);
-	return ret;
 };
 const serializeForm = (form) => {
 	const data = {};
@@ -139,30 +153,19 @@ const serializeForm = (form) => {
 	return data;
 };
 const preserveScrollDuringTransform = async (tree, container, transformFn) => {
-	// Capture scroll state with paths
-	const scrollState = Array.from(container.querySelectorAll('*'))
-	.filter(el => el.scrollTop > 0 || el.scrollLeft > 0)
-	.map(el => ({
-		path: getElementPath(el, container),
-		scrollTop: el.scrollTop,
-		scrollLeft: el.scrollLeft
-	}));
-	
-	// Update DOM
+	const scrollState = Array.from(container.querySelectorAll('*')).filter(el => el.scrollTop > 0 || el.scrollLeft > 0)
+	.map(el => ({ path: getElementPath(el, container), scrollTop: el.scrollTop, scrollLeft: el.scrollLeft, elementInfo: `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className ? '.' + el.className.split(' ')[0] : ''}`}));
 	await transformFn();
-	
-	// Wait for DOM to settle (standard approach from search results)
-	await new Promise(resolve => setTimeout(() => {
-		scrollState.forEach(({ path, scrollTop, scrollLeft }) => {
-			const el = getElementByPath(path, container);
-			if (el && el.scrollHeight > scrollTop) {
-				el.scrollTop = scrollTop;
-				el.scrollLeft = scrollLeft;
-			}
-		});
-		resolve();
-	}, 50)); // 50ms delay is common in production apps
+	scrollState.forEach(resetScrollPosition(container)); // Try immediate restoration (synchronous)
+	// Double RAF check
+	await new Promise(resolve => requestAnimationFrame(() => {
+		requestAnimationFrame(() => { scrollState.forEach(resetScrollPosition(container)); resolve(); });
+	}));
 };
+const resetScrollPosition = (container) =>  ({ path, scrollTop, scrollLeft }) => {
+	const el = getElementByPath(path, container);
+	if (el && el.scrollHeight > scrollTop) { el.scrollTop = scrollTop; el.scrollLeft = scrollLeft; }
+}
 
 // Create unique path from container to element
 const getElementPath = (element, container) => {

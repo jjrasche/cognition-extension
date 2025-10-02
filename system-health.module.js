@@ -10,7 +10,12 @@ export const manifest = {
 let runtime, log, moduleHealthData = new Map(), debounceTimers = new Map();
 const DEBOUNCE_DELAY = 1000;
 
-export const initialize = async (rt, l) => (runtime = rt, registerHealthModules(), interceptRuntimeCalls(), recalculateMetrics());
+export const initialize = async (rt, l) => {
+	runtime = rt, log = l;
+	registerHealthModules();
+	// interceptRuntimeCalls();
+	recalculateMetrics();
+}
 // === CORE HEALTH TRACKING ===
 const registerHealthModules = () => runtime.getModulesWithProperty('healthMetrics').forEach(module => {
 	const { name, healthMetrics = [], healthTriggers = [] } = module.manifest;

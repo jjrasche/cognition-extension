@@ -38,7 +38,7 @@ export const initialize = async (rt, l) => {
 // ============ WORKFLOW MANAGEMENT ============
 const transitions = { spec: 'skeleton', skeleton: 'develop', develop: null };
 const specDefault = () => ({ what: '', why: '', architecture: { dependencies: [], persistence: 'none', context: [] } });
-const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, communicationHistory: [], lastModified: null });
+const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, transcriptHistory: [], lastModified: null });
 let workflowState = getBlankWorkflowState();
 const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`, 'CodeAssistantDB', 'workflows', ...args);
 const updateWorkflow = async (updates) => {
@@ -58,8 +58,6 @@ export const deleteWorkflow = async (id) => {
 	await renderUI(); 
 };
 export const updateWorkflowName = async (eventData) => updateWorkflow({ name: eventData.target.value });
-// === COMMUNICATION HISTORY ===
-const logComm = async (type, data) => updateWorkflow({ communicationHistory: [...workflowState.communicationHistory, { type, ...data, timestamp: Date.now() }] });
 // === SHARED UI ===
 const getPhase = () => phases[workflowState.phase]
 const workflowPickerBtn = () => ({ "picker-btn": { tag: "button", text: "📁 Workflows", class: "cognition-button-secondary", events: { click: "code-assistant.showWorkflowPicker" } } });
@@ -97,12 +95,16 @@ export const searchWorkflows = async (query) => {
 		(wf.spec?.what?.toLowerCase().includes(lq) ? 5 : 0) +
 		(wf.spec?.why?.toLowerCase().includes(lq) ? 5 : 0) +
 		(JSON.stringify(wf.spec?.architecture).toLowerCase().includes(lq) ? 2 : 0) +
-		(wf.communicationHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
+		(wf.transcriptHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
 	})).filter(wf => wf.score > 0).sort((a, b) => b.score - a.score);
 };
 export const handleSearchInput = async (eventData) => { const results = await searchWorkflows(eventData.target.value); await renderUI(); };
 export const showWorkflowPicker = async () => { workflowPickerVisible = !workflowPickerVisible; await renderUI(); };
-export const handleWorkflowSelect = async (eventData) => { await loadWorkflow(eventData.target.closest('[data-workflow-id]').dataset.workflowId); renderUI(); }
+export const handleWorkflowSelect = async (eventData) => {
+	await loadWorkflow(eventData.ancestorData.workflowId);
+	renderUI();
+};
+
 const buildWorkflowPickerUI = () => ({ "workflow-drawer": {
 	tag: "div", style: "position: absolute; top: 60px; right: 20px; width: 300px; max-height: 400px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column;",
 	"picker-header": { tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary);", ...searchInput() },
@@ -125,7 +127,7 @@ const injectSpecSuggestion = async () => {
 	} catch (error) { log.error('Failed to generate spec suggestion:', error); }
 };
 const generateSpecSuggestion = async () => {
-	try { return JSON.parse(await runtime.call('inference.prompt', { query: `${JSON.stringify(workflowState.spec)}\n\n${transcriptHistory.slice(-10).map(t => t.text).join(' ')}`, model, systemPrompt: getSpecSystemPrompt(), structuredOutput: 'JSON' })); }
+	try { return JSON.parse(await runtime.call('inference.prompt', { query: `${JSON.stringify(workflowState.spec)}\n\n${workflowState.transcriptHistory.slice(-10).join(' ')}`, model, systemPrompt: getSpecSystemPrompt(), structuredOutput: 'JSON' })); }
 	catch (e) { log.error('Spec suggestion parse error:', e); return { type: 'modify', field: 'what', content: 'Error parsing AI response' }; }
 };
 const getSpecSystemPrompt = () => `You extract and refine software specifications from conversational transcripts.\n\nInput: JSON spec state + recent transcript text\nOutput: ONE suggestion as JSON: {"type": "modify|add|question", "field": "what|why|architecture", "content": "..."}\n\nRules:\n- Extract WHAT (feature/capability) and WHY (user need/goal) from natural speech\n- Suggest specific technical decisions when architecture is vague\n- Ask clarifying questions when requirements are unclear\n- Keep suggestions concise and actionable\n- Focus on WHAT and WHY before architectural HOW`;
@@ -144,13 +146,14 @@ export const markWrongTiming = async () => {
 	pendingChanges.clear(); await renderUI();
 };
 const logSpecTraining = async (action, rightTiming) => { }
+
 // lastSuggestion && await runtime.call('graph-db.addNode', {
 // 	type: 'spec-training', aiResponse: lastSuggestion, userFeedback: { action, rightTiming },
 // 	context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-5).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime },
 // });
 // ============ SPEC MODE ============
-let pendingChanges = new Map(), transcriptHistory = [], isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = false, liveTranscriptVisible = true;
-phases.spec.start = async () => { pendingChanges.clear(); transcriptHistory = []; isListening = true; lastSpeechTime = Date.now(); };
+let pendingChanges = new Map(), isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = true, liveTranscriptVisible = true;
+phases.spec.start = async () => { pendingChanges.clear(); isListening = true; lastSpeechTime = Date.now(); };
 phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); isListening = false; };
 phases.spec.canComplete = () => !!(workflowState.spec.what && workflowState.spec.why);
 export const toggleLiveTranscript = async () => { liveTranscriptVisible = !liveTranscriptVisible; await renderUI(); };
@@ -163,11 +166,13 @@ export const toggleListening = async () => {
 };
 const handleTranscript = async (chunk) => {
 	if (chunk.finalizedAt) {
-		transcriptHistory.push(chunk); liveTranscript = ''; log.log('finalized:', chunk.text);
+		liveTranscript = ''; log.log('finalized:', chunk.text);
+		await saveTranscripts(chunk);
 		if (/what do you think/i.test(chunk.text)) await injectSpecSuggestion();
 		await renderUI();
 	} else { liveTranscript = chunk.text; await renderUI(); }
 };
+const saveTranscripts = async (chunk) => await updateWorkflow({ transcriptHistory: [...workflowState.transcriptHistory, chunk.text] });
 // todo: standardize all style using css classes
 const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(field => {
 	const change = pendingChanges.get(field), value = field === 'architecture' ? JSON.stringify(workflowState.spec[field], null, 2) : workflowState.spec[field];
@@ -197,7 +202,7 @@ const liveTranscriptPanel = () => ({ "live-transcript": {
 	"transcript-title": { tag: "h4", text: "Live Transcript", style: "margin: 0;" },
 	...(liveTranscriptVisible && transcriptContent())
 }});
-const historyEntries = () => Object.fromEntries(transcriptHistory.slice(-20).map((t, i) => [`entry-${i}`, { tag: "div", text: `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.text}`, style: "margin-bottom: 4px;" }]));
+const historyEntries = () => Object.fromEntries(workflowState.transcriptHistory.slice(-20).map((text, i) => [`entry-${i}`, { tag: "div", text, style: "margin-bottom: 4px;" }]));
 phases.spec.additionalHeader = () => ({ ...micToggle() });
 phases.spec.body = () => ({ ...specFields(), ...(historyVisible && historyPanel()), ...(liveTranscriptVisible && liveTranscriptPanel()) });
 phases.spec.actions = [historyBtn, transcriptBtn, completeBtn];
