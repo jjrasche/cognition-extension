@@ -35,9 +35,14 @@ export const manifest = {
 	export const initialize = async (rt, l) => {
 		runtime = rt; log = l;
 		cachedWorkflows = await db('getAllRecords');
+		await loadMostRecentWorkflow();
 	};
 	
 	// ============ WORKFLOW MANAGEMENT ============
+	const loadMostRecentWorkflow = async () => {
+		const recent = cachedWorkflows.sort((a, b) => b.lastModified - a.lastModified)[0];
+		if (recent) await loadWorkflow(recent.id);
+	}
 	const transitions = { spec: 'skeleton', skeleton: 'develop', develop: null };
 	const specDefault = () => ({ what: '', why: '', architecture: { dependencies: [], persistence: 'none', context: [] } });
 	const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, transcriptHistory: [], lastModified: null });
@@ -110,6 +115,7 @@ export const manifest = {
 	export const showWorkflowPicker = async () => { workflowPickerVisible = !workflowPickerVisible; await renderUI(); };
 	export const handleWorkflowSelect = async (eventData) => {
 		await loadWorkflow(eventData.ancestorData.workflowId);
+		workflowPickerVisible = false;
 		renderUI();
 	};
 	const buildWorkflowPickerUI = () => ({ "workflow-drawer": {
