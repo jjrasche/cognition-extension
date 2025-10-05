@@ -9,8 +9,9 @@ export const manifest = {
 	dependencies: ["file", "inference", "layout", "chrome-sync", "web-speech-stt", "graph-db"],
 	requiredDirectories: ["cognition-extension"],
 	actions: ["renderUI", "handleWorkflowSelect", "acceptSpecChange", "rejectSpecChange", "markWrongTiming",
-		"toggleListening", "toggleLiveTranscript", "toggleHistory",
-		"showWorkflowPicker", "handleWorkflowSelect", "handleSearchInput", "handleWorkflowDelete", "updateWorkflowName", "complete"],
+		"toggleListening", "toggleUserPrompt", "toggleHistory",
+		"showWorkflowPicker", "handleWorkflowSelect", "handleSearchInput", "handleWorkflowDelete", "updateWorkflowName", "complete",
+		"handleUserPromptFocus", "updateSpecField", "updateUserPrompt", "updateTranscriptEntry", "deleteTranscriptEntry"],
 		uiComponents: [{ name: "code-assistant", getTree: "buildUI" }],
 		config: {
 			historyAutoClose: { type: 'number', min: 5, max: 60, value: 15, label: 'History Auto-close (seconds)' },
@@ -26,7 +27,7 @@ export const manifest = {
 		}
 	};
 	const config = configProxy(manifest), model = "meta-llama/llama-4-scout-17b-16e-instruct";
-	let runtime, log, workflowPickerVisible = false;
+	let runtime, log, workflowPickerVisible = false, isManuallyEditing = false;
 	let phases = {
 		spec: { ui: "spec-mode", title: "Spec Mode"},
 		skeleton: { ui: "skeleton-builder", title: "Skeleton Mode"},
@@ -40,9 +41,8 @@ export const manifest = {
 	
 	// ============ WORKFLOW MANAGEMENT ============
 	const loadMostRecentWorkflow = async () => {
-		const recent = cachedWorkflows.sort((a, b) => b.lastModified - a.lastModified)[0];
-		if (recent) await loadWorkflow(recent.id);
-	}
+		workflowState = cachedWorkflows.sort((a, b) => b.lastModified - a.lastModified)[0] ?? getBlankWorkflowState();
+	};
 	const transitions = { spec: 'skeleton', skeleton: 'develop', develop: null };
 	const specDefault = () => ({ what: '', why: '', architecture: { dependencies: [], persistence: 'none', context: [] } });
 	const getBlankWorkflowState = () => ({ id: null, name: '', phase: 'spec', spec: specDefault(), skeleton: null, transcriptHistory: [], lastModified: null });
@@ -71,6 +71,36 @@ export const manifest = {
 		await renderUI();
 	};
 	export const updateWorkflowName = async (eventData) => updateWorkflow({ name: eventData.target.value });
+	// ============ EVENT HANDLERS ============
+	export const updateSpecField = async (eventData) => {
+		const field = eventData.target.dataset.field;
+		const value = field === 'architecture' ? JSON.parse(eventData.target.value) : eventData.target.value;
+		await updateWorkflow({ spec: { ...workflowState.spec, [field]: value } });
+	};
+	export const updateUserPrompt = async (eventData) => {
+		if (isManuallyEditing && !isListening) {
+			userPrompt = eventData.target.value;
+		}
+	};
+	export const handleUserPromptFocus = async () => {
+		if (isListening) {
+			await runtime.call('web-speech-stt.stopListening');
+			isListening = false;
+			await renderUI();
+		}
+		isManuallyEditing = true;
+	};
+	export const updateTranscriptEntry = async (eventData) => {
+		const index = parseInt(eventData.ancestorData.entryIndex);
+		const updated = [...workflowState.transcriptHistory];
+		updated[index] = eventData.target.value;
+		await updateWorkflow({ transcriptHistory: updated });
+	};
+	export const deleteTranscriptEntry = async (eventData) => {
+		const index = parseInt(eventData.ancestorData.entryIndex);
+		await updateWorkflow({ transcriptHistory: workflowState.transcriptHistory.filter((_, i) => i !== index) });
+		await renderUI();
+	};
 	// === SHARED UI ===
 	const getPhase = () => phases[workflowState.phase]
 	const workflowPickerBtn = () => ({ "picker-btn": { tag: "button", text: "📁 Workflows", class: "cognition-button-secondary", events: { click: "code-assistant.showWorkflowPicker" } } });
@@ -90,12 +120,16 @@ export const manifest = {
 		await getPhase().start?.();
 		await renderUI();
 	};
-	export const renderUI = async () => await runtime.call('layout.renderComponent', "code-assistant");
-	export const buildUI = () => ({[getPhase().ui]: {
-		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
-		"header": { ...modeHeaderAndTitle(), ...nameInput(), ...workflowPickerBtn(), ...getPhase()?.additionalHeader() ?? {} },
-		...(workflowPickerVisible && buildWorkflowPickerUI()), ...modeBody(), ...actionsBar()
-	}});
+	export const renderUI = async () => {
+		await runtime.call('layout.renderComponent', "code-assistant");
+	};
+	export const buildUI = () => {
+		return {[getPhase().ui]: {
+			tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
+			"header": { ...modeHeaderAndTitle(), ...nameInput(), ...workflowPickerBtn(), ...getPhase()?.additionalHeader() ?? {} },
+			...(workflowPickerVisible && buildWorkflowPickerUI()), ...modeBody(), ...actionsBar()
+		}}
+	};
 	// === SEARCH ===
 	let cachedWorkflows = [];
 	export const searchWorkflows = async (query) => {
@@ -133,11 +167,12 @@ export const manifest = {
 	});
 	const deleteWorkflowBtn = () => ({ "delete-btn": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px;", events: {click: "code-assistant.handleWorkflowDelete"}, title: "Delete workflow" } });
 	// ============ MIC & SPEECH RECOGNITION ============
-	let liveTranscript = '';
+	let userPrompt = '';
 	const injectSpecSuggestion = async () => {
 		try {
 			lastSuggestion = await generateSpecSuggestion();
 			pendingChanges.set(lastSuggestion.field, { current: workflowState.spec[lastSuggestion.field], proposed: lastSuggestion.content, type: lastSuggestion.type });
+			await updateWorkflow({ transcriptHistory: [...workflowState.transcriptHistory, `AI: [${lastSuggestion.type}] ${lastSuggestion.field} → ${lastSuggestion.content}`] });
 			await renderUI();
 		} catch (error) { log.error('Failed to generate spec suggestion:', error); }
 	};
@@ -167,47 +202,53 @@ export const manifest = {
 	// 	context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-5).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime },
 	// });
 	// ============ SPEC MODE ============
-	let pendingChanges = new Map(), isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = true, liveTranscriptVisible = true;
+	let pendingChanges = new Map(), isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = true, userPromptVisible = true;
 	phases.spec.start = async () => { pendingChanges.clear(); isListening = true; lastSpeechTime = Date.now(); };
 	phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); isListening = false; };
 	phases.spec.canComplete = () => !!(workflowState.spec.what && workflowState.spec.why);
-	export const toggleLiveTranscript = async () => { liveTranscriptVisible = !liveTranscriptVisible; await renderUI(); };
+	export const toggleUserPrompt = async () => { userPromptVisible = !userPromptVisible; await renderUI(); };
 	export const toggleHistory = async () => (historyVisible = !historyVisible, await renderUI());
 	export const toggleListening = async () => {
 		isListening = !isListening;
-		if (!isListening) liveTranscript = '';
+		if (!isListening) userPrompt = '';
+		else isManuallyEditing = false;
 		await runtime.call('web-speech-stt.toggleListening', handleTranscript, 8000);
 		renderUI();
 	};
 	const handleTranscript = async (chunk) => {
+		if (isManuallyEditing) return; // Ignore speech when manually editing
 		if (chunk.finalizedAt) {
-			liveTranscript = ''; log.log('finalized:', chunk.text);
+			userPrompt = ''; log.info('finalized:', chunk.text);
 			await saveTranscripts(chunk);
-			if (/what do you think/i.test(chunk.text)) await injectSpecSuggestion();
+			await injectSpecSuggestion();
 			await renderUI();
 		} else { 
-			liveTranscript = chunk.text;
-			console.log('interim:', JSON.stringify(chunk));
+			userPrompt = chunk.text;
+			if (/what do you think/i.test(chunk.text)) await injectSpecSuggestion();
 			await renderUI();
 		}
 	};
-	
 	const saveTranscripts = async (chunk) => await updateWorkflow({ transcriptHistory: [...workflowState.transcriptHistory, chunk.text] });
 	// todo: standardize all style using css classes
 	const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(field => {
-		const change = pendingChanges.get(field), value = field === 'architecture' ? JSON.stringify(workflowState.spec[field], null, 2) : workflowState.spec[field];
-		return [`${field}-section`, {
-			tag: "div", style: "padding: 15px; background: var(--bg-tertiary); border-radius: 8px;",
+		const change = pendingChanges.get(field);
+		const value = field === 'architecture' ? JSON.stringify(workflowState.spec[field], null, 2) : workflowState.spec[field];
+		return [`${field}-section`, { tag: "div", style: "padding: 15px; background: var(--bg-tertiary); border-radius: 8px;",
 			"label": { tag: "h3", text: field.toUpperCase(), style: "margin: 0 0 10px 0; color: var(--text-primary);" },
-			...(change ? {
-				"diff": { tag: "div", "current": { tag: "div", text: change.current || '(empty)', style: "text-decoration: line-through; color: #ff6b6b; margin-bottom: 8px;" }, "proposed": { tag: "div", text: change.proposed, style: "background: #4CAF5020; color: #4CAF50; padding: 8px; border-radius: 4px;" } },
-				"actions": { tag: "div", style: "display: flex; gap: 8px; margin-top: 12px;", ...acceptBtn(field), ...rejectBtn(field), ...wrongTimingBtn() }
-			} : { "value": { tag: "pre", text: value || '(speak to fill this in)', style: "color: var(--text-primary); margin: 0; white-space: pre-wrap; font-family: inherit;" } })
+			...(change ? changeDiffer(field, change) : fieldTextArea(field, value))
 		}];
 	}));
-	const transcriptContent = () => ({ "content": { tag: "textarea", value: liveTranscript, readonly: true,placeholder: "Listening...",style: "width: 100%; height: 150px; resize: vertical; font-size: 12px; color: var(--text-muted); font-style: italic;" } });
+	const changeDiffer = (field, change) => ({"diff": { tag: "div",
+		"current": { tag: "div", text: change.current || '(empty)', style: "text-decoration: line-through; color: #ff6b6b; margin-bottom: 8px;" },
+		"proposed": { tag: "div", text: change.proposed, style: "background: #4CAF5020; color: #4CAF50; padding: 8px; border-radius: 4px;" }
+	}, "actions": { tag: "div", style: "display: flex; gap: 8px; margin-top: 12px;", ...acceptBtn(field), ...rejectBtn(field), ...wrongTimingBtn() } });
+	const fieldTextArea = (field, value) => ({ "value": { tag: "textarea", value: value || '', placeholder: `(speak or type ${field})`, class: `cognition-input cognition-textarea-${field === 'architecture' ? 'md' : 'sm'}`, events: { change: "code-assistant.updateSpecField" }, "data-field": field } });
+	const transcriptContent = () => ({ "content": { tag: "textarea", value: userPrompt, placeholder: "Type or speak your prompt...", class: "cognition-input cognition-textarea-md",  events: { input: "code-assistant.updateUserPrompt", focus: "code-assistant.handleUserPromptFocus", } } });
+	const historyEntries = () => Object.fromEntries(workflowState.transcriptHistory.slice(-20).map((text, i) => [ `entry-${i}`, { tag: "div", style: "margin-bottom: 8px; padding: 8px; background: var(--bg-input); border-radius: 4px; position: relative;", "data-entry-index": i, ...historyTextarea(text), ...historyDeleteBtn() } ]) );
+	const historyTextarea = (text) => ({ "textarea": { tag: "textarea", value: text, class: "cognition-input cognition-textarea-sm", events: { change: "code-assistant.updateTranscriptEntry" } } });
+	const historyDeleteBtn = () => ({ "delete": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 4px; right: 4px; padding: 2px 6px; font-size: 10px;", events: { click: "code-assistant.deleteTranscriptEntry" } } });
 	const micToggle = () => ({ "mic-toggle": { tag: "button", text: isListening ? "⏸ Pause Listening" : "🎤 Start Listening", class: isListening ? "cognition-button-secondary" : "cognition-button-primary", style: isListening ? "background: #4CAF50;" : "", events: { click: "code-assistant.toggleListening" } } });
-	const transcriptBtn = () => ({ "toggle": { tag: "button", text: liveTranscriptVisible ? "Hide Transcript" : "Show Transcript", class: "cognition-button-secondary", events: { click: "code-assistant.toggleLiveTranscript" } } });
+	const transcriptBtn = () => ({ "toggle": { tag: "button", text: userPromptVisible ? "Hide Transcript" : "Show Transcript", class: "cognition-button-secondary", events: { click: "code-assistant.toggleUserPrompt" } } });
 	const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible ? "Hide History" : "Show History", class: "cognition-button-secondary", events: { click: "code-assistant.toggleHistory" } } });
 	const acceptBtn = (field) => ({ "accept": { tag: "button", text: "✓ Accept", class: "cognition-button-primary", style: "padding: 6px 12px;", events: { click: "code-assistant.acceptSpecChange" }, "data-field": field, title: "Ctrl+Y" } });
 	const rejectBtn = (field) => ({ "reject": { tag: "button", text: "✗ Reject", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.rejectSpecChange" }, "data-field": field, title: "Ctrl+N" } });
@@ -217,14 +258,13 @@ export const manifest = {
 		"history-title": { tag: "h4", text: "Transcript History", style: "margin: 0 0 10px 0;" },
 		"entries": { tag: "div", style: "font-size: 12px; color: var(--text-muted);", ...historyEntries() }
 	}});
-	const liveTranscriptPanel = () => ({ "live-transcript": {
+	const userPromptPanel = () => ({ "live-transcript": {
 		tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px;",
-		"transcript-title": { tag: "h4", text: "Live Transcript", style: "margin: 0;" },
-		...(liveTranscriptVisible && transcriptContent())
+		"transcript-title": { tag: "h4", text: "User Prompt", style: "margin: 0;" },
+		...(userPromptVisible && transcriptContent())
 	}});
-	const historyEntries = () => Object.fromEntries(workflowState.transcriptHistory.slice(-20).map((text, i) => [`entry-${i}`, { tag: "div", text, style: "margin-bottom: 4px;" }]));
 	phases.spec.additionalHeader = () => ({ ...micToggle() });
-	phases.spec.body = () => ({ ...specFields(), ...(historyVisible && historyPanel()), ...(liveTranscriptVisible && liveTranscriptPanel()) });
+	phases.spec.body = () => ({ ...specFields(), ...(historyVisible && historyPanel()), ...(userPromptVisible && userPromptPanel()) });
 	phases.spec.actions = [historyBtn, transcriptBtn, completeBtn];
 	// ============ SKELETON MODE ============
 	phases.skeleton.start = async () => { };

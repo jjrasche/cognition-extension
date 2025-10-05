@@ -382,6 +382,21 @@ body {
 	margin: 16px auto;
 }
 
+.cognition-textarea-sm {
+	height: 60px;
+	resize: vertical;
+}
+
+.cognition-textarea-md {
+	height: 120px;
+	resize: vertical;
+}
+
+.cognition-textarea-lg {
+	height: 200px;
+	resize: vertical;
+}
+
 #cognition-search-input {
 	width: 100%;
 	max-width: 800px;

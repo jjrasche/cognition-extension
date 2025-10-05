@@ -42,8 +42,8 @@ const validateField = (value, schema = {}) => {
 			return { valid: true };
 		},
 		string: (v, s) => typeof v !== 'string' ? { valid: false, error: 'Must be text' } :
-			s.minLength && v.length < s.minLength ? { valid: false, error: `Min length: ${s.minLength}` } :
-				s.maxLength && v.length > s.maxLength ? { valid: false, error: `Max length: ${s.maxLength}` } : { valid: true },
+		s.minLength && v.length < s.minLength ? { valid: false, error: `Min length: ${s.minLength}` } :
+		s.maxLength && v.length > s.maxLength ? { valid: false, error: `Max length: ${s.maxLength}` } : { valid: true },
 		password: (v, s) => validators.string(v, s),
 		select: (v, s) => {
 			const validValues = (s.options || []).map(opt => typeof opt === 'string' ? opt : opt.value);
@@ -58,9 +58,9 @@ const saveConfig = async (moduleName, updates) => {
 	// Use local state when available, fallback to chrome-sync
 	const localModule = runtime.getContextModules().find(m => m.manifest.name === moduleName);
 	const currentConfig = localModule
-		? Object.fromEntries(Object.entries(localModule.manifest.config).map(([k, s]) => [k, s.value]))
-		: await runtime.call('chrome-sync.get', `config.${moduleName}`) || {};
-
+	? Object.fromEntries(Object.entries(localModule.manifest.config).map(([k, s]) => [k, s.value]))
+	: await runtime.call('chrome-sync.get', `config.${moduleName}`) || {};
+	
 	await runtime.call('chrome-sync.set', { [`config.${moduleName}`]: { ...currentConfig, ...updates } });
 };
 const applyConfigLocal = async (module, updates) => {
@@ -68,7 +68,7 @@ const applyConfigLocal = async (module, updates) => {
 		if (module.manifest.config[field]) {
 			const oldValue = module.manifest.config[field].value;
 			module.manifest.config[field].value = value;
-			log.info(` Applied config for ${module.manifest.name}.${field}:`, { oldValue, newValue: value });
+			// log.info(` Applied config for ${module.manifest.name}.${field}:`, { oldValue, newValue: value });
 			const onChange = module.manifest.config[field].onChange;
 			onChange && await runtime.call(`${module.manifest.name}.${onChange}`).catch(error => log.error(` onChange failed for ${field}:`, error));
 		}
@@ -91,15 +91,15 @@ export const handleFieldChange = async (eventData) => {
 	try {
 		// Get schema (works for local and cross-context)
 		const schema = await getSchemaCrossContext(moduleName);
-
+		
 		// Validate single field
 		const validation = validateField(value, schema[fieldName]);
 		if (!validation.valid) throw new Error(validation.error);
-
+		
 		// Save and trigger onChange
 		await saveConfig(moduleName, { [fieldName]: value });
 		await triggerOnChange(moduleName, fieldName, schema);
-
+		
 		// Broadcast to other contexts
 		chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED', moduleName, updates: { [fieldName]: value } }).catch(() => { });
 		refreshUI();
@@ -116,23 +116,23 @@ export const toggleCard = async (eventData) => {
 export const resetToDefaults = async (eventData) => {
 	const moduleName = eventData.target.dataset.moduleName;
 	if (!moduleName) return;
-
+	
 	const schema = await getSchemaCrossContext(moduleName);
 	const defaults = Object.fromEntries(Object.entries(schema).map(([key, s]) => [key, s.value]));
-
+	
 	// Get current config to compare what actually changed
 	const currentConfig = await runtime.call('chrome-sync.get', `config.${moduleName}`) || {};
-
+	
 	await runtime.call('chrome-sync.remove', `config.${moduleName}`);
 	await saveConfig(moduleName, defaults);
-
+	
 	// Only trigger onChange for fields that actually changed
 	for (const [fieldName, defaultValue] of Object.entries(defaults)) {
 		if (currentConfig[fieldName] !== defaultValue) {
 			await triggerOnChange(moduleName, fieldName, schema);
 		}
 	}
-
+	
 	chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED', moduleName, updates: defaults }).catch(() => { });
 	refreshUI();
 };
@@ -152,7 +152,7 @@ const getSchemaCrossContext = async (moduleName) => {
 	// Try local first
 	const localModule = runtime.getContextModules().find(m => m.manifest.name === moduleName);
 	if (localModule) return localModule.manifest.config;
-
+	
 	// Fetch cross-context
 	try {
 		return await runtime.call(`${moduleName}.getConfigSchema`);

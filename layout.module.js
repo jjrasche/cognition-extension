@@ -6,7 +6,7 @@ export const manifest = {
 	description: "Component layout system with z-layers, mode overlays, and window snapping",
 	permissions: ["storage"],
 	dependencies: ["chrome-sync", "tree-to-dom", "config"],
-	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponent", "addComponentFromPicker", "togglePin", "snapToHalf", "maximizeSelected", "restoreMaximized"],
+	actions: ["renderComponent", "updateComponent", "removeComponent", "removeSelected", "cycleMode", "showComponentPicker", "addComponent", "addComponentFromPicker", "togglePin", "snapToHalf", "maximizeSelected", "restoreMaximized", "getComponentStates"],
 	commands: [
 		{ name: "add component", keyword: "add", method: "showComponentPicker" }
 	],
@@ -39,6 +39,11 @@ export const initialize = async (rt, l) => {
 };
 // === STATE MANAGEMENT ===
 const getComponentState = (name) => componentStates.has(name) ? componentStates.get(name) : componentStates.set(name, { ...defaultState, name }).get(name);
+export const getComponentStates = () => {
+	const states = [...componentStates.entries()].map(([name, state]) => ({ name, isRendered: state.isRendered, isSelected: state.isSelected, isMaximized: state.isMaximized, isPinned: state.isPinned, isLoading: state.isLoading, zIndex: state.zIndex, moduleName: state.moduleName, position: `${state.x},${state.y} ${state.width}x${state.height}` }));
+	console.table(states);
+	return states;
+};
 const getSelectedComponent = () => [...componentStates.values()].find(state => state.isSelected);
 const getMaximizedComponent = () => [...componentStates.values()].find(state => state.isMaximized);
 export const updateComponent = async (name, stateChanges) => {
@@ -73,7 +78,7 @@ const discoverComponents = async () => runtime.getModulesWithProperty('uiCompone
 			const existing = componentStates.get(name);
 			Object.assign(existing, { moduleName: module.manifest.name, getTree: comp.getTree });
 		}
-		log.info(` Discovered component: ${name} from module ${module.manifest.name}`);
+		// log.info(` Discovered component: ${name} from module ${module.manifest.name}`);
 		runtime.actions.set(`${module.manifest.name}.${comp.getTree}`, { func: module[comp.getTree], context: runtime.runtimeName, moduleName: module.manifest.name });
 	})
 );
@@ -227,10 +232,10 @@ const handleLayoutKeys = (e, mode, maximized, selected) => {
 };
 const preventDefaultReturnTrue = async (e, method) => (e.preventDefault(), method(e), true);
 const registerGlobalKeys = () => runtime.getModulesWithProperty('config')
-	.filter(m => Object.values(m.manifest.config || {}).some(cfg => cfg.type === 'globalKey'))
-	.forEach(module => Object.entries(module.manifest.config)
-		.filter(([, schema]) => schema.type === 'globalKey' && schema.value)
-		.forEach(([, schema]) => globalKeyMap.set(schema.value, `${module.manifest.name}.${schema.action}`)));
+.filter(m => Object.values(m.manifest.config || {}).some(cfg => cfg.type === 'globalKey'))
+.forEach(module => Object.entries(module.manifest.config)
+.filter(([, schema]) => schema.type === 'globalKey' && schema.value)
+.forEach(([, schema]) => globalKeyMap.set(schema.value, `${module.manifest.name}.${schema.action}`)));
 const handleComponentKeys = async (name, event) => {
 	const state = getComponentState(name);
 	const keyMap = state.keyMap;

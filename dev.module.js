@@ -41,11 +41,11 @@ const addModuleActionsToConsole = () => {
 	for (let [name] of runtime.getActions().entries()) {
 		const [moduleName, actionName] = name.split('.');
 		const camelModuleName = kebabToCamel(moduleName);
-		console.log(` Adding console shortcut: ${camelModuleName}.${actionName}()`);
+		// log.log(` Adding console shortcut: ${camelModuleName}.${actionName}()`);
 		globalThis[camelModuleName] ??= {};
 		globalThis[camelModuleName][actionName] = (...args) => runtime.call(name, ...args)
-			.then(res => (log.log(` ${camelModuleName}.${actionName} →`, res), res))
-			.catch(err => (log.error(` ${camelModuleName}.${actionName} ✗`, err), Promise.reject(err)));
+		.then(res => (log.log(` ${camelModuleName}.${actionName} →`, res), res))
+		.catch(err => (log.error(` ${camelModuleName}.${actionName} ✗`, err), Promise.reject(err)));
 	}
 };
 
@@ -114,11 +114,11 @@ const loadLogs = async () => {
 
 const applyFilter = () => {
 	let filtered = allLogEntries;
-
+	
 	// Apply log level filter
 	const minLevel = LOG_LEVELS[currentLogLevel];
 	filtered = filtered.filter(log => LOG_LEVELS[log.level || 'log'] >= minLevel);
-
+	
 	// Apply search filter (if search exists, show all levels)
 	if (currentSearch) {
 		filtered = allLogEntries.filter(log =>
@@ -127,7 +127,7 @@ const applyFilter = () => {
 			(log.data && String(log.data).toLowerCase().includes(currentSearch))
 		);
 	}
-
+	
 	filteredLogs = filtered.sort((a, b) => b.time - a.time);
 };
 
@@ -194,12 +194,12 @@ const buildLogEntries = () => {
 
 const buildLogData = (data) => {
 	if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) return {};
-
+	
 	let parsedData = data;
 	if (typeof data === 'string') {
 		try { parsedData = JSON.parse(data); } catch { }
 	}
-
+	
 	// Handle error objects specially
 	if (parsedData && typeof parsedData === 'object' && parsedData.message && parsedData.stack) {
 		return {
@@ -210,7 +210,7 @@ const buildLogData = (data) => {
 			}
 		};
 	}
-
+	
 	// Handle regular data
 	const displayText = typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData, null, 2);
 	return {
@@ -229,7 +229,7 @@ export const buildLogViewer = () => {
 		if (isAutoRefresh) startLogPolling();
 		isInitialized = true;
 	}
-
+	
 	return {
 		"log-viewer": {
 			tag: "div", style: "height: 100%; display: flex; flex-direction: column; background: var(--bg-secondary); font-family: monospace; font-size: 12px;",
