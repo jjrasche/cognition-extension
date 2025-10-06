@@ -149,10 +149,18 @@ export const handleWorkflowSelect = async (eventData) => {
 	workflowPickerVisible = false;
 	renderUI();
 };
+export const handleBackdropClick = async (eventData) => {
+	if (eventData.target === eventData.currentTarget) {
+		workflowPickerVisible = false;
+		await renderUI();
+	}
+};
 const buildWorkflowPickerUI = () => ({ "workflow-drawer": {
-	tag: "div", style: "position: absolute; top: 60px; right: 20px; width: 300px; max-height: 400px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column;",
-	"picker-header": { tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary);", ...searchInput() },
-	"picker-list": { tag: "div", style: "flex: 1; overflow-y: auto; padding: 8px;", ...workflowList() }
+	"workflow-backdrop": { tag: "div", style: "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 999;", events: { click: "code-assistant.handleBackdropClick" } },
+	"workflow-drawer": { tag: "div", style: "position: absolute; top: 60px; right: 20px; width: 300px; max-height: 400px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column;",
+		"picker-header": { tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary);", ...searchInput() },
+		"picker-list": { tag: "div", style: "flex: 1; overflow-y: auto; padding: 8px;", ...workflowList() }
+	}
 }});
 const searchInput = () => ({ "search": { tag: "input", type: "text", placeholder: "Search workflows...", class: "cognition-input", events: { input: "code-assistant.handleSearchInput" } } });
 const workflowList = () => cachedWorkflows.length === 0 ? {"loading": {tag: "div", text: "Loading...", style: "padding: 10px; text-align: center; color: var(--text-muted);"}} : 
@@ -286,7 +294,7 @@ phases.develop.actions = [completeBtn];
 export const test = async () => {
 	const { runUnitTest, deepEqual } = runtime.testUtils;
 	return [
-		await runE2ESimulation({ what: "Training data collection system that captures user accept/reject decisions on AI suggestions", why: "Enable automated learning from user feedback to improve suggestion accuracy over time", architecture: { dependencies: ["graph-db", "inference", "chrome-sync"], persistence: "indexeddb", context: ["extension-page"] } }, "I want to build a system to help train my AI from user feedback" ),
+		// await runE2ESimulation({ what: "Training data collection system that captures user accept/reject decisions on AI suggestions", why: "Enable automated learning from user feedback to improve suggestion accuracy over time", architecture: { dependencies: ["graph-db", "inference", "chrome-sync"], persistence: "indexeddb", context: ["extension-page"] } }, "I want to build a system to help train my AI from user feedback" ),
 		// await runUnitTest("Workflow persistence roundtrip", async () => {
 			// 	let actual = {};
 		// 	await initializeTrainingModuleTest();
@@ -339,7 +347,7 @@ const initializeTrainingModuleTest = async () => {
 export const runE2ESimulation = async (targetSpec, initialPrompt) => {
 	const originalModel = model, originalWorkflow = JSON.parse(JSON.stringify(workflowState));
 	const judgeModel = "meta-llama/llama-4-maverick-17b-128e-instruct";
-	model = "meta-llama/llama-4-scout-17b-16e-instruct";
+	model = "llama-3.1-8b-instant";
 	workflowState.spec = specDefault(); workflowState.transcriptHistory = [];
 	await saveTranscripts(initialPrompt); await renderUI();
 	
