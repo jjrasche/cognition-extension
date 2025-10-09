@@ -92,6 +92,45 @@ body {
 	animation: spin 1s linear infinite;
 }
 
+.cognition-title {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 10px;
+}
+
+.picker-backdrop {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+}
+
+.picker-drawer {
+	display: flex;
+	flex-direction: column;
+	position: absolute;
+	top: 60px;
+	right: 20px;
+	width: 300px;
+	max-height: 400px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-primary);
+	border-radius: 8px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	z-index: 1000;
+}
+
+.picker-item {
+	position: relative;
+	padding: 10px 40px 10px 10px;
+	border-bottom: 1px solid var(--border-primary);
+	cursor: pointer;
+}
+
 @keyframes spin {
 	from {
 		transform: rotate(0deg);

@@ -8,7 +8,7 @@ export const manifest = {
 	description: "AI-powered development: spec → skeleton → develop. Prioritizing operating in the voice-first intent layer and test driven development",
 	dependencies: ["file", "inference", "layout", "chrome-sync", "web-speech-stt", "graph-db"],
 	requiredDirectories: ["cognition-extension"],
-	actions: ["renderUI", "handleWorkflowSelect", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "toggleListening", "toggleUserPrompt", "toggleHistory", "showWorkflowPicker", "handleWorkflowSelect", "handleSearchInput", "handleWorkflowDelete", "updateWorkflowName", "complete", "handleUserPromptFocus", "updateSpecField", "updateUserPrompt", "updateTranscriptEntry", "deleteTranscriptEntry"],
+	actions: ["renderUI", "handleWorkflowSelect", "handleBackdropClick", "acceptSpecChange", "rejectSpecChange", "markWrongTiming", "toggleListening", "toggleUserPrompt", "toggleHistory", "showWorkflowPicker", "handleWorkflowSelect", "handleSearchInput", "handleWorkflowDelete", "updateWorkflowName", "complete", "handleUserPromptFocus", "updateSpecField", "updateUserPrompt", "updateTranscriptEntry", "deleteTranscriptEntry"],
 	uiComponents: [{ name: "code-assistant", getTree: "buildUI" }],
 	config: {
 		historyAutoClose: { type: 'number', min: 5, max: 60, value: 15, label: 'History Auto-close (seconds)' },
@@ -26,9 +26,9 @@ export const manifest = {
 const config = configProxy(manifest);
 let runtime, log, workflowPickerVisible = false, isManuallyEditing = false, model = "meta-llama/llama-4-scout-17b-16e-instruct";
 let phases = {
-	spec: { ui: "spec-mode", title: "Spec Mode"},
-	skeleton: { ui: "skeleton-builder", title: "Skeleton Mode"},
-	develop: { ui: "dev-viewer", title: "Develop Mode"}
+	spec: { ui: "spec-mode", title: "Spec Mode" },
+	skeleton: { ui: "skeleton-builder", title: "Skeleton Mode" },
+	develop: { ui: "dev-viewer", title: "Develop Mode" }
 };
 export const initialize = async (rt, l) => {
 	runtime = rt; log = l;
@@ -56,11 +56,11 @@ export const loadWorkflow = async (id) => {
 	pendingChanges.clear();
 	await renderUI();
 };
-const deleteWorkflow = async (id) => { 
+const deleteWorkflow = async (id) => {
 	await db('removeRecord', id);
 	if (workflowState.id === id) workflowState = getBlankWorkflowState();
 	cachedWorkflows = cachedWorkflows.filter(w => w.id !== id);
-	await renderUI(); 
+	await renderUI();
 };
 export const handleWorkflowDelete = async (eventData) => {
 	await deleteWorkflow(eventData.ancestorData.workflowId);
@@ -121,11 +121,13 @@ export const renderUI = async () => {
 	await runtime.call('layout.renderComponent', "code-assistant");
 };
 export const buildUI = () => {
-	return {[getPhase().ui]: {
-		tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
-		"header": { ...modeHeaderAndTitle(), ...nameInput(), ...workflowPickerBtn(), ...getPhase()?.additionalHeader() ?? {} },
-		...(workflowPickerVisible && buildWorkflowPickerUI()), ...modeBody(), ...actionsBar()
-	}}
+	return {
+		[getPhase().ui]: {
+			tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
+			"header": { ...modeHeaderAndTitle(), ...nameInput(), ...workflowPickerBtn(), ...getPhase()?.additionalHeader() ?? {} },
+			...(workflowPickerVisible && buildWorkflowPickerUI()), ...modeBody(), ...actionsBar()
+		}
+	}
 };
 // === SEARCH ===
 let cachedWorkflows = [];
@@ -134,12 +136,13 @@ export const searchWorkflows = async (query) => {
 	cachedWorkflows = all;
 	if (!query.trim()) return all.sort((a, b) => b.lastModified - a.lastModified);
 	const lq = query.toLowerCase();
-	return all.map(wf => ({...wf,
+	return all.map(wf => ({
+		...wf,
 		score: (wf.name?.toLowerCase().includes(lq) ? 10 : 0) +
-		(wf.spec?.what?.toLowerCase().includes(lq) ? 5 : 0) +
-		(wf.spec?.why?.toLowerCase().includes(lq) ? 5 : 0) +
-		(JSON.stringify(wf.spec?.architecture).toLowerCase().includes(lq) ? 2 : 0) +
-		(wf.transcriptHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
+			(wf.spec?.what?.toLowerCase().includes(lq) ? 5 : 0) +
+			(wf.spec?.why?.toLowerCase().includes(lq) ? 5 : 0) +
+			(JSON.stringify(wf.spec?.architecture).toLowerCase().includes(lq) ? 2 : 0) +
+			(wf.transcriptHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
 	})).filter(wf => wf.score > 0).sort((a, b) => b.score - a.score);
 };
 export const handleSearchInput = async (eventData) => { const results = await searchWorkflows(eventData.target.value); await renderUI(); };
@@ -149,28 +152,25 @@ export const handleWorkflowSelect = async (eventData) => {
 	workflowPickerVisible = false;
 	renderUI();
 };
-export const handleBackdropClick = async (eventData) => {
-	if (eventData.target === eventData.currentTarget) {
-		workflowPickerVisible = false;
-		await renderUI();
-	}
-};
-const buildWorkflowPickerUI = () => ({ "workflow-drawer": {
+export const handleBackdropClick = async () => { workflowPickerVisible = false; await renderUI(); };
+const buildWorkflowPickerUI = () => ({
 	"workflow-backdrop": { tag: "div", style: "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 999;", events: { click: "code-assistant.handleBackdropClick" } },
-	"workflow-drawer": { tag: "div", style: "position: absolute; top: 60px; right: 20px; width: 300px; max-height: 400px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column;",
+	"workflow-drawer": {
+		tag: "div", style: "position: absolute; top: 60px; right: 20px; width: 300px; max-height: 400px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column;",
 		"picker-header": { tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary);", ...searchInput() },
 		"picker-list": { tag: "div", style: "flex: 1; overflow-y: auto; padding: 8px;", ...workflowList() }
 	}
-}});
+});
 const searchInput = () => ({ "search": { tag: "input", type: "text", placeholder: "Search workflows...", class: "cognition-input", events: { input: "code-assistant.handleSearchInput" } } });
-const workflowList = () => cachedWorkflows.length === 0 ? {"loading": {tag: "div", text: "Loading...", style: "padding: 10px; text-align: center; color: var(--text-muted);"}} : 
-Object.fromEntries(cachedWorkflows.slice(0, 20).map(wf => [`wf-${wf.id}`, workflowItem(wf)]));
-const workflowItem = (wf) => ({ tag: "div", style: "position: relative; padding: 10px 40px 10px 10px; border-bottom: 1px solid var(--border-primary); cursor: pointer;", events: {click: "code-assistant.handleWorkflowSelect"}, "data-workflow-id": wf.id,
-	"name": {tag: "div", text: wf.name || '(unnamed)', style: "font-weight: 500; margin-bottom: 4px;"},
-	"what": {tag: "div", text: wf.spec?.what || '(no description)', style: "font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"},
+const workflowList = () => cachedWorkflows.length === 0 ? { "no-results": { tag: "div", text: "No workflows found.", style: "padding: 10px; text-align: center; color: var(--text-muted);" } } :
+	Object.fromEntries(cachedWorkflows.slice(0, 20).map(wf => [`wf-${wf.id}`, workflowItem(wf)]));
+const workflowItem = (wf) => ({
+	tag: "div", style: "position: relative; padding: 10px 40px 10px 10px; border-bottom: 1px solid var(--border-primary); cursor: pointer;", events: { click: "code-assistant.handleWorkflowSelect" }, "data-workflow-id": wf.id,
+	"name": { tag: "div", text: wf.name || '(unnamed)', style: "font-weight: 500; margin-bottom: 4px;" },
+	"what": { tag: "div", text: wf.spec?.what || '(no description)', style: "font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" },
 	...deleteWorkflowBtn()
 });
-const deleteWorkflowBtn = () => ({ "delete-btn": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px;", events: {click: "code-assistant.handleWorkflowDelete"}, title: "Delete workflow" } });
+const deleteWorkflowBtn = () => ({ "delete-btn": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px;", events: { click: "code-assistant.handleWorkflowDelete" }, title: "Delete workflow" } });
 // ============ MIC & SPEECH RECOGNITION ============
 let userPrompt = '';
 const injectSpecSuggestion = async () => {
@@ -229,7 +229,7 @@ const handleTranscript = async (chunk) => {
 		await saveTranscripts(chunk.text);
 		await injectSpecSuggestion();
 		await renderUI();
-	} else { 
+	} else {
 		userPrompt = chunk.text;
 		if (/what do you think/i.test(chunk.text)) await injectSpecSuggestion();
 		await renderUI();
@@ -240,18 +240,22 @@ const saveTranscripts = async (text) => await updateWorkflow({ transcriptHistory
 const specFields = () => Object.fromEntries(['what', 'why', 'architecture'].map(field => {
 	const change = pendingChanges.get(field);
 	const value = field === 'architecture' ? JSON.stringify(workflowState.spec[field], null, 2) : workflowState.spec[field];
-	return [`${field}-section`, { tag: "div", style: "padding: 15px; background: var(--bg-tertiary); border-radius: 8px;",
+	return [`${field}-section`, {
+		tag: "div", style: "padding: 15px; background: var(--bg-tertiary); border-radius: 8px;",
 		"label": { tag: "h3", text: field.toUpperCase(), style: "margin: 0 0 10px 0; color: var(--text-primary);" },
 		...(change ? changeDiffer(field, change) : fieldTextArea(field, value))
 	}];
 }));
-const changeDiffer = (field, change) => ({"diff": { tag: "div",
-	"current": { tag: "div", text: change.current || '(empty)', style: "text-decoration: line-through; color: #ff6b6b; margin-bottom: 8px;" },
-	"proposed": { tag: "div", text: change.proposed, style: "background: #4CAF5020; color: #4CAF50; padding: 8px; border-radius: 4px;" }
-}, "actions": { tag: "div", style: "display: flex; gap: 8px; margin-top: 12px;", ...acceptBtn(field), ...rejectBtn(field), ...wrongTimingBtn() } });
+const changeDiffer = (field, change) => ({
+	"diff": {
+		tag: "div",
+		"current": { tag: "div", text: change.current || '(empty)', style: "text-decoration: line-through; color: #ff6b6b; margin-bottom: 8px;" },
+		"proposed": { tag: "div", text: change.proposed, style: "background: #4CAF5020; color: #4CAF50; padding: 8px; border-radius: 4px;" }
+	}, "actions": { tag: "div", style: "display: flex; gap: 8px; margin-top: 12px;", ...acceptBtn(field), ...rejectBtn(field), ...wrongTimingBtn() }
+});
 const fieldTextArea = (field, value) => ({ "value": { tag: "textarea", value: value || '', placeholder: `(speak or type ${field})`, class: `cognition-input cognition-textarea-${field === 'architecture' ? 'md' : 'sm'}`, events: { change: "code-assistant.updateSpecField" }, "data-field": field } });
-const transcriptContent = () => ({ "content": { tag: "textarea", value: userPrompt, placeholder: "Type or speak your prompt...", class: "cognition-input cognition-textarea-md",  events: { input: "code-assistant.updateUserPrompt", focus: "code-assistant.handleUserPromptFocus", } } });
-const historyEntries = () => Object.fromEntries(workflowState.transcriptHistory.slice(-20).map((text, i) => [ `entry-${i}`, { tag: "div", style: "margin-bottom: 8px; padding: 8px; background: var(--bg-input); border-radius: 4px; position: relative;", "data-entry-index": i, ...historyTextarea(text), ...historyDeleteBtn() } ]) );
+const transcriptContent = () => ({ "content": { tag: "textarea", value: userPrompt, placeholder: "Type or speak your prompt...", class: "cognition-input cognition-textarea-md", events: { input: "code-assistant.updateUserPrompt", focus: "code-assistant.handleUserPromptFocus", } } });
+const historyEntries = () => Object.fromEntries(workflowState.transcriptHistory.slice(-20).map((text, i) => [`entry-${i}`, { tag: "div", style: "margin-bottom: 8px; padding: 8px; background: var(--bg-input); border-radius: 4px; position: relative;", "data-entry-index": i, ...historyTextarea(text), ...historyDeleteBtn() }]));
 const historyTextarea = (text) => ({ "textarea": { tag: "textarea", value: text, class: "cognition-input cognition-textarea-sm", events: { change: "code-assistant.updateTranscriptEntry" } } });
 const historyDeleteBtn = () => ({ "delete": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 4px; right: 4px; padding: 2px 6px; font-size: 10px;", events: { click: "code-assistant.deleteTranscriptEntry" } } });
 const micToggle = () => ({ "mic-toggle": { tag: "button", text: isListening ? "⏸ Pause Listening" : "🎤 Start Listening", class: isListening ? "cognition-button-secondary" : "cognition-button-primary", style: isListening ? "background: #4CAF50;" : "", events: { click: "code-assistant.toggleListening" } } });
@@ -260,16 +264,20 @@ const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible
 const acceptBtn = (field) => ({ "accept": { tag: "button", text: "✓ Accept", class: "cognition-button-primary", style: "padding: 6px 12px;", events: { click: "code-assistant.acceptSpecChange" }, "data-field": field, title: "Ctrl+Y" } });
 const rejectBtn = (field) => ({ "reject": { tag: "button", text: "✗ Reject", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.rejectSpecChange" }, "data-field": field, title: "Ctrl+N" } });
 const wrongTimingBtn = () => ({ "timing": { tag: "button", text: "⏰ Too Early", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "code-assistant.markWrongTiming" }, title: "Valid suggestion, wrong moment" } });
-const historyPanel = () => ({"history": {
-	tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px; overflow-y: auto;",
-	"history-title": { tag: "h4", text: "Transcript History", style: "margin: 0 0 10px 0;" },
-	"entries": { tag: "div", style: "font-size: 12px; color: var(--text-muted);", ...historyEntries() }
-}});
-const userPromptPanel = () => ({ "live-transcript": {
-	tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px;",
-	"transcript-title": { tag: "h4", text: "User Prompt", style: "margin: 0;" },
-	...(userPromptVisible && transcriptContent())
-}});
+const historyPanel = () => ({
+	"history": {
+		tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px; overflow-y: auto;",
+		"history-title": { tag: "h4", text: "Transcript History", style: "margin: 0 0 10px 0;" },
+		"entries": { tag: "div", style: "font-size: 12px; color: var(--text-muted);", ...historyEntries() }
+	}
+});
+const userPromptPanel = () => ({
+	"live-transcript": {
+		tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px;",
+		"transcript-title": { tag: "h4", text: "User Prompt", style: "margin: 0;" },
+		...(userPromptVisible && transcriptContent())
+	}
+});
 phases.spec.additionalHeader = () => ({ ...micToggle() });
 phases.spec.body = () => ({ ...specFields(), ...(historyVisible && historyPanel()), ...(userPromptVisible && userPromptPanel()) });
 phases.spec.actions = [historyBtn, transcriptBtn, completeBtn];
@@ -296,7 +304,7 @@ export const test = async () => {
 	return [
 		// await runE2ESimulation({ what: "Training data collection system that captures user accept/reject decisions on AI suggestions", why: "Enable automated learning from user feedback to improve suggestion accuracy over time", architecture: { dependencies: ["graph-db", "inference", "chrome-sync"], persistence: "indexeddb", context: ["extension-page"] } }, "I want to build a system to help train my AI from user feedback" ),
 		// await runUnitTest("Workflow persistence roundtrip", async () => {
-			// 	let actual = {};
+		// 	let actual = {};
 		// 	await initializeTrainingModuleTest();
 		// 	await updateWorkflow();
 		// 	const savedId = workflowState.id;
@@ -311,7 +319,7 @@ export const test = async () => {
 		// 	return { actual, assert: deepEqual, expected: Object.keys(actual).reduce((obj, key) => ({ ...obj, [key]: true }), {}) };
 		// })
 		// await runUnitTest("LLM suggestion quality validation", async () => {
-			// 	initializeTrainingModuleTest();
+		// 	initializeTrainingModuleTest();
 		// 	const suggestion = await generateSpecSuggestion();
 		// 	const systemPrompt = `You are an expert evaluator of AI-generated software specifications.\n\nScore each suggestion 0-10 on:\n- Relevance: Does it address the user's transcripts?\n- Actionability: Is it specific and implementable?\n- Clarity: Is it well-articulated?\n\nOutput JSON: {"relevance": 0-10, "actionability": 0-10, "clarity": 0-10, "reasoning": "brief explanation"}`;
 		// 	const query = `Spec State: ${JSON.stringify(workflowState.spec)}\nTranscripts: "${transcriptHistory.map(t => t.text).join(' ')}"\nSuggestion: ${JSON.stringify(suggestion)}`;
@@ -319,7 +327,7 @@ export const test = async () => {
 		// 	return { actual: evaluation, assert: (actual) => actual.relevance >= 7 && actual.actionability >= 7 && actual.clarity >= 7, expected: { meetsThreshold: true } };
 		// }, cleanupTest())
 		// await runUnitTest("Accept suggestion updates spec", async () => {
-			// 	let actual = {};
+		// 	let actual = {};
 		// 	currentSpec.what = "build a training module";
 		// 	await injectSpecSuggestion();
 		// 	actual.suggestionGenerated = !!(lastSuggestion && lastSuggestion.field && lastSuggestion.content);
@@ -350,29 +358,29 @@ export const runE2ESimulation = async (targetSpec, initialPrompt) => {
 	model = "llama-3.1-8b-instant";
 	workflowState.spec = specDefault(); workflowState.transcriptHistory = [];
 	await saveTranscripts(initialPrompt); await renderUI();
-	
+
 	const simulationLog = [], maxIterations = 15;
 	let iterations = 0;
-	
+
 	try {
 		while (iterations++ < maxIterations) {
 			const suggestion = await generateSpecSuggestion();
 			lastSuggestion = suggestion;
 			pendingChanges.set(suggestion.field, { current: workflowState.spec[suggestion.field], proposed: suggestion.content, type: suggestion.type });
 			await renderUI();
-			
+
 			const decision = await evaluateAgainstTarget(judgeModel, targetSpec, suggestion, workflowState.spec, workflowState.transcriptHistory);
 			simulationLog.push({ iteration: iterations, suggestion, decision });
 			log.info(`Iteration ${iterations}: ${decision.action} - ${decision.reasoning}`);
-			
+
 			if (decision.action === 'complete') break;
 			decision.action === 'accept' ? await acceptSpecChange({ target: { dataset: { field: suggestion.field } } }) :
-			decision.action === 'reject' ? await rejectSpecChange({ target: { dataset: { field: suggestion.field } } }) : (() => { throw new Error('Invalid action'); })();
-			
+				decision.action === 'reject' ? await rejectSpecChange({ target: { dataset: { field: suggestion.field } } }) : (() => { throw new Error('Invalid action'); })();
+
 			decision.nextUserInput && (await saveTranscripts(decision.nextUserInput), await renderUI());
 			await wait(2000);
 		}
-		
+
 		const matchResult = await calculateSpecSimilarity(targetSpec, workflowState.spec, judgeModel);
 		model = originalModel;
 		return { targetSpec, finalSpec: JSON.parse(JSON.stringify(workflowState.spec)), matchScore: matchResult.score, breakdown: matchResult, iterations, transcript: [...workflowState.transcriptHistory], simulationLog };
