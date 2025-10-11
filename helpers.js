@@ -72,6 +72,8 @@ export const runUnitTest = async (name, testFn, afterFn) => {
 }
 
 export const asserts = {
+	isTrue: (value) => value === true,
+	isFalse: (value) => value === false,
 	strictEqual: (a, b) => a === b,
 	looseEqual: (a, b) => a == b,
 	greaterThan: (a, b) => a > b,
