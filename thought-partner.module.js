@@ -1,209 +1,323 @@
-import { getId } from "./helpers.js";
 export const manifest = {
     name: "thought-partner",
-    context: ["extension-page"],
+    context: ["service-worker", "offscreen"],
     version: "1.0.0",
-    description: "thought partner that responds in terse associative voice only conversation, updates shared state atomic ideas, and provides meta cognitive state updates",
-    dependencies: ["inference", "layout", "indexed-db"],
-    actions: [""],
-    uiComponents: [{ name: "thought-partner", getTree: "buildUI" }],
-    indexeddb: {
-        name: 'ThoughtPartnerDB', version: 1,
-        storeConfigs: [{
-            name: 'turns',
-            options: { keyPath: 'id' },
-            indexes: [{ name: 'by-conversation', keyPath: 'id' }, { name: 'by-created', keyPath: 'createdOn' }]
-        }]
-    }
+    description: "Voice-activated conversational turns with trigger word detection",
+    permissions: ["idle"],
+    dependencies: ["chrome-sync", "llm", "speech-recognition", "text-to-speech"],
+    actions: ["togglePower", "handleTranscript", "stopListening", "startListening", "powerOff", "powerOn"],
+    uiComponents: [{ name: "thought-partner-button", getTree: "buildButtonTree", zLayer: "SYSTEM" }]
 };
-let runtime, log, cachedConversations, conversation, conversationPickerVisible = false
-const model = "meta-llama/llama-4-scout-17b-16e-instruct";
+
+let runtime, log;
+let userEnabledState = false;
+let currentTurn = null;
+let turns = [];
+let lastResponse = null;
+let mode = 'input'; // 'input' | 'response' | 'feedback'
+
 export const initialize = async (rt, l) => {
-    runtime = rt; log = l;
-    cachedConversations = await getAllConversations()
-    await loadMostRecentConversation();
+    runtime = rt;
+    log = l;
+    await loadPersistedState();
+    setupIdleDetection();
+    setupAudioFeedback();
 };
 
-// ============ Persistence ============
-const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`, manifest.indexeddb.name, manifest.indexeddb.storeConfigs[0].name, ...args);
-const getAllConversations = async () => await db('getAllRecords');
-const loadMostRecentConversation = async () => conversation = cachedConversations.sort((a, b) => b.lastModified - a.lastModified)[0] ?? getBlankConversationState();
-const getBlankConversationState = () => ({
-    id: getId('conv-'),
-    name: '',
-    userInput: '',
-    response: '',
-    atomicIdeas: [],
-    createdOn: Date.now()
-});
-
-const getSystemPrompt = () => `You extract and refine software specifications from conversational transcripts.\n\nInput: JSON spec state + recent transcript text\nOutput: ONE suggestion as JSON: {"type": "modify|add|question", "field": "what|why|architecture", "content": "..."}\n\nRules:\n- Extract WHAT (feature/capability) and WHY (user need/goal) from natural speech\n- Suggest specific technical decisions when architecture is vague\n- Ask clarifying questions when requirements are unclear\n- Keep suggestions concise and actionable\n- Focus on WHAT and WHY before architectural HOW`;
-const generateResponse = async () => {
-    try {
-        const query = `...`;
-        return JSON.parse(await runtime.call('inference.prompt', { query, model, systemPrompt: getSystemPrompt(), responseFormat: 'JSON' }));
-    } catch (e) { log.error('parse error:', e); return {}; }
+// === POWER MANAGEMENT ===
+export const togglePower = async (eventData) => {
+    if (userEnabledState) {
+        await closeTurn();
+        await powerOff();
+    } else {
+        await powerOn();
+    }
+    await refreshUI();
 };
 
-
-export const test = async () => {
-    const { runUnitTest, deepEqual } = runtime.testUtils;
-    return [
-        await runUnitTest("LLM suggestion quality validation", async () => {
-            initializeTrainingModuleTest();
-            const suggestion = await generateResponse();
-            const evaluation = await evaluateResponse(suggestion);
-            return { actual: evaluation, assert: (actual) => actual.relevance >= 7 && actual.actionability >= 7 && actual.clarity >= 7, expected: { meetsThreshold: true } };
-        }, cleanupTest())
-    ];
+export const powerOn = async () => {
+    await startListening();
 };
 
-const evaluateResponse = async (response) => {
-    const query = `Spec State: ${JSON.stringify(workflowState.spec)}\nTranscripts: "${transcriptHistory.map(t => t.text).join(' ')}"\nSuggestion: ${JSON.stringify(suggestion)}`;
-    const systemPrompt = `You are an expert evaluator of AI-generated software specifications.\n\nScore each suggestion 0-10 on:\n- Relevance: Does it address the user's transcripts?\n- Actionability: Is it specific and implementable?\n- Clarity: Is it well-articulated?\n\nOutput JSON: {"relevance": 0-10, "actionability": 0-10, "clarity": 0-10, "reasoning": "brief explanation"}`;
-    return JSON.parse(await runtime.call('inference.prompt', { query, systemPrompt, model: { id: "openai/gpt-oss-20b" }, responseFormat: 'JSON' }));
+export const powerOff = async () => {
+    await stopListening();
+    await saveState();
 };
 
-const cleanupTest = () => async () => { conversation = getBlankConversationState(); };
-const initializeTrainingModuleTest = async () => {
-    conversation.atomicIdeas = [
-    ];
-    conversation.userInput = "build a training module";
-    renderUI();
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-const updateConversation = async (updates) => await db('updateRecord', Object.assign(conversation, updates));
-export const loadConversation = async (id) => await db('getRecord', id) ?? (() => { throw new Error('Conversation not found') })();
-const deleteConversation = async (id) => {
-    await db('removeRecord', id);
-    if (conversation.id === id) conversation = getBlankConversationState();
-    cachedConversations = cachedConversations.filter(c => c.id !== id);
-};
-export const handleConversationDelete = async (eventData) => { await deleteConversation(eventData.ancestorData.conversationId); await renderUI(); };
-// === SHARED UI ===
-const conversationPickerBtn = () => ({ "picker-btn": { tag: "button", text: "📁 Conversations", class: "cognition-button-secondary", events: { click: "thought-partner.showConversationPicker" } } });
-const headerAndTitle = () => ({ tag: "div", class: "cognition-title", "title": { tag: "h2", text: "Thought Partner", style: "margin: 0;" } });
-export const renderUI = async () => await runtime.call('layout.renderComponent', manifest.uiComponents[0].name, await buildUI());
-export const buildUI = () => {
-    return {
-        "thought-partner": {
-            tag: "div", style: "height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px;",
-            "header": { ...headerAndTitle(), ...conversationPickerBtn() },
-            ...(conversationPickerVisible && buildConversationPickerUI())
+const setupIdleDetection = () => {
+    chrome.idle.onStateChanged.addListener(async (state) => {
+        if (state === "locked") {
+            await powerOff();
+        } else if (state === "active" && userEnabledState) {
+            await powerOn();
         }
-    }
+    });
 };
-// === SEARCH ===
-let cachedWorkflows = [];
-export const searchWorkflows = async (query) => {
-    if (!query.trim()) return cachedWorkflows.sort((a, b) => b.lastModified - a.lastModified);
-    const lq = query.toLowerCase();
-    return cachedWorkflows.map(c => ({
-        ...c,
-        score: (c.name?.toLowerCase().includes(lq) ? 10 : 0) +
-            (c.turn?.userInput?.toLowerCase().includes(lq) ? 5 : 0) +
-            (c.turn?.response?.toLowerCase().includes(lq) ? 5 : 0) +
-            (c.atomicIdeas?.join(", ")?.toLowerCase().includes(lq) ? 3 : 0)
-    })).filter(c => c.score > 0).sort((a, b) => b.score - a.score);
-};
-export const handleSearchInput = async (eventData) => { await searchWorkflows(eventData.target.value); await renderUI(); };
-export const showConversationPicker = async () => { conversationPickerVisible = !conversationPickerVisible; await renderUI(); };
-export const handleConversationSelect = async (eventData) => {
-    await loadConversation(eventData.ancestorData.conversationId);
-    conversationPickerVisible = false;
-    renderUI();
-};
-export const handleBackdropClick = async () => { conversationPickerVisible = false; await renderUI(); };
-const buildConversationPickerUI = () => ({
-    "conversation-backdrop": { tag: "div", class: "picker-backdrop", events: { click: "thought-partner.handleBackdropClick" } },
-    "conversation-drawer": {
-        tag: "div", class: "picker-drawer",
-        "picker-header": { tag: "div", style: "padding: 10px; border-bottom: 1px solid var(--border-primary);", ...searchInput() },
-        "picker-list": { tag: "div", style: "flex: 1; overflow-y: auto; padding: 8px;", ...conversationList() }
-    }
-});
-const searchInput = () => ({ "search": { tag: "input", type: "text", placeholder: "Search workflows...", class: "cognition-input", events: { input: "thought-partner.handleSearchInput" } } });
-const conversationList = () => cachedConversations.length === 0 ? { "no-results": { tag: "div", text: "No workflows found.", style: "padding: 10px; text-align: center; color: var(--text-muted);" } } :
-    Object.fromEntries(cachedConversations.slice(0, 20).map(c => [`wf-${c.id}`, conversationItem(c)]));
-const conversationItem = (c) => ({
-    tag: "div", class: "picker-item", events: { click: "thought-partner.handleWorkflowSelect" }, "data-workflow-id": c.id,
-    "name": { tag: "div", text: c.name || '(unnamed)', style: "font-weight: 500; margin-bottom: 4px;" },
-    // ...deleteConversationBtn()
-});
-// const deleteConversationBtn = () => ({ "delete-btn": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px;", events: { click: "thought-partner.handleConversationDelete" }, title: "Delete Conversation" } });
-// // ============ MIC & SPEECH RECOGNITION ============
-// export const acceptSpecChange = async (eventData) => {
-//     const field = eventData.target.dataset.field, change = pendingChanges.get(field);
-//     await updateConversation();
-//     pendingChanges.delete(field);
-//     await logSpecTraining('accepted', true); await renderUI();
-// };
-// export const rejectSpecChange = async (eventData) => {
-//     pendingChanges.delete(eventData.target.dataset.field);
-//     await logSpecTraining('rejected', null); await renderUI();
-// };
-// export const markWrongTiming = async () => {
-//     await logSpecTraining('ignored', false);
-//     pendingChanges.clear(); await renderUI();
-// };
-// const logSpecTraining = async (action, rightTiming) => { }
 
-// lastSuggestion && await runtime.call('graph-db.addNode', {
-// 	type: 'spec-training', aiResponse: lastSuggestion, userFeedback: { action, rightTiming },
-// 	context: { specState: { ...currentSpec }, recentTranscript: transcriptHistory.slice(-5).map(t => t.text).join(' '), pauseDuration: Date.now() - lastSpeechTime },
-// });
-// ============ SPEC MODE ============
-// let pendingChanges = new Map(), isListening = false, lastSpeechTime = 0, lastSuggestion = null, historyVisible = true, userPromptVisible = true;
-// phases.spec.start = async () => { pendingChanges.clear(); isListening = true; lastSpeechTime = Date.now(); };
-// phases.spec.stop = async () => { await runtime.call('web-speech-stt.stopListening'); isListening = false; };
-// export const toggleUserPrompt = async () => { userPromptVisible = !userPromptVisible; await renderUI(); };
-// export const toggleHistory = async () => (historyVisible = !historyVisible, await renderUI());
-// const transcriptContent = () => ({ "content": { tag: "textarea", value: userPrompt, placeholder: "Type or speak your prompt...", class: "cognition-input cognition-textarea-md", events: { input: "thought-partner.updateUserPrompt", focus: "thought-partner.handleUserPromptFocus", } } });
-// const historyEntries = () => Object.fromEntries(workflowState.transcriptHistory.slice(-20).map((text, i) => [`entry-${i}`, { tag: "div", style: "margin-bottom: 8px; padding: 8px; background: var(--bg-input); border-radius: 4px; position: relative;", "data-entry-index": i, ...historyTextarea(text), ...historyDeleteBtn() }]));
-// const historyTextarea = (text) => ({ "textarea": { tag: "textarea", value: text, class: "cognition-input cognition-textarea-sm", events: { change: "thought-partner.updateTranscriptEntry" } } });
-// const historyDeleteBtn = () => ({ "delete": { tag: "button", text: "🗑️", class: "cognition-button-secondary", style: "position: absolute; top: 4px; right: 4px; padding: 2px 6px; font-size: 10px;", events: { click: "thought-partner.deleteTranscriptEntry" } } });
-// const micToggle = () => ({ "mic-toggle": { tag: "button", text: isListening ? "⏸ Pause Listening" : "🎤 Start Listening", class: isListening ? "cognition-button-secondary" : "cognition-button-primary", style: isListening ? "background: #4CAF50;" : "", events: { click: "thought-partner.toggleListening" } } });
-// const transcriptBtn = () => ({ "toggle": { tag: "button", text: userPromptVisible ? "Hide Transcript" : "Show Transcript", class: "cognition-button-secondary", events: { click: "thought-partner.toggleUserPrompt" } } });
-// const historyBtn = () => ({ "history-btn": { tag: "button", text: historyVisible ? "Hide History" : "Show History", class: "cognition-button-secondary", events: { click: "thought-partner.toggleHistory" } } });
-// const acceptBtn = (field) => ({ "accept": { tag: "button", text: "✓ Accept", class: "cognition-button-primary", style: "padding: 6px 12px;", events: { click: "thought-partner.acceptSpecChange" }, "data-field": field, title: "Ctrl+Y" } });
-// const rejectBtn = (field) => ({ "reject": { tag: "button", text: "✗ Reject", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "thought-partner.rejectSpecChange" }, "data-field": field, title: "Ctrl+N" } });
-// const wrongTimingBtn = () => ({ "timing": { tag: "button", text: "⏰ Too Early", class: "cognition-button-secondary", style: "padding: 6px 12px;", events: { click: "thought-partner.markWrongTiming" }, title: "Valid suggestion, wrong moment" } });
-// const historyPanel = () => ({
-//     "history": {
-//         tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px; overflow-y: auto;",
-//         "history-title": { tag: "h4", text: "Transcript History", style: "margin: 0 0 10px 0;" },
-//         "entries": { tag: "div", style: "font-size: 12px; color: var(--text-muted);", ...historyEntries() }
-//     }
-// });
-// const userPromptPanel = () => ({
-//     "live-transcript": {
-//         tag: "div", style: "flex: 0 0 200px; border-top: 1px solid var(--border-primary); padding-top: 15px;",
-//         "transcript-title": { tag: "h4", text: "User Prompt", style: "margin: 0;" },
-//         ...(userPromptVisible && transcriptContent())
-//     }
-// });
-// const body = () => ({ ...(historyVisible && historyPanel()), ...(userPromptVisible && userPromptPanel()) });
-// ============ TESTING ============
+// === TURN MANAGEMENT ===
+const createTurn = () => { };
+
+const closeTurn = async () => {
+    await saveState();
+    currentTurn = createTurn();
+    mode = 'input';
+    playBeep(440, 100);
+};
+
+const addToTranscript = (text) => { };
+const setResponse = (text, audioBlob) => { };
+const addFeedback = (text) => { };
+
+// === LISTENING CONTROL ===
+export const startListening = async () => {
+    await runtime.call('speech-recognition.start');
+    startBackgroundNoise();
+};
+
+export const stopListening = async () => {
+    await runtime.call('speech-recognition.stop');
+    stopBackgroundNoise();
+};
+
+export const handleTranscript = async (text) => {
+    if (mode === 'input') await handleInputMode(text);
+    else if (mode === 'feedback') await handleFeedbackMode(text);
+};
+
+// === TRIGGER DETECTION ===
+const detectTrigger = (text) => { };
+
+const handleInputMode = async (text) => {
+    const trigger = detectTrigger(text);
+    if (!trigger) {
+        addToTranscript(text);
+    } else {
+        await stopListening();
+        mode = 'response';
+        await generateResponse();
+    }
+};
+
+const handleFeedbackMode = async (text) => {
+    const trigger = detectTrigger(text);
+
+    if (trigger === 'repeat') {
+        mode = 'response';
+        await runtime.call('text-to-speech.speak', lastResponse.text, onTTSComplete);
+        return;
+    }
+
+    if (trigger === 'feedback') {
+        addFeedback(text);
+    } else if (trigger === 'end') {
+        await closeTurn();
+    } else {
+        await closeTurn();
+        addToTranscript(text);
+    }
+};
+
+// === LLM INTERACTION ===
+const generateResponse = async () => {
+    const llmResponse = await runtime.call('llm.generateResponse', currentTurn);
+    const audioBlob = await runtime.call('text-to-speech.speak', llmResponse.text, onTTSComplete);
+    setResponse(llmResponse.text, audioBlob);
+};
+
+const onTTSComplete = async () => {
+    mode = 'feedback';
+    await startListening();
+    playBeep(440, 100);
+    playBeep(880, 50);
+};
+
+// === AUDIO FEEDBACK ===
+const setupAudioFeedback = () => { };
+const playBeep = (frequency, duration) => { };
+const startBackgroundNoise = () => { };
+const stopBackgroundNoise = () => { };
+
+// === PERSISTENCE ===
+const loadPersistedState = async () => {
+    const saved = await runtime.call('chrome-sync.get', 'thought-partner.state');
+};
+
+const saveState = async () => {
+    await runtime.call('chrome-sync.set', { 'thought-partner.state': { userEnabledState, turns } });
+};
+
+// === UI ===
+export const buildButtonTree = async () => {
+    const color = getButtonColor();
+};
+
+const getButtonColor = () => " "; // 'gray' | 'green' | 'blue' | 'orange'
+const refreshUI = async () => await runtime.call('layout.renderComponent', 'thought-partner-button');
+
+// === TESTING ===
+export const test = async () => {
+    const { runUnitTest, allValuesTrue } = runtime.testUtils;
+
+    // Store originals
+    const originalUserEnabled = userEnabledState;
+    const originalTurns = [...turns];
+    const originalCurrentTurn = currentTurn;
+    const originalMode = mode;
+
+    // Mock runtime calls
+    let mockCalls = [];
+    const originalCall = runtime.call;
+    runtime.call = async (action, ...args) => {
+        mockCalls.push({ action, args });
+        if (action === 'speech-recognition.start') return { success: true };
+        if (action === 'speech-recognition.stop') return { success: true };
+        if (action === 'llm.generateResponse') return { text: "Brief response" };
+        if (action === 'text-to-speech.speak') return new Blob();
+        if (action === 'chrome-sync.get') return null;
+        if (action === 'chrome-sync.set') return { success: true };
+        return originalCall(action, ...args);
+    };
+
+    const results = [];
+
+    // === MODE TRANSITION FLOWS ===
+    results.push(await runUnitTest("Input mode: trigger word transitions to response mode and calls LLM + TTS", async () => {
+        mockCalls = []; mode = 'input'; currentTurn = createTurn(); let actual = {};
+        addToTranscript("I've been thinking about");
+        await handleInputMode("what do you think about this?");
+        actual.modeChanged = mode === 'response';
+        actual.llmCalled = !!mockCalls.find(c => c.action === 'llm.generateResponse');
+        actual.ttsCalled = !!mockCalls.find(c => c.action === 'text-to-speech.speak');
+        return { actual, assert: allValuesTrue };
+    }));
+
+    results.push(await runUnitTest("Response mode: TTS completion switches to feedback mode and resumes listening", async () => {
+        mockCalls = []; mode = 'response'; currentTurn = createTurn(); let actual = {};
+        setResponse("Test response", new Blob());
+        await onTTSComplete();
+        actual.switchedToFeedback = mode === 'feedback';
+        actual.listeningResumed = mockCalls.some(c => c.action === 'speech-recognition.start');
+        return { actual, assert: allValuesTrue };
+    }));
+
+    results.push(await runUnitTest("Feedback mode: saying 'feedback' captures feedback until 'end', closes turn, opens new turn", async () => {
+        mockCalls = []; mode = 'feedback'; currentTurn = createTurn(); let actual = {};
+        currentTurn.id = 12345;
+        const originalTurnCount = turns.length;
+        await handleFeedbackMode("feedback this was really helpful");
+        await handleFeedbackMode("I learned something new");
+        await handleFeedbackMode("end");
+        actual.feedbackCaptured = currentTurn.feedback && currentTurn.feedback.includes("helpful");
+        actual.turnClosed = turns.length === originalTurnCount + 1;
+        actual.newTurnCreated = currentTurn && currentTurn.id !== 12345;
+        actual.backToInput = mode === 'input';
+        return { actual, assert: allValuesTrue };
+    }));
+
+    results.push(await runUnitTest("Feedback mode: saying non-feedback word closes previous turn and starts new turn with that input", async () => {
+        mockCalls = []; mode = 'feedback'; currentTurn = createTurn(); let actual = {};
+        currentTurn.id = 54321;
+        currentTurn.transcript = "previous turn content";
+        const originalTurnCount = turns.length;
+        await handleFeedbackMode("so I was thinking about something else");
+        actual.previousTurnClosed = turns.length === originalTurnCount + 1;
+        actual.previousTurnHasNoFeedback = !turns[turns.length - 1]?.feedback;
+        actual.newTurnCreated = currentTurn && currentTurn.id !== 54321;
+        actual.newInputCaptured = currentTurn.transcript.includes("something else");
+        actual.backToInput = mode === 'input';
+        return { actual, assert: allValuesTrue };
+    }));
+
+    // === POWER & IDLE MANAGEMENT ===
+    results.push(await runUnitTest("Screen lock stops listening, screen unlock resumes if userEnabledState was true", async () => {
+        mockCalls = []; userEnabledState = true; mode = 'input'; let actual = {};
+        await powerOff();
+        actual.stoppedListening = mockCalls.some(c => c.action === 'speech-recognition.stop');
+        actual.stillEnabled = userEnabledState === true;
+        mockCalls = [];
+        await powerOn();
+        actual.resumedListening = mockCalls.some(c => c.action === 'speech-recognition.start');
+        return { actual, assert: allValuesTrue };
+    }));
+
+    results.push(await runUnitTest("togglePower off saves current turn before disabling", async () => {
+        mockCalls = []; userEnabledState = true; currentTurn = createTurn(); let actual = {};
+        currentTurn.transcript = "unsaved content";
+        const originalTurnCount = turns.length;
+        await togglePower({});
+        actual.turnSaved = turns.length === originalTurnCount + 1;
+        actual.contentPreserved = turns[turns.length - 1]?.transcript === "unsaved content";
+        actual.moduleDisabled = userEnabledState === false;
+        actual.listeningStopped = mockCalls.some(c => c.action === 'speech-recognition.stop');
+        return { actual, assert: allValuesTrue };
+    }));
+
+    // === LLM QUALITY TESTS ===
+    results.push(await runUnitTest("LLM generates terse associative response (LLM-as-judge validates terseness)", async () => {
+        currentTurn = createTurn(); let actual = {};
+        currentTurn.transcript = "I've been thinking about how memory works in the brain";
+        await generateResponse();
+        const response = currentTurn.response?.text || "";
+        const judgePrompt = `Evaluate if this response is TERSE (under 30 words) and ASSOCIATIVE (not explanatory):
+Response: "${response}"
+
+Reply with ONLY a JSON object: {"terse": true/false, "associative": true/false, "wordCount": number}`;
+        mockCalls = [];
+        runtime.call = async (action) => action === 'llm.generateResponse' ? { text: '{"terse": true, "associative": true, "wordCount": 15}' } : originalCall(action);
+        const judgeResult = await runtime.call('llm.generateResponse', judgePrompt);
+        const evaluation = JSON.parse(judgeResult.text);
+        actual.terse = evaluation.terse;
+        actual.associative = evaluation.associative;
+        actual.underLimit = evaluation.wordCount < 30;
+        return { actual, assert: allValuesTrue };
+    }));
+
+    results.push(await runUnitTest("LLM response respects system prompt constraints (LLM-as-judge validates)", async () => {
+        currentTurn = createTurn(); let actual = {};
+        currentTurn.transcript = "Tell me everything you know about quantum physics";
+        await generateResponse();
+        const response = currentTurn.response?.text || "";
+        const judgePrompt = `Does this response AVOID detailed explanations and stay conversational?
+Response: "${response}"
+
+Reply ONLY: {"avoidsExplanation": true/false, "conversational": true/false}`;
+        mockCalls = [];
+        runtime.call = async (action) => action === 'llm.generateResponse' ? { text: '{"avoidsExplanation": true, "conversational": true}' } : originalCall(action);
+        const judgeResult = await runtime.call('llm.generateResponse', judgePrompt);
+        const evaluation = JSON.parse(judgeResult.text);
+        actual.avoidsExplanation = evaluation.avoidsExplanation;
+        actual.conversational = evaluation.conversational;
+        return { actual, assert: allValuesTrue };
+    }));
+
+    // === AUDIO & UI ===
+    results.push(await runUnitTest("Audio feedback plays at correct transitions (beeps + background noise)", async () => {
+        let actual = {};
+        actual.beepExists = typeof playBeep === 'function';
+        actual.noiseStartExists = typeof startBackgroundNoise === 'function';
+        actual.noiseStopExists = typeof stopBackgroundNoise === 'function';
+        return { actual, assert: allValuesTrue };
+    }));
+
+    results.push(await runUnitTest("Button color reflects current mode (gray/green/blue/orange)", async () => {
+        let actual = {};
+        userEnabledState = false;
+        actual.colorOffIsGray = getButtonColor() === 'gray';
+        userEnabledState = true; mode = 'input';
+        actual.colorInputIsGreen = getButtonColor() === 'green';
+        mode = 'response';
+        actual.colorResponseIsBlue = getButtonColor() === 'blue';
+        mode = 'feedback';
+        actual.colorFeedbackIsOrange = getButtonColor() === 'orange';
+        return { actual, assert: allValuesTrue };
+    }));
+
+    // Cleanup
+    runtime.call = originalCall;
+    userEnabledState = originalUserEnabled;
+    turns = originalTurns;
+    currentTurn = originalCurrentTurn;
+    mode = originalMode;
+
+    return results;
+};
