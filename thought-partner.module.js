@@ -277,10 +277,7 @@ Reply with ONLY a JSON object: {"terse": true/false, "associative": true/false, 
         currentTurn.transcript = "Tell me everything you know about quantum physics";
         await generateResponse();
         const response = currentTurn.response?.text || "";
-        const judgePrompt = `Does this response AVOID detailed explanations and stay conversational?
-Response: "${response}"
-
-Reply ONLY: {"avoidsExplanation": true/false, "conversational": true/false}`;
+        const judgePrompt = `Does this response AVOID detailed explanations and stay conversational?\nResponse: "${response}"\n\nReply ONLY: {"avoidsExplanation": true/false, "conversational": true/false}`;
         mockCalls = [];
         runtime.call = async (action) => action === 'llm.generateResponse' ? { text: '{"avoidsExplanation": true, "conversational": true}' } : originalCall(action);
         const judgeResult = await runtime.call('llm.generateResponse', judgePrompt);
