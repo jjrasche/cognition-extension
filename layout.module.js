@@ -232,10 +232,10 @@ const handleLayoutKeys = (e, mode, maximized, selected) => {
 };
 const preventDefaultReturnTrue = async (e, method) => (e.preventDefault(), method(e), true);
 const registerGlobalKeys = () => runtime.getModulesWithProperty('config')
-.filter(m => Object.values(m.manifest.config || {}).some(cfg => cfg.type === 'globalKey'))
-.forEach(module => Object.entries(module.manifest.config)
-.filter(([, schema]) => schema.type === 'globalKey' && schema.value)
-.forEach(([, schema]) => globalKeyMap.set(schema.value, `${module.manifest.name}.${schema.action}`)));
+	.filter(m => Object.values(m.manifest.config || {}).some(cfg => cfg.type === 'globalKey'))
+	.forEach(module => Object.entries(module.manifest.config)
+		.filter(([, schema]) => schema.type === 'globalKey' && schema.value)
+		.forEach(([, schema]) => globalKeyMap.set(schema.value, `${module.manifest.name}.${schema.action}`)));
 const handleComponentKeys = async (name, event) => {
 	const state = getComponentState(name);
 	const keyMap = state.keyMap;
