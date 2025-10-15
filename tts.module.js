@@ -1,3 +1,4 @@
+import { configProxy } from './config.module.js';
 export const manifest = {
     name: "tts",
     keywords: ["speak", "voice", "tts"],
@@ -6,13 +7,12 @@ export const manifest = {
     description: "Text-to-speech using Web Speech API (instant, no downloads)",
     actions: ["speak", "stop", "listVoices", "setVoice", "getCurrentVoice"],
     config: {
-        defaultVoice: { type: 'select', value: '', label: 'Preferred Voice', options: [] },
-        rate: { type: 'number', value: 1.0, min: 0.5, max: 2.0, step: 0.1, label: 'Speech Rate' },
-        pitch: { type: 'number', value: 1.0, min: 0.5, max: 2.0, step: 0.1, label: 'Pitch' },
-        volume: { type: 'number', value: 1.0, min: 0.0, max: 1.0, step: 0.1, label: 'Volume' }
+        defaultVoice: { type: 'select', value: 'Chrome OS US English 5', label: 'Preferred Voice', options: [] },
+        rate: { type: 'number', value: 1.6, min: 0.5, max: 3.0, step: 0.1, label: 'Speech Rate' },
+        pitch: { type: 'number', value: .6, min: 0.5, max: 2.0, step: 0.1, label: 'Pitch' },
     }
 };
-
+const config = configProxy(manifest);
 let runtime, log, synthesis, currentUtterance;
 
 export const initialize = async (rt, l) => {
@@ -27,19 +27,12 @@ export const initialize = async (rt, l) => {
 
     // Wait for voices to load
     if (synthesis.getVoices().length === 0) {
-        await new Promise(resolve => {
-            synthesis.onvoiceschanged = () => resolve();
-        });
+        await new Promise(resolve => { synthesis.onvoiceschanged = () => resolve(); });
     }
 
     // Populate voice options in config
     const voices = synthesis.getVoices().filter(v => v.lang.startsWith('en'));
-    manifest.config.defaultVoice.options = voices.map(v => ({
-        value: v.name,
-        text: `${v.name} (${v.lang})${v.localService ? ' [Local]' : ''}`
-    }));
-
-    log.log(` TTS initialized with ${voices.length} English voices`);
+    manifest.config.defaultVoice.options = voices.map(v => ({ value: v.name, text: `${v.name} (${v.lang})${v.localService ? ' [Local]' : ''}` }));
 };
 
 export const listVoices = () => synthesis.getVoices()
@@ -61,7 +54,6 @@ export const speak = async (text, options = {}) => {
 
     // Stop any ongoing speech
     if (currentUtterance) synthesis.cancel();
-
     currentUtterance = new SpeechSynthesisUtterance(text);
 
     // Apply voice if specified
@@ -72,9 +64,8 @@ export const speak = async (text, options = {}) => {
     }
 
     // Apply settings
-    currentUtterance.rate = options.rate ?? manifest.config.rate.value;
-    currentUtterance.pitch = options.pitch ?? manifest.config.pitch.value;
-    currentUtterance.volume = options.volume ?? manifest.config.volume.value;
+    currentUtterance.rate = options.rate ?? config.rate;
+    currentUtterance.pitch = options.pitch ?? config.pitch;
 
     return new Promise((resolve, reject) => {
         currentUtterance.onend = () => {

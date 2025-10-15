@@ -1,3 +1,5 @@
+import { configProxy } from "./config.module.js";
+
 export const manifest = {
     name: "thought-partner",
     context: ["service-worker", "offscreen"],
@@ -5,316 +7,162 @@ export const manifest = {
     description: "Voice-activated conversational turns with trigger word detection",
     permissions: ["idle"],
     dependencies: ["chrome-sync", "llm", "speech-recognition", "text-to-speech"],
-    actions: ["togglePower", "handleTranscript", "stopListening", "startListening", "powerOff", "powerOn"],
-    uiComponents: [{ name: "thought-partner-button", getTree: "buildButtonTree", zLayer: "SYSTEM" }]
+    actions: ["togglePower", "onTranscript"],
+    uiComponents: [{ name: "thought-partner-button", getTree: "buildButtonTree", zLayer: "SYSTEM" }],
+    config: {
+        systemPrompt: { type: 'textarea', value: "You are a terse, associative conversation partner. Respond in under 30 words. Do not explain - make connections.", label: 'System Prompt', rows: 4 },
+        queryTemplate: { type: 'textarea', value: "Context: {{transcript}}\n\nRespond:", label: 'Query Template (use {{transcript}})', rows: 3 }
+    }
 };
 
-let runtime, log;
-let userEnabledState = false;
-let currentTurn = null;
-let turns = [];
-let lastResponse = null;
-let mode = 'input'; // 'input' | 'response' | 'feedback'
+let runtime, log, state = null, currentTurn = null, turns = [], audioContext = null;
+const triggers = ['what do you think', 'any ideas', 'your turn', 'go time', 'lets hear it'];
+const config = configProxy(manifest);
 
 export const initialize = async (rt, l) => {
-    runtime = rt;
-    log = l;
-    await loadPersistedState();
-    setupIdleDetection();
-    setupAudioFeedback();
+    runtime = rt; log = l;
+    const saved = await runtime.call('chrome-sync.get', 'thought-partner');
+    state = saved?.state || null; turns = saved?.turns || [];
+    state && await listen();
+    chrome.idle.onStateChanged.addListener(async (s) => s === "locked" ? (await stopListening(), await save()) : s === "active" && state && await listen());
+    setupAudio();
 };
 
-// === POWER MANAGEMENT ===
-export const togglePower = async (eventData) => {
-    if (userEnabledState) {
-        await closeTurn();
-        await powerOff();
-    } else {
-        await powerOn();
-    }
-    await refreshUI();
-};
+// === CORE FLOW ===
+const listen = async () => (await runtime.call('speech-recognition.start'), startNoise());
+const stopListening = async () => (await runtime.call('speech-recognition.stop'), stopNoise());
+export const onTranscript = async (text) => { for (const h of handlers) if (await h(text)) break; };
+const detectTrigger = (text) => triggers.some(t => text.toLowerCase().includes(t));
 
-export const powerOn = async () => {
-    await startListening();
-};
+const handlers = [
+    async (text) => state === 'input' && detectTrigger(text) && (await getResponse(), true),
+    async (text) => state === 'input' && (currentTurn.stt.chunks.push({ text, timestamp: Date.now() }), currentTurn.stt.transcript += ` ${text}`, await save(), true),
+    async (text) => state === 'response_done' && text.toLowerCase().startsWith('feedback') && (state = 'feedback', beep(440, 100), beep(880, 50), await save(), true),
+    async (text) => state === 'response_done' && (await close(), currentTurn.stt.transcript = text, state = 'input', beep(440, 100), await save(), true),
+    async (text) => state === 'feedback' && text.toLowerCase().includes('end feedback') && (await close(), state = 'input', beep(440, 100), true),
+    async (text) => state === 'feedback' && (currentTurn.feedback += ` ${text}`, await save(), true)
+];
 
-export const powerOff = async () => {
+const getResponse = async () => {
     await stopListening();
-    await saveState();
+    const query = inject(config.queryTemplate, { transcript: currentTurn.stt.transcript });
+    const llmResp = await runtime.call('inference.prompt', { query, responseFormat: 'JSON', ...config });
+    // 'inference.prompt', { query, model, systemPrompt: getSpecSystemPrompt(), responseFormat: 'JSON' }));
+    const audioBlob = await runtime.call('text-to-speech.speak', llmResp.text);
+    currentTurn.llm = { model: llmResp.model, systemPrompt: "Be terse...", query: currentTurn.stt.transcript, response: llmResp.text, tokens: llmResp.usage };
+    currentTurn.tts = { model: "default", voice: "default", speed: 1.0, pitch: 1.0, output: audioBlob };
+    state = 'response_done';
+    await listen();
+    await save();
 };
+const inject = (template, vars) => Object.entries(vars).reduce((str, [k, v]) => str.replaceAll(`{{${k}}}`, v), template);
+const createTurn = () => ({ id: Date.now(), timestamp: Date.now(), stt: { model: "whisper", chunks: [], transcript: "", audio: null }, llm: null, tts: null, feedback: null });
+const close = async () => (currentTurn.duration = Date.now() - currentTurn.timestamp, turns.push(currentTurn), currentTurn = createTurn(), await save());
 
-const setupIdleDetection = () => {
-    chrome.idle.onStateChanged.addListener(async (state) => {
-        if (state === "locked") {
-            await powerOff();
-        } else if (state === "active" && userEnabledState) {
-            await powerOn();
-        }
-    });
-};
+// === POWER ===
+export const togglePower = async () => state ? (await stopListening(), state = null, await save(), await refresh()) : (state = 'input', currentTurn = createTurn(), await listen(), await refresh());
 
-// === TURN MANAGEMENT ===
-const createTurn = () => { };
-
-const closeTurn = async () => {
-    await saveState();
-    currentTurn = createTurn();
-    mode = 'input';
-    playBeep(440, 100);
-};
-
-const addToTranscript = (text) => { };
-const setResponse = (text, audioBlob) => { };
-const addFeedback = (text) => { };
-
-// === LISTENING CONTROL ===
-export const startListening = async () => {
-    await runtime.call('speech-recognition.start');
-    startBackgroundNoise();
-};
-
-export const stopListening = async () => {
-    await runtime.call('speech-recognition.stop');
-    stopBackgroundNoise();
-};
-
-export const handleTranscript = async (text) => {
-    if (mode === 'input') await handleInputMode(text);
-    else if (mode === 'feedback') await handleFeedbackMode(text);
-};
-
-// === TRIGGER DETECTION ===
-const detectTrigger = (text) => { };
-
-const handleInputMode = async (text) => {
-    const trigger = detectTrigger(text);
-    if (!trigger) {
-        addToTranscript(text);
-    } else {
-        await stopListening();
-        mode = 'response';
-        await generateResponse();
-    }
-};
-
-const handleFeedbackMode = async (text) => {
-    const trigger = detectTrigger(text);
-
-    if (trigger === 'repeat') {
-        mode = 'response';
-        await runtime.call('text-to-speech.speak', lastResponse.text, onTTSComplete);
-        return;
-    }
-
-    if (trigger === 'feedback') {
-        addFeedback(text);
-    } else if (trigger === 'end') {
-        await closeTurn();
-    } else {
-        await closeTurn();
-        addToTranscript(text);
-    }
-};
-
-// === LLM INTERACTION ===
-const generateResponse = async () => {
-    const llmResponse = await runtime.call('llm.generateResponse', currentTurn);
-    const audioBlob = await runtime.call('text-to-speech.speak', llmResponse.text, onTTSComplete);
-    setResponse(llmResponse.text, audioBlob);
-};
-
-const onTTSComplete = async () => {
-    mode = 'feedback';
-    await startListening();
-    playBeep(440, 100);
-    playBeep(880, 50);
-};
-
-// === AUDIO FEEDBACK ===
-const setupAudioFeedback = () => { };
-const playBeep = (frequency, duration) => { };
-const startBackgroundNoise = () => { };
-const stopBackgroundNoise = () => { };
+// === AUDIO ===
+const setupAudio = () => audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const beep = (freq, dur) => { const osc = audioContext.createOscillator(), gain = audioContext.createGain(); osc.frequency.value = freq; gain.gain.setValueAtTime(0.1, audioContext.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + dur / 1000); osc.connect(gain).connect(audioContext.destination); osc.start(); osc.stop(audioContext.currentTime + dur / 1000); };
+const startNoise = () => { }; // TODO: white noise oscillator
+const stopNoise = () => { }; // TODO: stop oscillator
 
 // === PERSISTENCE ===
-const loadPersistedState = async () => {
-    const saved = await runtime.call('chrome-sync.get', 'thought-partner.state');
-};
-
-const saveState = async () => {
-    await runtime.call('chrome-sync.set', { 'thought-partner.state': { userEnabledState, turns } });
-};
+const save = async () => await runtime.call('chrome-sync.set', { 'thought-partner': { state, turns: turns.slice(-50) } }); // Keep last 50
 
 // === UI ===
-export const buildButtonTree = async () => {
-    const color = getButtonColor();
-};
-
-const getButtonColor = () => " "; // 'gray' | 'green' | 'blue' | 'orange'
-const refreshUI = async () => await runtime.call('layout.renderComponent', 'thought-partner-button');
+export const buildButtonTree = async () => ({
+    tag: "button",
+    text: state === 'feedback' ? "🟠" : state === 'response_done' ? "🔵" : state === 'input' ? "🟢" : "⚫",
+    class: "cognition-button-primary",
+    style: "position: fixed; top: 10px; right: 10px; width: 40px; height: 40px; border-radius: 50%; font-size: 24px; z-index: 10000;",
+    events: { click: "thought-partner.togglePower" }
+});
+const refresh = async () => await runtime.call('layout.renderComponent', 'thought-partner-button');
 
 // === TESTING ===
 export const test = async () => {
     const { runUnitTest, allValuesTrue } = runtime.testUtils;
-
-    // Store originals
-    const originalUserEnabled = userEnabledState;
-    const originalTurns = [...turns];
-    const originalCurrentTurn = currentTurn;
-    const originalMode = mode;
-
-    // Mock runtime calls
+    const orig = { state, turns: [...turns], currentTurn, call: runtime.call };
     let mockCalls = [];
-    const originalCall = runtime.call;
-    runtime.call = async (action, ...args) => {
-        mockCalls.push({ action, args });
-        if (action === 'speech-recognition.start') return { success: true };
-        if (action === 'speech-recognition.stop') return { success: true };
-        if (action === 'llm.generateResponse') return { text: "Brief response" };
-        if (action === 'text-to-speech.speak') return new Blob();
-        if (action === 'chrome-sync.get') return null;
-        if (action === 'chrome-sync.set') return { success: true };
-        return originalCall(action, ...args);
-    };
+    runtime.call = async (action, ...args) => (mockCalls.push({ action, args }), action === 'speech-recognition.start' ? {} : action === 'speech-recognition.stop' ? {} : action === 'llm.generateResponse' ? { text: "Brief", model: "test", usage: { input_tokens: 10, output_tokens: 5 } } : action === 'text-to-speech.speak' ? new Blob() : action === 'chrome-sync.get' ? null : action === 'chrome-sync.set' ? {} : orig.call(action, ...args));
 
-    const results = [];
+    const results = [
+        await runUnitTest("Input: trigger transitions to response_done", async () => {
+            mockCalls = []; state = 'input'; currentTurn = createTurn(); let actual = {};
+            currentTurn.stt.transcript = "I've been thinking";
+            await onTranscript("what do you think about this?");
+            actual.stateChanged = state === 'response_done';
+            actual.llmCalled = mockCalls.some(c => c.action === 'llm.generateResponse');
+            actual.ttsCalled = mockCalls.some(c => c.action === 'text-to-speech.speak');
+            actual.hasLLM = !!currentTurn.llm;
+            actual.hasTTS = !!currentTurn.tts;
+            return { actual, assert: allValuesTrue };
+        }),
 
-    // === MODE TRANSITION FLOWS ===
-    results.push(await runUnitTest("Input mode: trigger word transitions to response mode and calls LLM + TTS", async () => {
-        mockCalls = []; mode = 'input'; currentTurn = createTurn(); let actual = {};
-        addToTranscript("I've been thinking about");
-        await handleInputMode("what do you think about this?");
-        actual.modeChanged = mode === 'response';
-        actual.llmCalled = !!mockCalls.find(c => c.action === 'llm.generateResponse');
-        actual.ttsCalled = !!mockCalls.find(c => c.action === 'text-to-speech.speak');
-        return { actual, assert: allValuesTrue };
-    }));
+        await runUnitTest("Response done: 'feedback' enters feedback state", async () => {
+            mockCalls = []; state = 'response_done'; currentTurn = createTurn(); let actual = {};
+            await onTranscript("feedback this was helpful");
+            actual.enteredFeedback = state === 'feedback';
+            actual.feedbackCaptured = currentTurn.feedback.includes("helpful");
+            return { actual, assert: allValuesTrue };
+        }),
 
-    results.push(await runUnitTest("Response mode: TTS completion switches to feedback mode and resumes listening", async () => {
-        mockCalls = []; mode = 'response'; currentTurn = createTurn(); let actual = {};
-        setResponse("Test response", new Blob());
-        await onTTSComplete();
-        actual.switchedToFeedback = mode === 'feedback';
-        actual.listeningResumed = mockCalls.some(c => c.action === 'speech-recognition.start');
-        return { actual, assert: allValuesTrue };
-    }));
+        await runUnitTest("Response done: non-feedback closes turn and starts new", async () => {
+            state = 'response_done'; currentTurn = createTurn(); currentTurn.id = 123; let actual = {};
+            const origCount = turns.length;
+            await onTranscript("something else entirely");
+            actual.turnClosed = turns.length === origCount + 1;
+            actual.newTurnCreated = currentTurn.id !== 123;
+            actual.backToInput = state === 'input';
+            actual.newTranscript = currentTurn.stt.transcript === "something else entirely";
+            return { actual, assert: allValuesTrue };
+        }),
 
-    results.push(await runUnitTest("Feedback mode: saying 'feedback' captures feedback until 'end', closes turn, opens new turn", async () => {
-        mockCalls = []; mode = 'feedback'; currentTurn = createTurn(); let actual = {};
-        currentTurn.id = 12345;
-        const originalTurnCount = turns.length;
-        await handleFeedbackMode("feedback this was really helpful");
-        await handleFeedbackMode("I learned something new");
-        await handleFeedbackMode("end");
-        actual.feedbackCaptured = currentTurn.feedback && currentTurn.feedback.includes("helpful");
-        actual.turnClosed = turns.length === originalTurnCount + 1;
-        actual.newTurnCreated = currentTurn && currentTurn.id !== 12345;
-        actual.backToInput = mode === 'input';
-        return { actual, assert: allValuesTrue };
-    }));
+        await runUnitTest("Feedback: 'end feedback' closes turn", async () => {
+            state = 'feedback'; currentTurn = createTurn(); currentTurn.feedback = "great stuff"; let actual = {};
+            const origCount = turns.length;
+            await onTranscript("end feedback");
+            actual.turnClosed = turns.length === origCount + 1;
+            actual.feedbackSaved = turns[turns.length - 1].feedback === "great stuff";
+            actual.backToInput = state === 'input';
+            return { actual, assert: allValuesTrue };
+        }),
 
-    results.push(await runUnitTest("Feedback mode: saying non-feedback word closes previous turn and starts new turn with that input", async () => {
-        mockCalls = []; mode = 'feedback'; currentTurn = createTurn(); let actual = {};
-        currentTurn.id = 54321;
-        currentTurn.transcript = "previous turn content";
-        const originalTurnCount = turns.length;
-        await handleFeedbackMode("so I was thinking about something else");
-        actual.previousTurnClosed = turns.length === originalTurnCount + 1;
-        actual.previousTurnHasNoFeedback = !turns[turns.length - 1]?.feedback;
-        actual.newTurnCreated = currentTurn && currentTurn.id !== 54321;
-        actual.newInputCaptured = currentTurn.transcript.includes("something else");
-        actual.backToInput = mode === 'input';
-        return { actual, assert: allValuesTrue };
-    }));
+        await runUnitTest("Feedback: accumulates until end", async () => {
+            state = 'feedback'; currentTurn = createTurn(); currentTurn.feedback = ""; let actual = {};
+            await onTranscript("feedback this is part one");
+            await onTranscript("and here's part two");
+            actual.accumulated = currentTurn.feedback.includes("part one") && currentTurn.feedback.includes("part two");
+            actual.stillInFeedback = state === 'feedback';
+            return { actual, assert: allValuesTrue };
+        }),
 
-    // === POWER & IDLE MANAGEMENT ===
-    results.push(await runUnitTest("Screen lock stops listening, screen unlock resumes if userEnabledState was true", async () => {
-        mockCalls = []; userEnabledState = true; mode = 'input'; let actual = {};
-        await powerOff();
-        actual.stoppedListening = mockCalls.some(c => c.action === 'speech-recognition.stop');
-        actual.stillEnabled = userEnabledState === true;
-        mockCalls = [];
-        await powerOn();
-        actual.resumedListening = mockCalls.some(c => c.action === 'speech-recognition.start');
-        return { actual, assert: allValuesTrue };
-    }));
+        await runUnitTest("Toggle power saves and resumes", async () => {
+            mockCalls = []; state = 'input'; currentTurn = createTurn(); let actual = {};
+            await togglePower();
+            actual.turnedOff = state === null;
+            actual.stoppedListening = mockCalls.some(c => c.action === 'speech-recognition.stop');
+            mockCalls = [];
+            await togglePower();
+            actual.turnedOn = state === 'input';
+            actual.startedListening = mockCalls.some(c => c.action === 'speech-recognition.start');
+            return { actual, assert: allValuesTrue };
+        }),
 
-    results.push(await runUnitTest("togglePower off saves current turn before disabling", async () => {
-        mockCalls = []; userEnabledState = true; currentTurn = createTurn(); let actual = {};
-        currentTurn.transcript = "unsaved content";
-        const originalTurnCount = turns.length;
-        await togglePower({});
-        actual.turnSaved = turns.length === originalTurnCount + 1;
-        actual.contentPreserved = turns[turns.length - 1]?.transcript === "unsaved content";
-        actual.moduleDisabled = userEnabledState === false;
-        actual.listeningStopped = mockCalls.some(c => c.action === 'speech-recognition.stop');
-        return { actual, assert: allValuesTrue };
-    }));
+        await runUnitTest("Turn object has complete structure", async () => {
+            state = 'input'; currentTurn = createTurn(); let actual = {};
+            currentTurn.stt.transcript = "test input";
+            await getResponse();
+            actual.hasSTT = !!currentTurn.stt && Array.isArray(currentTurn.stt.chunks);
+            actual.hasLLM = !!currentTurn.llm && !!currentTurn.llm.response;
+            actual.hasTTS = !!currentTurn.tts && !!currentTurn.tts.output;
+            actual.hasTokens = !!currentTurn.llm.tokens;
+            return { actual, assert: allValuesTrue };
+        })
+    ];
 
-    // === LLM QUALITY TESTS ===
-    results.push(await runUnitTest("LLM generates terse associative response (LLM-as-judge validates terseness)", async () => {
-        currentTurn = createTurn(); let actual = {};
-        currentTurn.transcript = "I've been thinking about how memory works in the brain";
-        await generateResponse();
-        const response = currentTurn.response?.text || "";
-        const judgePrompt = `Evaluate if this response is TERSE (under 30 words) and ASSOCIATIVE (not explanatory):
-Response: "${response}"
-
-Reply with ONLY a JSON object: {"terse": true/false, "associative": true/false, "wordCount": number}`;
-        mockCalls = [];
-        runtime.call = async (action) => action === 'llm.generateResponse' ? { text: '{"terse": true, "associative": true, "wordCount": 15}' } : originalCall(action);
-        const judgeResult = await runtime.call('llm.generateResponse', judgePrompt);
-        const evaluation = JSON.parse(judgeResult.text);
-        actual.terse = evaluation.terse;
-        actual.associative = evaluation.associative;
-        actual.underLimit = evaluation.wordCount < 30;
-        return { actual, assert: allValuesTrue };
-    }));
-
-    results.push(await runUnitTest("LLM response respects system prompt constraints (LLM-as-judge validates)", async () => {
-        currentTurn = createTurn(); let actual = {};
-        currentTurn.transcript = "Tell me everything you know about quantum physics";
-        await generateResponse();
-        const response = currentTurn.response?.text || "";
-        const judgePrompt = `Does this response AVOID detailed explanations and stay conversational?\nResponse: "${response}"\n\nReply ONLY: {"avoidsExplanation": true/false, "conversational": true/false}`;
-        mockCalls = [];
-        runtime.call = async (action) => action === 'llm.generateResponse' ? { text: '{"avoidsExplanation": true, "conversational": true}' } : originalCall(action);
-        const judgeResult = await runtime.call('llm.generateResponse', judgePrompt);
-        const evaluation = JSON.parse(judgeResult.text);
-        actual.avoidsExplanation = evaluation.avoidsExplanation;
-        actual.conversational = evaluation.conversational;
-        return { actual, assert: allValuesTrue };
-    }));
-
-    // === AUDIO & UI ===
-    results.push(await runUnitTest("Audio feedback plays at correct transitions (beeps + background noise)", async () => {
-        let actual = {};
-        actual.beepExists = typeof playBeep === 'function';
-        actual.noiseStartExists = typeof startBackgroundNoise === 'function';
-        actual.noiseStopExists = typeof stopBackgroundNoise === 'function';
-        return { actual, assert: allValuesTrue };
-    }));
-
-    results.push(await runUnitTest("Button color reflects current mode (gray/green/blue/orange)", async () => {
-        let actual = {};
-        userEnabledState = false;
-        actual.colorOffIsGray = getButtonColor() === 'gray';
-        userEnabledState = true; mode = 'input';
-        actual.colorInputIsGreen = getButtonColor() === 'green';
-        mode = 'response';
-        actual.colorResponseIsBlue = getButtonColor() === 'blue';
-        mode = 'feedback';
-        actual.colorFeedbackIsOrange = getButtonColor() === 'orange';
-        return { actual, assert: allValuesTrue };
-    }));
-
-    // Cleanup
-    runtime.call = originalCall;
-    userEnabledState = originalUserEnabled;
-    turns = originalTurns;
-    currentTurn = originalCurrentTurn;
-    mode = originalMode;
-
+    runtime.call = orig.call; state = orig.state; turns = orig.turns; currentTurn = orig.currentTurn;
     return results;
 };
