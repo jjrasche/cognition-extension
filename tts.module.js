@@ -64,20 +64,19 @@ export const speak = async (text, options = {}) => {
     }
 
     // Apply settings
-    currentUtterance.rate = options.rate ?? config.rate;
-    currentUtterance.pitch = options.pitch ?? config.pitch;
-
+    const rate = options.rate ?? config.rate;
+    const pitch = options.pitch ?? config.pitch;
+    currentUtterance.rate = rate;
+    currentUtterance.pitch = pitch;
     return new Promise((resolve, reject) => {
         currentUtterance.onend = () => {
             currentUtterance = null;
-            resolve({ success: true, text });
+            resolve({ success: true, text, voice: voiceName, rate, pitch, model: 'Web Speech API' });
         };
-
         currentUtterance.onerror = (e) => {
             currentUtterance = null;
             reject(new Error(`TTS error: ${e.error}`));
         };
-
         synthesis.speak(currentUtterance);
         log.log(` Speaking: "${text.substring(0, 50)}..."`);
     });

@@ -1,15 +1,15 @@
 import { configProxy } from "./config.module.js";
-
 export const manifest = {
     name: "thought-partner",
-    context: ["service-worker", "offscreen"],
+    context: ["extension-page"],
     version: "1.0.0",
     description: "Voice-activated conversational turns with trigger word detection",
     permissions: ["idle"],
     dependencies: ["chrome-sync", "llm", "speech-recognition", "text-to-speech"],
-    actions: ["togglePower", "onTranscript"],
+    actions: ["togglePower", "onTranscript", "buildButtonTree"],
     uiComponents: [{ name: "thought-partner-button", getTree: "buildButtonTree", zLayer: "SYSTEM" }],
     config: {
+        model: { type: 'select', value: 'groq/llama-3.3-70b-versatile', label: 'Model', options: [], onChange: 'populateModelOptions' },
         systemPrompt: { type: 'textarea', value: "You are a terse, associative conversation partner. Respond in under 30 words. Do not explain - make connections.", label: 'System Prompt', rows: 4 },
         queryTemplate: { type: 'textarea', value: "Context: {{transcript}}\n\nRespond:", label: 'Query Template (use {{transcript}})', rows: 3 }
     }
@@ -24,10 +24,11 @@ export const initialize = async (rt, l) => {
     const saved = await runtime.call('chrome-sync.get', 'thought-partner');
     state = saved?.state || null; turns = saved?.turns || [];
     state && await listen();
-    chrome.idle.onStateChanged.addListener(async (s) => s === "locked" ? (await stopListening(), await save()) : s === "active" && state && await listen());
+    // chrome.idle.onStateChanged.addListener(async (s) => s === "locked" ? (await stopListening(), await save()) : s === "active" && state && await listen());
     setupAudio();
+    await populateModelOptions();
 };
-
+export const populateModelOptions = async () => manifest.config.model.options = await runtime.call('inference.getAllAvailableModels');
 // === CORE FLOW ===
 const listen = async () => (await runtime.call('speech-recognition.start'), startNoise());
 const stopListening = async () => (await runtime.call('speech-recognition.stop'), stopNoise());
@@ -45,12 +46,15 @@ const handlers = [
 
 const getResponse = async () => {
     await stopListening();
-    const query = inject(config.queryTemplate, { transcript: currentTurn.stt.transcript });
-    const llmResp = await runtime.call('inference.prompt', { query, responseFormat: 'JSON', ...config });
-    // 'inference.prompt', { query, model, systemPrompt: getSpecSystemPrompt(), responseFormat: 'JSON' }));
-    const audioBlob = await runtime.call('text-to-speech.speak', llmResp.text);
-    currentTurn.llm = { model: llmResp.model, systemPrompt: "Be terse...", query: currentTurn.stt.transcript, response: llmResp.text, tokens: llmResp.usage };
-    currentTurn.tts = { model: "default", voice: "default", speed: 1.0, pitch: 1.0, output: audioBlob };
+    const llmRequest = {
+        model: config.model.split('/')[1],
+        systemPrompt: config.systemPrompt,
+        query: inject(config.queryTemplate, { transcript: currentTurn.stt.transcript }),
+        responseFormat: 'JSON'
+    };
+    const llmResp = await runtime.call('inference.prompt', llmRequest);
+    currentTurn.llm = { ...llmRequest, ...llmResp };
+    currentTurn.tts = await runtime.call('tts.speak', llmResp.text);
     state = 'response_done';
     await listen();
     await save();

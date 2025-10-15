@@ -5,7 +5,7 @@ export const manifest = {
 	version: "1.0.0",
 	description: "Manages LLM inference across multiple providers",
 	dependencies: ["chrome-sync", "graph-db"],
-	actions: ["prompt", "infer", "buildInferenceUI", "getSelectedProvider", "getSelectedModel"],
+	actions: ["prompt", "infer", "buildInferenceUI", "getSelectedProvider", "getSelectedModel", "getAllAvailableModels"],
 	commands: [{ name: "call to inference", condition: input => input.startsWith('infer'), method: "infer" }],
 	config: {
 		provider: { type: 'select', value: '', label: 'AI Provider', description: 'Select your preferred AI provider', onChange: "setModelConfigOptions" },
@@ -28,6 +28,7 @@ export const initialize = (rt, l) => {
 const registerProviders = () => providers = runtime.getModulesWithProperty('inferenceModels').filter(p => ['makeRequest', 'getContent'].every(fn => typeof p[fn] === 'function'));
 const setConfigOptions = () => { setProviderConfigOptions(); setModelConfigOptions(); };
 const setProviderConfigOptions = () => manifest.config.provider.options = [{ value: '', text: 'Select a provider...' }, ...providers.map(p => ({ value: p.manifest.name, text: `${p.manifest.name} (${p.manifest.inferenceModels?.length || 0} models)` }))];
+export const getAllAvailableModels = () => providers.flatMap(p => (p.manifest.inferenceModels || []).map(m => ({ value: `${p.manifest.name}/${m.id}`, text: `${p.manifest.name}: ${m.name}` })));
 export const setModelConfigOptions = () => {
 	const currentModel = manifest.config.model.value;
 	const validModels = getSelectedProvider()?.manifest?.inferenceModels || [];

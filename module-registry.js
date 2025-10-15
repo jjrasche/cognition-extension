@@ -31,8 +31,10 @@ import * as webSpeechTTSModule from './web-speech-tts.module.js';
 import * as codeAssistantModule from './code-assistant.module.js';
 import * as trainingModule from './training.module.js';
 import * as ttsModule from './tts.module.js';
+import * as thoughtPartnerModule from './thought-partner.module.js';
 
 export const modules = [
+	thoughtPartnerModule,
 	ttsModule,
 	apiKeysModule,
 	codeAssistantModule,

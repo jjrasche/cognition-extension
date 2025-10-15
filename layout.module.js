@@ -35,6 +35,8 @@ export const initialize = async (rt, l) => {
 	setupKeyboardHandlers();
 	const loadingEl = document.getElementById('cognition-loading');
 	loadingEl && (loadingEl.style.opacity = '0', loadingEl.style.transition = 'opacity 0.5s', setTimeout(() => loadingEl.remove(), 500));
+
+	// todo: handle for UIs defined outside of context
 	runtime.moduleState.addListener(handleModuleStateChange);
 };
 // === STATE MANAGEMENT ===
