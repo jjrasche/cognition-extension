@@ -27,7 +27,6 @@ import * as treeToDomModule from './tree-to-dom.module.js';
 import * as webReadModule from './web-read.module.js';
 import * as webSearchModule from './web-search.module.js';
 import * as webSpeechSTTModule from './web-speech-stt.module.js';
-import * as webSpeechTTSModule from './web-speech-tts.module.js';
 import * as codeAssistantModule from './code-assistant.module.js';
 import * as trainingModule from './training.module.js';
 import * as ttsModule from './tts.module.js';
@@ -66,7 +65,6 @@ export const modules = [
 	webReadModule,
 	webSearchModule,
 	webSpeechSTTModule,
-	webSpeechTTSModule,
 ];
 
 export const coreFiles = [
