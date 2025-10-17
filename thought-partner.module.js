@@ -5,8 +5,8 @@ export const manifest = {
     version: "1.0.0",
     description: "Voice-activated conversational turns with trigger word detection",
     permissions: ["idle"],
-    dependencies: ["chrome-sync", "inference", "web-speech-stt", "tts"],
-    actions: ["togglePower", "onTranscript", "buildButtonTree"],
+    dependencies: ["chrome-sync", "inference", "audio-recordings", "tts"],
+    actions: ["togglePower", "buildButtonTree"],
     uiComponents: [{ name: "thought-partner-button", getTree: "buildButtonTree", zLayer: "SYSTEM" }],
     config: {
         model: { type: 'select', value: 'groq/llama-3.3-70b-versatile', label: 'Model', options: [], onChange: 'populateModelOptions' },
@@ -24,65 +24,103 @@ export const initialize = async (rt, l) => {
     const saved = await runtime.call('chrome-sync.get', 'thought-partner');
     state = saved?.state || null; turns = saved?.turns || [];
     state && await listen();
-    // chrome.idle.onStateChanged.addListener(async (s) => s === "locked" ? (await stopListening(), await save()) : s === "active" && state && await listen());
     setupAudio();
     await populateModelOptions();
 };
 export const populateModelOptions = async () => manifest.config.model.options = await runtime.call('inference.getAllAvailableModels');
+
 // === CORE FLOW ===
 const listen = async () => {
-    await runtime.call('web-speech-stt.startListening', onTranscript, 2000); // Pass callback + finalization delay
+    await runtime.call('audio-recordings.startRecording', {
+        onTranscript: handleChunk,
+        finalizationDelay: 2000
+    });
     startNoise();
 };
 
 const stopListening = async () => {
-    await runtime.call('web-speech-stt.stopListening');
+    const recording = await runtime.call('audio-recordings.stopRecording');
     stopNoise();
+    return recording;
 };
 
-export const onTranscript = async (result) => {
-    const text = result.text;
-    if (!result.isFinal) return; // Only process finalized transcripts
-    console.log('Transcribed:', text);
+const handleChunk = async (chunk) => {
+    const text = chunk.text;
+    console.log('Chunk received:', { text, isFinal: !!chunk.finalizedAt });
+
+    // Run all handlers on every chunk (both interim and final)
     for (const h of handlers) {
-        if (await h(text)) {
-            log.log(`${h.name} run`);
+        if (await h(text, chunk.finalizedAt)) {
+            log.log(`${h.name} triggered`);
             break;
         }
     }
 };
-const detectTrigger = (text) => triggers.some(t => text.toLowerCase().includes(t));
 
+const detectTrigger = (text) => triggers.some(t => text.toLowerCase().includes(t));
+// pass in chunk
 const handlers = [
-    async (text) => state === 'input' && detectTrigger(text) && (await getResponse(), true),
-    async (text) => state === 'input' && (currentTurn.stt.chunks.push({ text, timestamp: Date.now() }), currentTurn.stt.transcript += ` ${text}`, await save(), true),
-    async (text) => state === 'response_done' && text.toLowerCase().startsWith('feedback') && (state = 'feedback', beep(440, 100), beep(880, 50), await save(), true),
-    async (text) => state === 'response_done' && (await close(), currentTurn.stt.transcript = text, state = 'input', beep(440, 100), await save(), true),
-    async (text) => state === 'feedback' && text.toLowerCase().includes('end feedback') && (await close(), state = 'input', beep(440, 100), true),
-    async (text) => state === 'feedback' && (currentTurn.feedback += ` ${text}`, await save(), true)
 ];
+const onResponseTrigger = async (chunk) => state === 'input' && chunk.isFinal && detectTrigger(chunk.text) && (await getResponse(), true);
+const func2 = async (chunk) => state === 'input' && chunk.isFinal && (currentTurn.interimTranscript = '', await save(), true);
+const func3 = async (chunk) => state === 'input' && !chunk.isFinal && (currentTurn.interimTranscript = chunk.text, true);
+const onFeedbackTrigger = async (chunk) => state === 'response_done' && chunk.isFinal && chunk.text.toLowerCase().startsWith('feedback') && (state = 'feedback', beep(440, 100), beep(880, 50), await save(), true);
+const onNoFeedback = async (chunk) => state === 'response_done' && chunk.isFinal && (await close(), currentTurn.interimTranscript = text, state = 'input', beep(440, 100), await save(), await listen(), true);
+const df = async (chunk) => state === 'feedback' && chunk.isFinal && chunk.text.toLowerCase().includes('end feedback') && (await close(), state = 'input', beep(440, 100), currentTurn = createTurn(), await listen(), true);
+const func7 = async (chunk) => state === 'feedback' && chunk.isFinal && (currentTurn.feedback += ` ${chunk.text}`, await save(), true);
 
 const getResponse = async () => {
-    await stopListening();
+    const recording = await stopListening();
+
+    currentTurn.stt = {
+        model: "whisper",
+        chunks: recording.chunks,
+        transcript: recording.transcript,
+        audioBlob: recording.audioBlob,
+        recordingId: recording.id,
+        duration: recording.duration
+    };
+
     const llmRequest = {
         model: config.model.split('/')[1],
         systemPrompt: config.systemPrompt,
         query: inject(config.queryTemplate, { transcript: currentTurn.stt.transcript }),
         responseFormat: 'JSON'
     };
+
     const llmResp = await runtime.call('inference.prompt', llmRequest);
     currentTurn.llm = { ...llmRequest, ...llmResp };
     currentTurn.tts = await runtime.call('tts.speak', llmResp.text);
+
     state = 'response_done';
     await listen();
     await save();
 };
+
 const inject = (template, vars) => Object.entries(vars).reduce((str, [k, v]) => str.replaceAll(`{{${k}}}`, v), template);
-const createTurn = () => ({ id: Date.now(), timestamp: Date.now(), stt: { model: "whisper", chunks: [], transcript: "", audio: null }, llm: null, tts: null, feedback: null });
-const close = async () => (currentTurn.duration = Date.now() - currentTurn.timestamp, turns.push(currentTurn), currentTurn = createTurn(), await save());
+const createTurn = () => ({ id: Date.now(), timestamp: Date.now(), interimTranscript: '', stt: null, llm: null, tts: null, feedback: null });
+const close = async () => {
+    currentTurn.duration = Date.now() - currentTurn.timestamp;
+    delete currentTurn.interimTranscript; // Don't save interim text
+    turns.push(currentTurn);
+    await save();
+    currentTurn = createTurn()
+};
 
 // === POWER ===
-export const togglePower = async () => state ? (await stopListening(), state = null, await save(), await refresh()) : (state = 'input', currentTurn = createTurn(), await listen(), await refresh());
+export const togglePower = async () => {
+    if (state) {
+        await stopListening();
+        state = null;
+        currentTurn = null;
+    } else {
+        state = 'input';
+        currentTurn = createTurn();
+        await listen();
+    }
+    await save();
+    await refresh();
+};
 
 // === AUDIO ===
 const setupAudio = () => audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -104,6 +142,7 @@ export const buildButtonTree = async () => ({
     }
 });
 const refresh = async () => await runtime.call('layout.renderComponent', 'thought-partner-button');
+
 
 // // === TESTING ===
 // export const test = async () => {

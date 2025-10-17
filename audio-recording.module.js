@@ -49,7 +49,7 @@ export const stopRecording = async () => {
         const final = await buildRecording(recording);
         await db('addRecord', final);
         log.info(`💾 Saved: ${final.id}`, { duration: final.duration, chunks: final.chunks.length });
-        return final.id;
+        return final;
     } catch (error) { log.error('Save failed:', error); throw error; }
 };
 export const toggleRecording = async (options = {}) => activeRecording ? await stopRecording() : await startRecording(options);
