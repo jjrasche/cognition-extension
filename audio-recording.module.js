@@ -62,7 +62,8 @@ const handleTranscriptChunk = (chunk) => {
 export class Recording {
 	id; audioBlob; model; chunks; duration; timestamp; language; goldStandard;
 	constructor(data) {
-		Object.assign(this, data);
+		const { transcript, preview, ...cleanData } = data; // Exclude computed properties
+		Object.assign(this, cleanData);
 		this.chunks = this.chunks || [];
 	}
 	get transcript() { return this.chunks.map(c => c.text).join(' '); }
