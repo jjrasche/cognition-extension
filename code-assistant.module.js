@@ -139,10 +139,10 @@ export const searchWorkflows = async (query) => {
 	return all.map(wf => ({
 		...wf,
 		score: (wf.name?.toLowerCase().includes(lq) ? 10 : 0) +
-			(wf.spec?.what?.toLowerCase().includes(lq) ? 5 : 0) +
-			(wf.spec?.why?.toLowerCase().includes(lq) ? 5 : 0) +
-			(JSON.stringify(wf.spec?.architecture).toLowerCase().includes(lq) ? 2 : 0) +
-			(wf.transcriptHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
+		(wf.spec?.what?.toLowerCase().includes(lq) ? 5 : 0) +
+		(wf.spec?.why?.toLowerCase().includes(lq) ? 5 : 0) +
+		(JSON.stringify(wf.spec?.architecture).toLowerCase().includes(lq) ? 2 : 0) +
+		(wf.transcriptHistory?.some(c => c.text?.toLowerCase().includes(lq)) ? 1 : 0)
 	})).filter(wf => wf.score > 0).sort((a, b) => b.score - a.score);
 };
 export const handleSearchInput = async (eventData) => { const results = await searchWorkflows(eventData.target.value); await renderUI(); };
@@ -163,7 +163,7 @@ const buildWorkflowPickerUI = () => ({
 });
 const searchInput = () => ({ "search": { tag: "input", type: "text", placeholder: "Search workflows...", class: "cognition-input", events: { input: "code-assistant.handleSearchInput" } } });
 const workflowList = () => cachedWorkflows.length === 0 ? { "no-results": { tag: "div", text: "No workflows found.", style: "padding: 10px; text-align: center; color: var(--text-muted);" } } :
-	Object.fromEntries(cachedWorkflows.slice(0, 20).map(wf => [`wf-${wf.id}`, workflowItem(wf)]));
+Object.fromEntries(cachedWorkflows.slice(0, 20).map(wf => [`wf-${wf.id}`, workflowItem(wf)]));
 const workflowItem = (wf) => ({
 	tag: "div", style: "position: relative; padding: 10px 40px 10px 10px; border-bottom: 1px solid var(--border-primary); cursor: pointer;", events: { click: "code-assistant.handleWorkflowSelect" }, "data-workflow-id": wf.id,
 	"name": { tag: "div", text: wf.name || '(unnamed)', style: "font-weight: 500; margin-bottom: 4px;" },
@@ -219,7 +219,7 @@ export const toggleListening = async () => {
 	isListening = !isListening;
 	if (!isListening) userPrompt = '';
 	else isManuallyEditing = false;
-	await runtime.call('web-speech-stt.toggleListening', handleTranscript, 8000);
+	await runtime.call('web-speech-stt.toggleListening', handleTranscript);
 	renderUI();
 };
 const handleTranscript = async (chunk) => {
@@ -304,7 +304,7 @@ export const test = async () => {
 	return [
 		// await runE2ESimulation({ what: "Training data collection system that captures user accept/reject decisions on AI suggestions", why: "Enable automated learning from user feedback to improve suggestion accuracy over time", architecture: { dependencies: ["graph-db", "inference", "chrome-sync"], persistence: "indexeddb", context: ["extension-page"] } }, "I want to build a system to help train my AI from user feedback" ),
 		// await runUnitTest("Workflow persistence roundtrip", async () => {
-		// 	let actual = {};
+			// 	let actual = {};
 		// 	await initializeTrainingModuleTest();
 		// 	await updateWorkflow();
 		// 	const savedId = workflowState.id;
@@ -319,7 +319,7 @@ export const test = async () => {
 		// 	return { actual, assert: deepEqual, expected: Object.keys(actual).reduce((obj, key) => ({ ...obj, [key]: true }), {}) };
 		// })
 		// await runUnitTest("LLM suggestion quality validation", async () => {
-		// 	initializeTrainingModuleTest();
+			// 	initializeTrainingModuleTest();
 		// 	const suggestion = await generateSpecSuggestion();
 		// 	const systemPrompt = `You are an expert evaluator of AI-generated software specifications.\n\nScore each suggestion 0-10 on:\n- Relevance: Does it address the user's transcripts?\n- Actionability: Is it specific and implementable?\n- Clarity: Is it well-articulated?\n\nOutput JSON: {"relevance": 0-10, "actionability": 0-10, "clarity": 0-10, "reasoning": "brief explanation"}`;
 		// 	const query = `Spec State: ${JSON.stringify(workflowState.spec)}\nTranscripts: "${transcriptHistory.map(t => t.text).join(' ')}"\nSuggestion: ${JSON.stringify(suggestion)}`;
@@ -327,7 +327,7 @@ export const test = async () => {
 		// 	return { actual: evaluation, assert: (actual) => actual.relevance >= 7 && actual.actionability >= 7 && actual.clarity >= 7, expected: { meetsThreshold: true } };
 		// }, cleanupTest())
 		// await runUnitTest("Accept suggestion updates spec", async () => {
-		// 	let actual = {};
+			// 	let actual = {};
 		// 	currentSpec.what = "build a training module";
 		// 	await injectSpecSuggestion();
 		// 	actual.suggestionGenerated = !!(lastSuggestion && lastSuggestion.field && lastSuggestion.content);
@@ -358,29 +358,29 @@ export const runE2ESimulation = async (targetSpec, initialPrompt) => {
 	model = "llama-3.1-8b-instant";
 	workflowState.spec = specDefault(); workflowState.transcriptHistory = [];
 	await saveTranscripts(initialPrompt); await renderUI();
-
+	
 	const simulationLog = [], maxIterations = 15;
 	let iterations = 0;
-
+	
 	try {
 		while (iterations++ < maxIterations) {
 			const suggestion = await generateSpecSuggestion();
 			lastSuggestion = suggestion;
 			pendingChanges.set(suggestion.field, { current: workflowState.spec[suggestion.field], proposed: suggestion.content, type: suggestion.type });
 			await renderUI();
-
+			
 			const decision = await evaluateAgainstTarget(judgeModel, targetSpec, suggestion, workflowState.spec, workflowState.transcriptHistory);
 			simulationLog.push({ iteration: iterations, suggestion, decision });
 			log.info(`Iteration ${iterations}: ${decision.action} - ${decision.reasoning}`);
-
+			
 			if (decision.action === 'complete') break;
 			decision.action === 'accept' ? await acceptSpecChange({ target: { dataset: { field: suggestion.field } } }) :
-				decision.action === 'reject' ? await rejectSpecChange({ target: { dataset: { field: suggestion.field } } }) : (() => { throw new Error('Invalid action'); })();
-
+			decision.action === 'reject' ? await rejectSpecChange({ target: { dataset: { field: suggestion.field } } }) : (() => { throw new Error('Invalid action'); })();
+			
 			decision.nextUserInput && (await saveTranscripts(decision.nextUserInput), await renderUI());
 			await wait(2000);
 		}
-
+		
 		const matchResult = await calculateSpecSimilarity(targetSpec, workflowState.spec, judgeModel);
 		model = originalModel;
 		return { targetSpec, finalSpec: JSON.parse(JSON.stringify(workflowState.spec)), matchScore: matchResult.score, breakdown: matchResult, iterations, transcript: [...workflowState.transcriptHistory], simulationLog };

@@ -9,7 +9,7 @@ import * as configModule from './config.module.js';
 import * as contextModule from './context.module.js';
 import * as developmentModule from './dev.module.js';
 import * as embeddingModule from './embedding.module.js';
-import * as fileModule from './file.module.js';
+// import * as fileModule from './file.module.js';
 import * as graphDbModule from './graph-db.module.js';
 import * as groqInferenceModule from './groq-inference.module.js';
 import * as indexedDbModule from './indexed-db.module.js';
@@ -49,7 +49,7 @@ export const modules = [
 	contextModule,
 	developmentModule,
 	embeddingModule,
-	fileModule,
+	// fileModule,
 	graphDbModule,
 	groqInferenceModule,
 	indexedDbModule,

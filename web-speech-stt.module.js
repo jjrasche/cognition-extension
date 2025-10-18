@@ -18,7 +18,7 @@ export const manifest = {
 };
 
 const config = configProxy(manifest);
-let runtime, log, recognition, isListening = false, onTranscript = (t) => { }, finalizationDelay = 0, finalizationTimer, audioStartTime = 0;
+let runtime, log, recognition, isListening = false, onTranscript = (t) => { }, audioStartTime = 0;
 export const initialize = async (rt, l) => { runtime = rt; log = l; setupRecognition(); };
 
 const setupRecognition = () => {
@@ -32,27 +32,31 @@ const setupRecognition = () => {
 };
 const handleResult = (event) => {
 	const currentTimeMs = performance.now() - audioStartTime;
-	const interimText = Array.from(event.results).map(r => r[0].transcript).join(' ').trim();
-	const finalText = Array.from(event.results).filter(r => r.isFinal).map(r => r[0].transcript).join(' ').trim();
-	onTranscript({ text: interimText, isFinal: false, timestamp: currentTimeMs });
-	clearTimeout(finalizationTimer);
-	finalizationTimer = setTimeout(() => finalText && onTranscript({ text: finalText, timestamp: currentTimeMs, finalizedAt: Date.now() }), finalizationDelay);
+	const lastResult = event.results[event.results.length - 1];
+	const text = lastResult[0].transcript.trim();
+	if (lastResult.isFinal) { onTranscript({ text, timestamp: currentTimeMs, finalizedAt: Date.now() });
+} else { onTranscript({ text, timestamp: currentTimeMs }); }
 };
-const handleError = (e) => ['no-speech', 'audio-capture', 'network'].includes(e.error) ? restart() : log.error('Recognition error:', e.error)
+const handleError = (e) => {
+	if (['no-speech', 'audio-capture', 'network'].includes(e.error)) {
+		restart();
+		log.info('restarted on error', e.error);
+	} else {
+		log.error('Recognition error:', e.error);
+	}
+};
 const restart = () => setTimeout(() => { try { recognition.start(); } catch (e) { log.error('Restart failed:', e); } }, 100);
-export const startListening = async (callback = () => { }, delay = 0) => {
+export const startListening = async (callback = () => { }) => {
 	if (!recognition || isListening) return;
 	onTranscript = callback;
-	finalizationDelay = delay;
 	try { recognition.start(); log.info('🎤 Listening started'); }
 	catch (e) { log.error('Start failed:', e); throw e; }
 };
 export const stopListening = async () => {
 	if (!recognition || !isListening) return;
 	recognition.stop();
-	clearTimeout(finalizationTimer);
 	onTranscript = () => { };
 	log.info('🎤 Listening stopped');
 };
-export const toggleListening = async (callback, delay = 0) => isListening ? await stopListening() : await startListening(callback, delay);
+export const toggleListening = async (callback) => isListening ? await stopListening() : await startListening(callback);
 export const getStatus = () => ({ isListening, isSupported: !!(window["webkitSpeechRecognition"] && window.AudioContext), language: config.language });

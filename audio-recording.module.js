@@ -1,4 +1,3 @@
-import { archiveWhiteboard } from "whiteboard.module.js";
 import { getId } from "./helpers.js";
 
 export const manifest = {
@@ -25,7 +24,7 @@ export const updateRecording = async (id, updates) => await db('updateRecord', {
 // === Logic ===
 export const startRecording = async (options = {}) => {
 	if (activeRecording) throw new Error('Recording already in progress');
-	const { onTranscript = () => { }, finalizationDelay = 0, language = 'en-US' } = options;
+	const { onTranscript = () => { }, language = 'en-US' } = options;
 	activeRecording = { id: getId('rec-'), audioChunks: [], chunks: [], startTime: Date.now(), language, onTranscript };
 	try {
 		const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -33,25 +32,24 @@ export const startRecording = async (options = {}) => {
 		recorder.ondataavailable = (e) => !!activeRecording && activeRecording.audioChunks.push(e.data);
 		recorder.start();
 		Object.assign(activeRecording, { mediaRecorder: recorder, stream });
-		await runtime.call('web-speech-stt.startListening', (chunk) => handleTranscriptChunk(chunk), finalizationDelay);
+		await runtime.call('web-speech-stt.startListening', (chunk) => handleTranscriptChunk(chunk));
 		log.info(`📹 Started: ${activeRecording.id}`);
 		return activeRecording.id;
 	} catch (error) { activeRecording = null; throw error; }
 };
 export const stopRecording = async () => {
 	if (!activeRecording) return null;
-	const recording = activeRecording;
-	activeRecording = null;
 	try {
 		await runtime.call('web-speech-stt.stopListening');
-		recording.mediaRecorder?.stop();
-		recording.stream?.getTracks().forEach(track => track.stop());
-		await new Promise(resolve => recording.mediaRecorder.state === 'inactive' ? resolve() : (recording.mediaRecorder.onstop = resolve));
-		const final = await buildRecording(recording);
+		activeRecording.mediaRecorder?.stop();
+		activeRecording.stream?.getTracks().forEach(track => track.stop());
+		await new Promise(resolve => activeRecording.mediaRecorder.state === 'inactive' ? resolve() : (activeRecording.mediaRecorder.onstop = resolve));
+		const final = await buildRecording(activeRecording);
 		await db('addRecord', final);
 		log.info(`💾 Saved: ${final.id}`, { duration: final.duration, chunks: final.chunks.length });
 		return final;
 	} catch (error) { log.error('Save failed:', error); throw error; }
+	finally { activeRecording = null; }
 };
 export const toggleRecording = async (options = {}) => activeRecording ? await stopRecording() : await startRecording(options);
 export const isRecording = () => !!activeRecording;

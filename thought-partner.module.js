@@ -41,9 +41,9 @@ const getResponse = async () => {
 		query: inject(config.queryTemplate, { transcript: currentTurn.stt.transcript }),
 		responseFormat: 'JSON'
 	};
-	const llmResp = await runtime.call('inference.prompt', llmRequest);
-	currentTurn.llm = { ...llmRequest, ...llmResp };
-	return llmResp?.text;
+	const response = await runtime.call('inference.prompt', llmRequest);
+	currentTurn.llm = { ...llmRequest, response };
+	return response;
 };
 const inject = (template, vars) => Object.entries(vars).reduce((str, [k, v]) => str.replaceAll(`{{${k}}}`, v), template);
 // turn logic
@@ -62,7 +62,7 @@ const completeTurn = async () => {
 // handlers
 const handleChunk = async (chunk) => {
 	if (!chunk.finalizedAt) return;
-	log.log('Chunk received:', chunk.text);
+	log.log('Chunk received:', JSON.stringify(chunk, null, 2));
 	for (const h of handlers) {
 		if (h.condition(chunk)) {
 			try {

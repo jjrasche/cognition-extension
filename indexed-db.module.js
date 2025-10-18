@@ -8,7 +8,7 @@ export const manifest = {
 };
 
 let runtime, log, DBs = new Map();
-export const initialize = async (rt, l) => (runtime = rt, await registerModules());
+export const initialize = async (rt, l) => (runtime = rt, log = l, await registerModules());
 
 // Database management
 const registerModules = async () => await Promise.all(runtime.getModulesWithProperty('indexeddb').map(async m => await createDB(m.manifest.indexeddb)));
@@ -42,12 +42,16 @@ export const getByIndex = async (dbName, storeName, indexName, value) => {
 };
 
 // export const getByIndex = async (dbName, storeName, indexName, value, limit) => {
-// 	const index = getStore(dbName, storeName).index(indexName);
+	// 	const index = getStore(dbName, storeName).index(indexName);
 // 	if (limit) return await iterateCursor(index.openCursor(value ? IDBKeyRange.only(value) : null), () => true, limit);
 // 	return await promisify(index.getAll(value ? IDBKeyRange.only(value) : null));
 // };
 // Utilities
-const getStore = (dbName, storeName, mode = 'readonly') => DBs.get(dbName).transaction([storeName], mode).objectStore(storeName);
+const getStore = (dbName, storeName, mode = 'readonly') => {
+	const db = DBs.get(dbName);
+	if (!db) throw new Error(`Database '${dbName}' not initialized. Available: ${[...DBs.keys()].join(', ')}`);
+	return db.transaction([storeName], mode).objectStore(storeName);
+};
 const promisify = (req) => new Promise((resolve, reject) => (req.onsuccess = () => resolve(req.result), req.onerror = () => reject(req.error)));
 const iterateCursor = async (cursorRequest, callback, limit = Infinity) => {
 	const results = [];

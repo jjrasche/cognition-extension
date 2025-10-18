@@ -31,6 +31,9 @@ const getResponseFormat = (responseFormat) => responseFormat == "JSON" ? { "type
 export const makeRequest = async (model, messages, webSearch, responseFormat) => {
 	const systemMessage = messages.find(m => m.role === 'system');
 	const chatMessages = messages.filter(m => m.role !== 'system');
+	if (responseFormat === 'JSON' && messages.every(m => !m.content.toLowerCase().includes('json'))) {
+		chatMessages[chatMessages.length - 1].content += '\n\nRespond in JSON format.';
+	}
 	const requestBody = {
 		model: model.id || model,
 		messages: systemMessage ? [systemMessage, ...chatMessages] : chatMessages,
@@ -39,6 +42,7 @@ export const makeRequest = async (model, messages, webSearch, responseFormat) =>
 		stream: false,
 		...((responseFormat && { response_format: getResponseFormat(responseFormat) }))
 	};
+	
 	const req = { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) };
 	return await fetch('https://api.groq.com/openai/v1/chat/completions', req);
 };
@@ -67,7 +71,8 @@ export const getContent = async (response) => {
 };
 export const getError = async (response) => {
 	log.info(`GROQ error`, response);
-	return await response.json();
+	const ret = await response.json();
+	return ret;
 };
 export const formatInteractionFromResponse = async (response) => { };
 export const getInteractionsFromExport = async (exportData) => { }
