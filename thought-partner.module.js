@@ -43,7 +43,7 @@ const getResponse = async () => {
 	};
 	const llmResp = await runtime.call('inference.prompt', llmRequest);
 	currentTurn.llm = { ...llmRequest, ...llmResp };
-	return llmResp.text;
+	return llmResp?.text;
 };
 const inject = (template, vars) => Object.entries(vars).reduce((str, [k, v]) => str.replaceAll(`{{${k}}}`, v), template);
 // turn logic
@@ -103,12 +103,15 @@ const handlers = [
 	}
 ];
 // === AUDIO ===
-const listen = async () => { startNoise(); await runtime.call('audio-recordings.startRecording', { onTranscript: handleChunk, finalizationDelay: 2000 });};
+const listen = async () => {
+	// startNoise();
+	await runtime.call('audio-recording.startRecording', { onTranscript: handleChunk });
+};
 const stopListening = async () => {
-	stopNoise();
-	currentTurn.stt = await runtime.call('audio-recordings.stopRecording');
+	// stopNoise();
+	currentTurn.stt = await runtime.call('audio-recording.stopRecording');
 	// just run on last thing said
-	triggers.forEach(t => { currentTurn.stt.text = currentTurn.stt.text.toLowerCase().replace(t, '').trim(); });
+	triggers.forEach(t => { currentTurn.stt.text = currentTurn.stt.text?.toLowerCase()?.replace(t, '')?.trim() ?? ""; });
 };
 const setupAudio = () => audioContext = new (window.AudioContext || window["webkitAudioContext"])();
 const signal = () => beep(440, 100);

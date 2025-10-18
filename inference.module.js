@@ -47,7 +47,7 @@ export const prompt = async (params) => {
 	if (!provider || !model) throw new Error("Inference provider/model not configured");
 	const messages = await runtime.call("context.assemble", query, systemPrompt);
 	const response = await provider.makeRequest(model, messages, webSearch, responseFormat);
-	if (!response.ok) throw new Error(`${provider.manifest.name} API error: ${response.status}`);
+	if (!response.ok) throw new Error(`${provider.manifest.name} API error: ${response.status}`, await provider.getError(response));
 	return await provider.getContent(response);
 };
 export const getSelectedProvider = () => providers.find(p => p.manifest.name === config.provider);
@@ -61,21 +61,21 @@ const inferenceSourceTree = (query, content) => ({
 // UI
 export const handlePromptSubmit = async (eventData) => {
 	if (eventData.key !== 'Enter' || !eventData.shiftKey) return;
-
+	
 	const promptText = eventData.target.value.trim();
 	if (!promptText) return;
-
+	
 	eventData.preventDefault();
-
+	
 	// Set loading state
 	currentPromptText = '';
 	currentResponse = '...';
 	isLoading = true;
 	await refreshUI();
-
+	
 	// Clear textarea immediately
 	eventData.target.value = '';
-
+	
 	try {
 		const response = await prompt({ query: promptText });
 		currentResponse = response;

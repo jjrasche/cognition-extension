@@ -14,7 +14,7 @@ export const manifest = {
 		// Structured Output Models
 		{ "id": "meta-llama/llama-4-scout-17b-16e-instruct", "name": "Llama 4 Scout", "family": "llama-4", "developer": "Meta", "releaseDate": "2025-04-07", "capabilities": ["text generation", "image understanding", "reasoning", "code generation", "tool use", "json_schema", "multimodal"], "inputTypes": ["text", "image"], "outputTypes": ["text"], "bestFor": ["structured output", "multimodal tasks", "cost-effective inference", "image analysis"], "contextWindow": 131072, "maxOutput": 8192, "maxFileSize": null, "pricing": { "input": 0.11, "output": 0.34 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
 		{ "id": "meta-llama/llama-4-maverick-17b-128e-instruct", "name": "Llama 4 Maverick", "family": "llama-4", "developer": "Meta", "releaseDate": "2025-04-07", "capabilities": ["text generation", "image understanding", "reasoning", "code generation", "tool use", "json_schema", "multimodal"], "inputTypes": ["text", "image"], "outputTypes": ["text"], "bestFor": ["structured output", "high-quality reasoning", "creative writing", "complex multimodal tasks"], "contextWindow": 131072, "maxOutput": 8192, "maxFileSize": null, "pricing": { "input": 0.50, "output": 0.77 }, "rateLimits": { "requestsPerMinute": null, "tokensPerMinute": null, "requestsPerDay": null } },
-
+		
 	],
 	defaultModel: "llama-3.1-8b-instant"
 };
@@ -44,7 +44,7 @@ export const makeRequest = async (model, messages, webSearch, responseFormat) =>
 };
 
 // export const makeRequest = async (prompt, model) => {
-//   const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+	//   const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
 //     method: 'POST',
 //     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
 //     body: JSON.stringify({
@@ -64,6 +64,10 @@ export const getContent = async (response) => {
 	const data = await response.json();
 	const content = data.choices?.[0]?.message?.content;
 	return content;
+};
+export const getError = async (response) => {
+	log.info(`GROQ error`, response);
+	return await response.json();
 };
 export const formatInteractionFromResponse = async (response) => { };
 export const getInteractionsFromExport = async (exportData) => { }

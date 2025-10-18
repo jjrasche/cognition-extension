@@ -1,7 +1,7 @@
 import { getId } from "./helpers.js";
 
 export const manifest = {
-	name: "audio-recordings",
+	name: "audio-recording",
 	context: ["extension-page"],
 	version: "1.0.0",
 	description: "Manage audio recording sessions with coordinated speech transcription and persistence",
