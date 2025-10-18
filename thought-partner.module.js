@@ -16,7 +16,7 @@ export const manifest = {
 	indexeddb: {
 		name: 'ThoughtPartnerDB', 
 		version: 1,
-		storeConfigs: [ { name: 'turns', options: { keyPath: 'id' }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] } ]
+		storeConfigs: [ { name: 'turns', options: { keyPath: 'id', autoIncrement: true }, indexes: [{ name: 'by-timestamp', keyPath: 'timestamp' }] } ]
 	}
 };
 
@@ -47,7 +47,7 @@ const getResponse = async () => {
 };
 const inject = (template, vars) => Object.entries(vars).reduce((str, [k, v]) => str.replaceAll(`{{${k}}}`, v), template);
 // turn logic
-const createTurn = () => ({ id: Date.now(), timestamp: Date.now(), stt: null, llm: null, tts: null, feedback: null });
+const createTurn = () => ({ timestamp: Date.now(), stt: null, llm: null, tts: null, feedback: null });
 const startTurn = async () => {
 	state = 'input';
 	currentTurn = createTurn();
@@ -62,7 +62,7 @@ const completeTurn = async () => {
 // handlers
 const handleChunk = async (chunk) => {
 	if (!chunk.finalizedAt) return;
-	log.log('Chunk received:', JSON.stringify(chunk, null, 2));
+	log.log('Chunk received:', chunk.text);
 	for (const h of handlers) {
 		if (h.condition(chunk)) {
 			try {
@@ -154,7 +154,7 @@ const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`,
 const saveState = async () => await runtime.call('chrome-local.set', { 'thought-partner.state': state });
 const getState = async () => await runtime.call('chrome-local.get', 'thought-partner.state');
 const loadTurns = async () => await db('getByIndexCursor', 'by-timestamp', 'prev', 50).catch(() => []);
-const saveTurn = async () => { await db('addRecord', currentTurn); }
+const saveTurn = async () => { const savedId = await db('addRecord', currentTurn); currentTurn.id = savedId; }
 // === UI ===
 const refresh = async () => await runtime.call('layout.renderComponent', 'thought-partner-button');
 export const buildButton = async () => ({ "power-button": { tag: "button", text: state === 'feedback' ? "🟠" : state === 'response_done' ? "🔵" : state === 'input' ? "🟢" : "⚫", class: "cognition-button", events: { click: "thought-partner.togglePower" } } });

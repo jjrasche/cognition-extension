@@ -1,3 +1,4 @@
+import { archiveWhiteboard } from "whiteboard.module.js";
 import { getId } from "./helpers.js";
 
 export const manifest = {
@@ -29,7 +30,7 @@ export const startRecording = async (options = {}) => {
 	try {
 		const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
 		const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-		recorder.ondataavailable = (e) => activeRecording.audioChunks.push(e.data);
+		recorder.ondataavailable = (e) => !!activeRecording && activeRecording.audioChunks.push(e.data);
 		recorder.start();
 		Object.assign(activeRecording, { mediaRecorder: recorder, stream });
 		await runtime.call('web-speech-stt.startListening', (chunk) => handleTranscriptChunk(chunk), finalizationDelay);

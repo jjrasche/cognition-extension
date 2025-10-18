@@ -27,7 +27,7 @@ const setupRecognition = () => {
 	Object.assign(recognition, { continuous: true, interimResults: true, lang: config.language });
 	recognition.onstart = () => (isListening = true, audioStartTime = performance.now());
 	recognition.onend = () => (isListening = false);
-	recognition.onerror = (e) => (isListening = false, log.error('Recognition error:', e.error));
+	recognition.onerror = (e) => (isListening = false, handleError(e));
 	recognition.onresult = handleResult;
 };
 const handleResult = (event) => {
@@ -38,6 +38,8 @@ const handleResult = (event) => {
 	clearTimeout(finalizationTimer);
 	finalizationTimer = setTimeout(() => finalText && onTranscript({ text: finalText, timestamp: currentTimeMs, finalizedAt: Date.now() }), finalizationDelay);
 };
+const handleError = (e) => ['no-speech', 'audio-capture', 'network'].includes(e.error) ? restart() : log.error('Recognition error:', e.error)
+const restart = () => setTimeout(() => { try { recognition.start(); } catch (e) { log.error('Restart failed:', e); } }, 100);
 export const startListening = async (callback = () => { }, delay = 0) => {
 	if (!recognition || isListening) return;
 	onTranscript = callback;
