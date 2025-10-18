@@ -1,4 +1,5 @@
 import { configProxy } from "./config.module.js";
+import { Recording } from "./audio-recording.module.js";
 export const manifest = {
 	name: "thought-partner",
 	context: ["extension-page"],
@@ -151,7 +152,7 @@ const stopNoise = () => {
 const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`, 'ThoughtPartnerDB', 'turns', ...args);
 const saveState = async () => await runtime.call('chrome-local.set', { 'thought-partner.state': state });
 const getState = async () => await runtime.call('chrome-local.get', 'thought-partner.state');
-const loadTurns = async () => await db('getByIndexCursor', 'by-timestamp', 'prev', 50).catch(() => []);
+const loadTurns = async () => (await db('getByIndexCursor', 'by-timestamp', 'prev', 50).catch(() => [])).map(t => ({ ...t, stt: t.stt ? new Recording(t.stt) : null }));
 const saveTurn = async () => {
 	if (currentTurn.id) { await db('updateRecord', currentTurn); }
 	else { currentTurn.id = await db('addRecord', currentTurn); }

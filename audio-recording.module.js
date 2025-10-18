@@ -18,7 +18,7 @@ export const initialize = async (rt, l) => { runtime = rt; log = l; };
 // === Persistence ===
 const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`, 'AudioRecordingsDB', 'recordings', ...args);
 export const getRecordings = async (limit = 50) => (await db('getByIndexCursor', 'by-timestamp', 'prev', limit).catch(() => [])).map(formatSummary);
-export const getRecording = async (id) => await db('getRecord', id) ?? (() => { throw new Error('Recording not found'); })();
+export const getRecording = async (id) => new Recording(await db('getRecord', id) ?? (() => { throw new Error('Recording not found'); })());
 export const deleteRecording = (id) => db('removeRecord', id).then(() => (log.info(`🗑️ Deleted: ${id}`), true)).catch(() => false);
 export const updateRecording = async (id, updates) => await db('updateRecord', { ...await getRecording(id), ...updates });
 // === Logic ===
@@ -58,9 +58,19 @@ const handleTranscriptChunk = (chunk) => {
 	if (chunk.finalizedAt) activeRecording.chunks.push({ text: chunk.text, timestamp: chunk.timestamp });
 	activeRecording.onTranscript(chunk);
 };
+// recording
+export class Recording {
+	id; audioBlob; model; chunks; duration; timestamp; language; goldStandard;
+	constructor(data) {
+		Object.assign(this, data);
+		this.chunks = this.chunks || [];
+	}
+	get transcript() { return this.chunks.map(c => c.text).join(' '); }
+	get preview() { return this.transcript.substring(0, 100) + (this.transcript.length > 100 ? '...' : '');}
+}
 const buildRecording = async (rec) => {
 	const audioBlob = new Blob(rec.audioChunks, { type: 'audio/webm' });
-	return {
+	return new Recording({
 		id: rec.id,
 		audioBlob,
 		model: "web-speech",
@@ -68,9 +78,8 @@ const buildRecording = async (rec) => {
 		duration: (Date.now() - rec.startTime) / 1000,
 		timestamp: new Date(rec.startTime).toISOString(),
 		language: rec.language,
-		goldStandard: '',
-		get transcript() { return this.chunks.map(c => c.text).join(' '); }
-	};
+		goldStandard: ''
+	});
 };
 const formatSummary = (r) => ({
 	id: r.id,

@@ -31,11 +31,11 @@ const setupRecognition = () => {
 	recognition.onresult = handleResult;
 };
 const handleResult = (event) => {
-	const currentTimeMs = performance.now() - audioStartTime;
+	const timestamp = performance.now() - audioStartTime;
 	const lastResult = event.results[event.results.length - 1];
 	const text = lastResult[0].transcript.trim();
-	if (lastResult.isFinal) { onTranscript({ text, timestamp: currentTimeMs, finalizedAt: Date.now() });
-} else { onTranscript({ text, timestamp: currentTimeMs }); }
+	if (lastResult.isFinal) onTranscript({ text, timestamp, finalizedAt: Date.now() });
+	else onTranscript({ text, timestamp });
 };
 const handleError = (e) => {
 	if (['no-speech', 'audio-capture', 'network'].includes(e.error)) {
