@@ -20,15 +20,15 @@ export const manifest = {
 	}
 };
 
-let runtime, log, state = null, currentTurn = null, turns = [], audioContext = null;
+let runtime, log, state = null, currentTurn = {}, turns = [], audioContext = null;
 const triggers = ['what do you think', 'any ideas', 'your turn', 'go time', 'lets hear it'];
 const config = configProxy(manifest);
 
 export const initialize = async (rt, l) => {
 	runtime = rt; log = l;
-	state = await getState();
+	// state = await getState();
 	turns = await loadTurns();
-	if (state) { await startTurn(); }
+	// if (state) { await startTurn(); }
 	await populateModelOptions();
 	setupAudio();
 };
@@ -62,7 +62,6 @@ const completeTurn = async () => {
 // handlers
 const handleChunk = async (chunk) => {
 	if (!chunk.finalizedAt) return;
-	log.log('Chunk received:', JSON.stringify(chunk, null, 2));
 	for (const h of handlers) {
 		if (h.condition(chunk)) {
 			try {
@@ -87,7 +86,7 @@ const handlers = [
 	},
 	{ name: "start feedback",
 		condition: (chunk) => state === 'response_done' && chunk.text.toLowerCase().startsWith('feedback'),
-		func: async(chunk) => state = 'feedback'
+		func: async(chunk) => { state = 'feedback'; await saveTurn(); }
 	},
 	{ name: "non-feedback after response",
 		condition: (chunk) => state === 'response_done' && !chunk.text.toLowerCase().startsWith('feedback'),
@@ -110,8 +109,6 @@ const listen = async () => {
 const stopListening = async () => {
 	// stopNoise();
 	currentTurn.stt = await runtime.call('audio-recording.stopRecording');
-	// just run on last thing said
-	triggers.forEach(t => { currentTurn.stt.text = currentTurn.stt.text?.toLowerCase()?.replace(t, '')?.trim() ?? ""; });
 };
 const setupAudio = () => audioContext = new (window.AudioContext || window["webkitAudioContext"])();
 const signal = () => beep(440, 100);
@@ -154,7 +151,10 @@ const db = async (method, ...args) => await runtime.call(`indexed-db.${method}`,
 const saveState = async () => await runtime.call('chrome-local.set', { 'thought-partner.state': state });
 const getState = async () => await runtime.call('chrome-local.get', 'thought-partner.state');
 const loadTurns = async () => await db('getByIndexCursor', 'by-timestamp', 'prev', 50).catch(() => []);
-const saveTurn = async () => { const savedId = await db('addRecord', currentTurn); currentTurn.id = savedId; }
+const saveTurn = async () => {
+	if (currentTurn.id) { await db('updateRecord', currentTurn); }
+	else { currentTurn.id = await db('addRecord', currentTurn); }
+}
 // === UI ===
 const refresh = async () => await runtime.call('layout.renderComponent', 'thought-partner-button');
 export const buildButton = async () => ({ "power-button": { tag: "button", text: state === 'feedback' ? "🟠" : state === 'response_done' ? "🔵" : state === 'input' ? "🟢" : "⚫", class: "cognition-button", events: { click: "thought-partner.togglePower" } } });
