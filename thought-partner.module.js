@@ -54,6 +54,7 @@ const startTurn = async () => {
 	await listen();
 }
 const completeTurn = async () => {
+	await stopListening(); 
 	turns.push(currentTurn);
 	await saveTurn();
 	await startTurn();
