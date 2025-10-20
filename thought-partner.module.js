@@ -67,10 +67,14 @@ const findTaskByQuery = async (query) => {
 	if (!tasks.length) return null;
 	try {
 		const numbered = tasks.map((t, i) => `${i + 1}. ${t.text} (${t.status})`).join('\n');
-		const prompt = `${query}\n\nAvailable tasks:\n${numbered}\n\nReturn JSON with taskNumber (1-${tasks.length}) or null if no match.`;
-		const response = await runtime.call('inference.prompt', { query: prompt, systemPrompt: 'You help select tasks from a list based on user descriptions.', responseFormat: 'JSON' });
+		const prompt = `User query: "${query}"\n\nTasks:\n${numbered}\n\nWhich task number matches best? Respond ONLY with valid JSON: {"taskNumber": N} where N is 1-${tasks.length}, or {"taskNumber": null} if no match.`;
+		const systemPrompt = 'You return JSON with a single field "taskNumber" containing an integer or null. Example: {"taskNumber": 3}';
+		
+		log.log('Task selection query:', prompt);
+		const response = await runtime.call('inference.prompt', { query: prompt, systemPrompt, responseFormat: 'JSON' });
+		log.log('Task selection response:', response);
+		
 		const parsed = JSON.parse(response);
-		log.log('Task selection response:', parsed);
 		return parsed.taskNumber ? tasks[parsed.taskNumber - 1] : null;
 	} catch (e) { log.error('Task selection failed:', e); return null; }
 };
