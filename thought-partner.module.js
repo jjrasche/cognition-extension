@@ -16,7 +16,9 @@ export const manifest = {
 	config: {
 		model: { type: 'select', value: 'groq/llama-3.1-8b-instant', label: 'Model', options: [], onChange: 'populateModelOptions' },
 		systemPrompt: { type: 'textarea', value: `You are a conversational assistant. Respond with JSON:\n{\n  "shouldRespond": true/false,\n  "intention": "clarifying|suggesting|connecting|questioning",\n  "response": "actual response text under 30 words",\n  "reasoning": "why you chose this approach"\n}`, label: 'System Prompt', rows: 6 },
-		queryTemplate: { type: 'textarea', value: "Context: {{transcript}}\n\nRespond:", label: 'Query Template (use {{transcript}})', rows: 3 }
+		queryTemplate: { type: 'textarea', value: "Context: {{transcript}}\n\nRespond:", label: 'Query Template (use {{transcript}})', rows: 3 },
+		toggleKey: { type: 'globalKey', value: 'Ctrl+Shift+X', label: 'Toggle Listening', action: 'togglePower' },
+		
 	},
 	indexeddb: {
 		name: 'ThoughtPartnerDB',
@@ -82,7 +84,13 @@ const findTaskByQuery = async (query) => {
 // === TASK CRUD ===
 export const addTask = async (text) => await saveTask(new Task({ text, status: 'paused', createdAt: Date.now() }));
 export const getTasks = async (limit) => await loadTasks(limit);
-export const deleteTask = async (id) => await taskDb('removeRecord', id).then(() => true).catch(() => false);
+export const deleteTask = async (id) => {
+	if (!currentTask) return;
+	await taskDb('removeRecord', id).then(() => true).catch(() => false);
+	await speak(`Deleted ${currentTask.text}`);
+	currentTask = null;
+	await refreshTaskList();
+}
 
 // === TASK WORK MANAGEMENT ===
 export const startTask = async (description) => {
@@ -138,7 +146,8 @@ export const cancelTask = async () => {
 	return true;
 };
 export const switchTask = async (description) => {
-	const found = await findTaskByQuery(description);
+	(await loadTasks()).find(t => t.text === description);
+	const found = (await loadTasks()).find(t => t.text === description) ?? await findTaskByQuery(description);
 	if (found) {
 		if (currentTask) await pauseTask();
 		found.startSession();
@@ -153,6 +162,7 @@ export const switchTask = async (description) => {
 // === TASK ANALYTICS ===
 export const getActiveTask = () => currentTask;
 export const getCurrentSessionDuration = () => currentTask?.activeSession ? Math.round((Date.now() - currentTask.activeSession.start) / 1000 / 60) : 0;
+export const getCurrentTaskName = () => currentTask ? currentTask.text : 'no active task';
 
 // === TURN LOGIC ===
 const getResponse = async () => {
@@ -182,15 +192,14 @@ const handleChunk = async (chunk) => {
 
 const taskHandlers = [
 	{ name: "start task", condition: (c) => c.text.toLowerCase().startsWith('start task'), func: async (c) => await startTask(c.text.replace(/^start task\s*/i, '').trim()) },
-	{ name: "log task", condition: (c) => state !== 'log_task' && c.text.toLowerCase().startsWith('log task'), func: async (c) => { state = 'log_task'; currentTaskText = c.text.replace(/^log task\s*/i, '').trim(); } },
-	{ name: "log task accumulate", condition: (c) => state === 'log_task' && !c.text.toLowerCase().includes('end'), func: async (c) => { currentTaskText += ' ' + c.text.trim(); } },
-	{ name: "log task end", condition: (c) => state === 'log_task' && c.text.toLowerCase().includes('end'), func: async (c) => { await addTask(currentTaskText.replace(/\s*end\s*$/i, '').trim()); state = 'input'; currentTaskText = ''; } },
-	{ name: "pause task", condition: (c) => c.text.toLowerCase().includes('stop task'), func: async () => await pauseTask() },
-	{ name: "resume task", condition: (c) => c.text.toLowerCase().includes('resume task'), func: async () => await resumeTask() },
-	{ name: "complete task", condition: (c) => c.text.toLowerCase().includes('complete task'), func: async () => await completeTask() },
-	{ name: "cancel task", condition: (c) => c.text.toLowerCase().includes('cancel task'), func: async () => await cancelTask() },
-	{ name: "switch task", condition: (c) => c.text.toLowerCase().startsWith('switch to task'), func: async (c) => await switchTask(c.text.replace(/^switch to task\s*/i, '').trim()) },
-	{ name: "how long", condition: (c) => c.text.toLowerCase().includes('how long'), func: async () => await speak(`${getCurrentSessionDuration()} minutes`) }
+	{ name: "pause task", condition: (c) => c.text.toLowerCase().startsWith('stop task'), func: async () => await pauseTask() },
+	{ name: "resume task", condition: (c) => c.text.toLowerCase().startsWith('resume task'), func: async () => await resumeTask() },
+	{ name: "delete task", condition: (c) => c.text.toLowerCase().startsWith('delete task'), func: async () => await deleteTask() },
+	{ name: "complete task", condition: (c) => c.text.toLowerCase().startsWith('complete task'), func: async () => await completeTask() },
+	{ name: "cancel task", condition: (c) => c.text.toLowerCase().startsWith('cancel task'), func: async () => await cancelTask() },
+	{ name: "switch task", condition: (c) => c.text.toLowerCase().startsWith('switch task'), func: async (c) => await switchTask(c.text.replace(/^switch task\s*/i, '').trim()) },
+	{ name: "how long", condition: (c) => c.text.toLowerCase().includes('how long'), func: async () => await speak(`${getCurrentSessionDuration()} minutes`) },
+	{ name: "current task", condition: (c) => c.text.toLowerCase().startsWith('current task'), func: async () => await speak(!!currentTask ? `${getCurrentSessionDuration()} minutes on ${getCurrentTaskName()}` : 'no active task') },
 ];
 
 const thoughtPartnerHandlers = [
@@ -249,7 +258,7 @@ export const buildTaskList = async () => {
 					...Object.fromEntries(tasks.map((task, i) => [`row-${i}`, {
 						tag: "tr",
 						style: "border-bottom: 1px solid var(--border-primary);",
-						"td-status": { tag: "td", text: task.status, style: "padding: 8px;" },
+						"td-status": { tag: "td", text: currentTask?.id === task.id ? "current" : task.status, style: "padding: 8px;" },
 						"td-task": { tag: "td", text: task.text, style: "padding: 8px;" },
 						"td-duration": { tag: "td", text: `${Math.round(task.totalDuration / 60)}m`, style: "text-align: right; padding: 8px;" },
 						"td-sessions": { tag: "td", text: task.sessions.length, style: "text-align: right; padding: 8px;" },
