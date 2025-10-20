@@ -11,7 +11,7 @@ export const manifest = {
 	uiComponents: [{ name: "thought-partner-button", getTree: "buildButton", zLayer: "SYSTEM" }],
 	config: {
 		model: { type: 'select', value: 'groq/llama-3.1-8b-instant', label: 'Model', options: [], onChange: 'populateModelOptions' },
-		systemPrompt: { type: 'textarea', value: "You are a terse, associative conversation partner. Respond in under 30 words. Do not explain - make connections.", label: 'System Prompt', rows: 4 },
+		systemPrompt: { type: 'textarea', value: `You are a conversational assistant. Respond with JSON:\n{\n  "shouldRespond": true/false,\n  "intention": "clarifying|suggesting|connecting|questioning",\n  "response": "actual response text under 30 words",\n  "reasoning": "why you chose this approach"\n}`, label: 'System Prompt', rows: 6 },
 		queryTemplate: { type: 'textarea', value: "Context: {{transcript}}\n\nRespond:", label: 'Query Template (use {{transcript}})', rows: 3 }
 	},
 	indexeddb: {
@@ -43,8 +43,9 @@ const getResponse = async () => {
 		responseFormat: 'JSON'
 	};
 	const response = await runtime.call('inference.prompt', llmRequest);
-	currentTurn.llm = { ...llmRequest, response };
-	return response;
+	const parsed = JSON.parse(response)
+	currentTurn.llm = { ...llmRequest, response, parsed };
+	return parsed.response;
 };
 const inject = (template, vars) => Object.entries(vars).reduce((str, [k, v]) => str.replaceAll(`{{${k}}}`, v), template);
 // turn logic
