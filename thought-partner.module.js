@@ -30,20 +30,19 @@ export const manifest = {
 	}
 };
 
-let runtime, log, state = null, currentTurn = {}, turns = [], audioContext = null;
+let runtime, log, state = null, currentTurn = {}, turns = [], tasks = [], audioContext = null;
 let currentTask = null, currentTaskText = '';
 const triggers = ['what do you think', 'any ideas', 'your turn', 'go time', 'lets hear it'];
 const config = configProxy(manifest);
-
 export const initialize = async (rt, l) => {
 	runtime = rt; log = l;
+	tasks = await loadTasks();
 	turns = await loadTurns();
 	await populateModelOptions();
 	setupAudio();
 };
 
 export const populateModelOptions = async () => manifest.config.model.options = await runtime.call('inference.getAllAvailableModels');
-
 // === TASK CLASS ===
 export class Task {
 	id; text; status; sessions; createdAt; completedAt;
@@ -84,14 +83,16 @@ const findTaskByQuery = async (query) => {
 // === TASK CRUD ===
 export const addTask = async (text) => await saveTask(new Task({ text, status: 'paused', createdAt: Date.now() }));
 export const getTasks = async (limit) => await loadTasks(limit);
-export const deleteTask = async (id) => {
+export const deleteTask = async () => {
 	if (!currentTask) return;
-	await taskDb('removeRecord', id).then(() => true).catch(() => false);
+	await taskDb('removeRecord', currentTask.id).then(() => true).catch(() => false);
+	tasks = tasks.filter(t => t.id !== currentTask.id);
 	await speak(`Deleted ${currentTask.text}`);
 	currentTask = null;
 	await refreshTaskList();
 }
 
+// === TASK WORK MANAGEMENT ===
 // === TASK WORK MANAGEMENT ===
 export const startTask = async (description) => {
 	if (currentTask) await pauseTask();
@@ -102,60 +103,84 @@ export const startTask = async (description) => {
 	await refreshTaskList();
 	return currentTask;
 };
+
 export const pauseTask = async () => {
 	if (!currentTask) return null;
 	currentTask.endSession();
 	currentTask.status = 'paused';
-	await saveTask(currentTask);
-	await speak(`Pausing ${currentTask.text}`);
-	const paused = currentTask;
+	const saved = await saveTask(currentTask);
+	// Update cache with fresh reference
+	const idx = tasks.findIndex(t => t.id === saved.id);
+	if (idx !== -1) tasks[idx] = new Task(toPlain(saved));
+	await speak(`Pausing ${saved.text}`);
 	currentTask = null;
 	await refreshTaskList();
-	return paused;
+	return saved;
 };
+
 export const resumeTask = async () => {
-	const tasks = await loadTasks();
 	const lastPaused = tasks.filter(t => t.status === 'paused').sort((a, b) => (b.sessions[b.sessions.length - 1]?.end || 0) - (a.sessions[a.sessions.length - 1]?.end || 0))[0];
 	if (!lastPaused) return null;
 	if (currentTask) await pauseTask();
 	lastPaused.startSession();
 	currentTask = await saveTask(lastPaused);
+	// Update cache
+	const idx = tasks.findIndex(t => t.id === currentTask.id);
+	if (idx !== -1) tasks[idx] = new Task(toPlain(currentTask));
 	await speak(`Resuming ${currentTask.text}`);
 	await refreshTaskList();
 	return currentTask;
 };
+
 export const completeTask = async () => {
 	if (!currentTask) return false;
 	currentTask.endSession();
 	currentTask.status = 'completed';
 	currentTask.completedAt = Date.now();
-	await saveTask(currentTask);
-	await speak(`Completed ${currentTask.text}`);
+	const saved = await saveTask(currentTask);
+	// Update cache
+	const idx = tasks.findIndex(t => t.id === saved.id);
+	if (idx !== -1) tasks[idx] = new Task(toPlain(saved));
+	await speak(`Completed ${saved.text}`);
 	currentTask = null;
 	await refreshTaskList();
 	return true;
 };
+
 export const cancelTask = async () => {
 	if (!currentTask) return false;
 	currentTask.endSession();
 	currentTask.status = 'cancelled';
-	await saveTask(currentTask);
-	await speak(`Cancelled ${currentTask.text}`);
+	const saved = await saveTask(currentTask);
+	// Update cache
+	const idx = tasks.findIndex(t => t.id === saved.id);
+	if (idx !== -1) tasks[idx] = new Task(toPlain(saved));
+	await speak(`Cancelled ${saved.text}`);
 	currentTask = null;
 	await refreshTaskList();
 	return true;
 };
+
 export const switchTask = async (description) => {
-	(await loadTasks()).find(t => t.text === description);
-	const found = (await loadTasks()).find(t => t.text === description) ?? await findTaskByQuery(description);
+	// First pause current task if exists
+	if (currentTask) await pauseTask();
+	
+	// Find target task
+	const found = tasks.find(t => t.text === description) ?? await findTaskByQuery(description);
+	
 	if (found) {
-		if (currentTask) await pauseTask();
+		// Activate found task
 		found.startSession();
 		currentTask = await saveTask(found);
+		// Update cache with fresh reference
+		const idx = tasks.findIndex(t => t.id === currentTask.id);
+		if (idx !== -1) tasks[idx] = new Task(toPlain(currentTask));
 		await speak(`Switching to ${currentTask.text}`);
 		await refreshTaskList();
 		return currentTask;
 	}
+	
+	// If not found, start new task
 	return await startTask(description);
 };
 
